@@ -36,6 +36,11 @@ packages = ["src/teacher_charles"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# A suite roda sem modelo nenhum por default. Os testes de integracao batem
+# num Ollama de verdade e se pulam sozinhos quando nao ha um.
+markers = [
+    "integration: exercita o Ollama local de verdade (pula sem Ollama/modelo)",
+]
 
 [tool.ruff]
 line-length = 100

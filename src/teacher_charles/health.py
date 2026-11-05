@@ -1,11 +1,11 @@
 """Sondagem do modelo, para o ``/health``.
 
-A E1 traz o ``ChatProvider`` de verdade. Aqui só se pergunta uma coisa: o
-modelo configurado está ao alcance deste processo?
+Pergunta uma coisa só: o modelo configurado está ao alcance deste processo?
 
-Sondamos a **API HTTP**, nunca o binário ``ollama`` no PATH. Nesta máquina de
-desenvolvimento, por exemplo, o serviço roda em ``~/.local/ollama/bin/ollama`` e
-não está no PATH — um ``which ollama`` diria "não instalado" sobre um Ollama
+O conhecimento sobre o formato da API vive em ``llm/``; aqui fica só a decisão
+de como reportar. Sondamos a **API HTTP**, nunca o binário ``ollama`` no PATH:
+é comum o serviço rodar com o binário fora do PATH (em ``~/.local/ollama/bin``,
+por exemplo), e um ``which ollama`` diria "não instalado" sobre um Ollama
 perfeitamente funcional.
 """
 
@@ -14,9 +14,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-import httpx
-
 from .config import Settings
+from .llm.base import ProviderError
+from .llm.ollama import list_models
 
 
 @dataclass(slots=True)
@@ -52,37 +52,33 @@ def _matches(wanted: str, available: str) -> bool:
 async def probe_model(settings: Settings) -> ModelStatus:
     status = ModelStatus(provider=settings.provider, wanted_model=settings.llm_model)
 
+    if settings.provider == "fake":
+        status.reachable = True
+        status.model_present = True
+        status.detail = "provider 'fake': nenhum modelo de verdade em uso"
+        return status
+
     if settings.provider == "openai_compat":
         if not settings.openai_api_key:
             status.detail = "TC_PROVIDER=openai_compat exige TC_OPENAI_API_KEY"
             return status
-        # A E1 valida o provider de nuvem de verdade; aqui basta ter chave.
+        # Não sondamos a nuvem: custaria uma chamada paga a cada /health.
         status.reachable = True
         status.model_present = True
-        status.detail = "provider de nuvem configurado (não sondado na E0)"
+        status.detail = f"provider de nuvem configurado ({settings.openai_base_url})"
         return status
 
     if settings.provider != "ollama":
         status.detail = f"provider desconhecido: {settings.provider!r}"
         return status
 
-    url = f"{settings.ollama_url.rstrip('/')}/api/tags"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            payload = response.json()
-    except httpx.HTTPError as exc:
-        status.detail = f"Ollama não respondeu em {settings.ollama_url}: {exc}"
-        return status
-    except ValueError as exc:
-        status.detail = f"Ollama respondeu algo que não é JSON: {exc}"
+        status.available_models = await list_models(settings.ollama_url)
+    except ProviderError as exc:
+        status.detail = str(exc)
         return status
 
     status.reachable = True
-    status.available_models = sorted(
-        m["name"] for m in payload.get("models", []) if isinstance(m, dict) and "name" in m
-    )
     status.model_present = any(_matches(settings.llm_model, m) for m in status.available_models)
 
     if status.model_present:

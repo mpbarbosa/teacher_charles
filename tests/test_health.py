@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from teacher_charles.app import create_app
 from teacher_charles.config import Settings
 from teacher_charles.health import _matches, probe_model
+from teacher_charles.llm import FakeProvider
 
 
 def make_settings(tmp_path, **overrides) -> Settings:
@@ -56,7 +57,7 @@ def patched_client(monkeypatch):
             kwargs["transport"] = transport
             return real(*args, **kwargs)
 
-        monkeypatch.setattr("teacher_charles.health.httpx.AsyncClient", factory)
+        monkeypatch.setattr("teacher_charles.llm.ollama.httpx.AsyncClient", factory)
 
     return install
 
@@ -87,7 +88,7 @@ async def test_probe_handles_unreachable_ollama(tmp_path, monkeypatch):
 
     real = httpx.AsyncClient
     monkeypatch.setattr(
-        "teacher_charles.health.httpx.AsyncClient",
+        "teacher_charles.llm.ollama.httpx.AsyncClient",
         lambda *a, **kw: real(*a, **{**kw, "transport": httpx.MockTransport(handler)}),
     )
 
@@ -125,7 +126,7 @@ def test_health_endpoint_degrades_when_model_absent(tmp_path, patched_client):
     lugar errado.
     """
     patched_client({"models": []})
-    with TestClient(create_app(make_settings(tmp_path))) as client:
+    with TestClient(create_app(make_settings(tmp_path), provider=FakeProvider())) as client:
         response = client.get("/health")
 
     assert response.status_code == 503
@@ -138,7 +139,7 @@ def test_health_endpoint_degrades_when_model_absent(tmp_path, patched_client):
 
 def test_health_endpoint_ok_when_everything_ready(tmp_path, patched_client):
     patched_client({"models": [{"name": "qwen3:4b"}]})
-    with TestClient(create_app(make_settings(tmp_path))) as client:
+    with TestClient(create_app(make_settings(tmp_path), provider=FakeProvider())) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
@@ -147,7 +148,7 @@ def test_health_endpoint_ok_when_everything_ready(tmp_path, patched_client):
 
 def test_index_page_renders(tmp_path, patched_client):
     patched_client({"models": [{"name": "qwen3:4b"}]})
-    with TestClient(create_app(make_settings(tmp_path))) as client:
+    with TestClient(create_app(make_settings(tmp_path), provider=FakeProvider())) as client:
         response = client.get("/")
 
     assert response.status_code == 200

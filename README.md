@@ -72,8 +72,11 @@ TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles
 ```
 
 Um 3B dá para desenvolver. Para uso de verdade, 4B é o default por um motivo: nesta
-classe de hardware o gargalo é banda de memória, e a vazão cai rápido com o tamanho
-(~20–25 tok/s num 4B, ~10–13 num 8B, ~6 num 14B — este último inviável para conversa).
+classe de hardware o gargalo é banda de memória, e a vazão cai rápido com o tamanho.
+Medido nesta máquina (Intel Core Ultra 5 135U, **Ollama em CPU pura** — o pacote oficial
+não usa a iGPU Intel): **9,3 tok/s num 3B e 4,0 num 7B**, o que põe um 4B em ~7–8 tok/s
+e um 8B em ~3,5. Com streaming, 4B é tolerável para texto; 8B não é.
+Ver [docs/plano-fase-1.md](docs/plano-fase-1.md) §1.3 para o método da medição.
 
 ## Configuração
 

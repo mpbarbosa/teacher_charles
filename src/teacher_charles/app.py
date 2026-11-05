@@ -17,10 +17,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from . import __version__
 from .config import Settings, get_settings
 from .health import probe_model
+from .llm import ChatProvider, build_provider
 from .store.db import init_db
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -28,11 +29,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Migrar na subida: um dev que acabou de clonar não deveria precisar
         # rodar nada à mão antes do primeiro `uv run teacher-charles`.
         conn = init_db(settings.resolved_db_path)
+        # Construir o provider aqui faz uma configuração inválida estourar na
+        # subida, e não no meio do primeiro turno do aluno.
+        chat = provider if provider is not None else build_provider(settings)
         app.state.settings = settings
         app.state.db = conn
+        app.state.provider = chat
         try:
             yield
         finally:
+            await chat.aclose()
             conn.close()
 
     app = FastAPI(
@@ -71,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": __version__,
             "database": db_info,
             "model": model.as_dict(),
+            "provider": type(app.state.provider).__name__,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
 

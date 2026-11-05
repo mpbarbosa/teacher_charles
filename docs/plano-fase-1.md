@@ -56,17 +56,46 @@ O alvo mínimo é a máquina de desenvolvimento atual:
 Isto é mais modesto que o cenário da análise inicial ("GPU de 8 a 12 GB ou Apple
 Silicon") e tem uma consequência direta: **o gargalo é banda de memória, não VRAM.**
 
-Estimativa de vazão para este chip (LPDDR5 dual-channel, ~60–70 GB/s efetivos):
+#### Vazão medida (não estimada) — corrigido na E1
 
-| Modelo (Q4) | Tamanho | Vazão estimada | Veredito |
+A primeira versão deste documento estimava 20–25 tok/s para um 4B. **A estimativa
+estava cerca de 2,5× otimista.** Medido nesta máquina com o Ollama 0.35, modelo já
+carregado, 150 tokens gerados, usando `eval_count`/`eval_duration` do próprio servidor:
+
+| Modelo (Q4_K_M) | Tamanho | Geração | Prompt |
 |---|---|---|---|
-| 4B | ~2,5 GB | ~20–25 tok/s | **Default.** Confortável, inclusive para voz. |
-| 8B | ~4,7 GB | ~10–13 tok/s | Opção. Bom para texto, apertado para voz. |
-| 14B | ~9 GB | ~6 tok/s | Fora. Inviável para conversa. |
+| qwen2.5 **3B** | 2,2 GB | **9,3 tok/s** | 54 tok/s |
+| qwen2.5 **7B** | 5,1 GB | **4,0 tok/s** | 21 tok/s |
 
-**Modelo default: um 4B-class quantizado (Qwen3 4B como primeira escolha), com 8B
-configurável.** A seção 5 da análise já apoia isso: sendo tudo em inglês, "um modelo de
-4B a 8B explica gramática em inglês com boa confiabilidade".
+Extrapolando pela razão de tamanho: **4B ≈ 7–8 tok/s, 8B ≈ 3,5 tok/s, 14B ≈ 2 tok/s.**
+
+A causa está medida também: `/api/ps` reporta `size_vram=0.00GB` para os dois modelos.
+**O Ollama padrão roda 100% em CPU e não toca a iGPU Intel** — não há build com
+suporte a Arc/SYCL no pacote oficial. Os 14 threads do Core Ultra 5 135U (que é um chip
+U-series, de baixo consumo) são tudo o que está trabalhando.
+
+Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
+
+- **4B continua sendo o default certo**, e agora por uma margem maior: 7–8 tok/s dá uma
+  resposta de 60 tokens em ~8s. Com streaming o aluno começa a ler no primeiro segundo,
+  então para **chat por texto isto é tolerável**. Um 8B a 3,5 tok/s não é.
+- **O turno duplo da §2 fica mais caro do que o risco da §6 supunha.** A análise tem que
+  produzir JSON curto (poucas dezenas de tokens) e não pode bloquear a resposta. A E4
+  precisa medir isso, não presumir.
+- **A voz da Fase 1.5 fica em dúvida real.** A meta de 1–2s por turno pressupõe gerar a
+  primeira sentença em menos de 1s; a 7 tok/s, 15 tokens levam ~2s, antes do TTS. Isso
+  não condena a Fase 1.5, mas significa que ela começa por uma medição, não por
+  integração.
+- **Há um caminho de aumento não explorado**: habilitar a iGPU via IPEX-LLM ou um
+  llama.cpp com Vulkan/SYCL. A Arc integrada do Meteor Lake tem compute relevante e hoje
+  está ociosa. Fica registrado como alavanca para a Fase 1.5, não como trabalho da
+  Fase 1 — e é exatamente o tipo de troca que a abstração `ChatProvider` da E1 torna
+  barata (o `openai_compat` já serve um llama.cpp local).
+
+**Modelo default: um 4B-class quantizado (Qwen3 4B como primeira escolha).** A seção 5
+da análise apoia isso: sendo tudo em inglês, "um modelo de 4B a 8B explica gramática em
+inglês com boa confiabilidade". O 8B deixa de ser "opção para quem tem folga" nesta
+máquina e passa a ser opção só para quem tem GPU.
 
 A decisão 1.1 é o que torna 1.3 sustentável. Se o produto fosse bilíngue, 4B não daria
 conta das explicações em português e o hardware mínimo teria que subir.
@@ -244,8 +273,8 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 
 | | Entrega | Pronto quando |
 |---|---|---|
-| **E0** | **Fundação** — pyproject/uv, pacote, SQLite + migração, `check_env.py`, FastAPI com `/health` | `uv run teacher-charles` sobe em `localhost:8000` e `/health` reporta se o modelo está acessível |
-| **E1** | **Provider do LLM** — Protocol `ChatProvider`, Ollama com streaming, `openai_compat` atrás de flag, erros e timeout tratados, `fake` para testes | Um teste de integração faz um turno real contra o Ollama local; os unitários rodam sem modelo nenhum |
+| **E0** ✅ | **Fundação** — pyproject/uv, pacote, SQLite + migração, `check_env.py`, FastAPI com `/health` | `uv run teacher-charles` sobe em `localhost:8000` e `/health` reporta se o modelo está acessível |
+| **E1** ✅ | **Provider do LLM** — Protocol `ChatProvider`, Ollama com streaming, `openai_compat` atrás de flag, erros e timeout tratados, `fake` para testes | **Feito.** 4 testes de integração fazem turnos reais contra o Ollama local (47 pedaços de streaming, 1º em 1,0s); 58 unitários rodam sem modelo nenhum |
 | **E2** | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Dá para conversar em inglês de ponta a ponta no navegador.** Primeiro momento em que isto é um produto |
 | **E3** | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | `match("I have 30 years")` devolve `calque.age-have`; o loader rejeita item fora do schema |
 | **E4** | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | Suíte de ~25 frases com erro conhecido passa; a precisão medida fica registrada neste doc |
@@ -272,8 +301,8 @@ Variáveis de ambiente em `.env` (modelo, provider, caminho do banco), com
 | Risco | Como lidamos |
 |---|---|
 | O 4B devolve JSON malformado na etapa de análise | Validação pydantic + retry com instrução mais estrita + fallback que degrada para "sem correção" em vez de quebrar o turno. Medido na E4. |
-| O 4B explica gramática pior que o esperado | A base contrastiva é o anteparo: onde há regra curada, a explicação vem dela, não do modelo. Se a E4 mostrar precisão baixa, subir para 8B é trocar uma linha de config. |
-| Latência do turno duplo (análise + resposta) | A resposta começa a sair em streaming enquanto a análise roda; a correção aparece depois, junto da mensagem. Medido na E7. |
+| O 4B explica gramática pior que o esperado | A base contrastiva é o anteparo: onde há regra curada, a explicação vem dela, não do modelo. Medido na E1: um 3B "corrigiu" *I have 30 years* para *I have thirty years* — trocou o dígito e manteve o decalque. É o problema nº 1 da análise em uma linha, e a razão de a E3/E4 existirem. Subir para 8B **não** é mais a saída nesta máquina (3,5 tok/s); a saída é a regra curada. |
+| Latência do turno duplo (análise + resposta) | **Agravado pela medição da §1.3 (7–8 tok/s num 4B).** A resposta sai em streaming enquanto a análise roda, e a análise tem que devolver JSON curto. A E4 mede o custo real do turno duplo em vez de presumir. |
 | Curar ~100 itens contrastivos dá trabalho | E3 entrega 40 e segue crescendo. O schema e os testes garantem que crescer não degrada. |
 
 ---

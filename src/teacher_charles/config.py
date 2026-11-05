@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     request_timeout_s: float = 120.0
 
+    # Modelos de raciocínio (Qwen3, entre outros) pensam antes de responder, e
+    # isso custa segundos que uma conversa não tem. None deixa o default do
+    # servidor valer; False desliga, que é o que se quer num professor que
+    # precisa responder em 1-2s.
+    llm_think: bool | None = None
+
     # --- Nuvem opcional (recomendação §6 da análise inicial) -------------
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
