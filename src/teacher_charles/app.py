@@ -31,6 +31,7 @@ from .prompts import PromptLibrary
 from .store.db import init_db
 from .store.repo import SessionRepo, StudentRepo, TurnRepo
 from .teaching import Chunk, Done, Failed, TurnRunner
+from .teaching.contrastive import ContrastiveError, load_base
 
 log = logging.getLogger(__name__)
 
@@ -244,13 +245,27 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "detail": str(exc),
             }
 
+        # A base contrastiva é conteúdo do produto, versionado e validado por
+        # schema: se ela não carrega, o professor perde a regra curada e volta
+        # a improvisar gramática — exatamente o que a E3 existe para evitar.
+        # Melhor descobrir no /health que no primeiro turno do aluno.
+        try:
+            base = load_base(settings.data_dir / "contrastive")
+            contrastive_info: dict[str, Any] = {"ok": True, "items": len(base)}
+        except ContrastiveError as exc:
+            contrastive_info = {"ok": False, "items": 0, "detail": str(exc)}
+
         body = {
-            # O serviço está de pé, mas "pronto para ensinar" exige banco e
-            # modelo. Separar os dois evita um health verde enganoso.
-            "status": "ok" if (db_info["ok"] and model.ok) else "degraded",
+            # O serviço está de pé, mas "pronto para ensinar" exige banco,
+            # modelo e base contrastiva. Separar os três evita um health verde
+            # enganoso.
+            "status": "ok"
+            if (db_info["ok"] and model.ok and contrastive_info["ok"])
+            else "degraded",
             "version": __version__,
             "database": db_info,
             "model": model.as_dict(),
+            "contrastive": contrastive_info,
             "provider": type(app.state.provider).__name__,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)

@@ -1,0 +1,177 @@
+# Interferência estrutural: o português impõe uma estrutura que o inglês não
+# tem (sujeito oculto, concordância, incontáveis, dupla negação).
+#
+# Convenções em data/contrastive/false-friends.yaml.
+
+items:
+  - id: grammar.subject-drop
+    category: grammar
+    pt: "Está chovendo / É difícil aprender inglês"
+    wrong:
+      - "is raining today"
+      - "is very hot in Rio"
+      - "is difficult to learn English"
+    right:
+      - "it is raining today"
+      - "it's very hot in Rio"
+      - "it is difficult to learn English"
+    patterns:
+      - '(?:^|[.!?]\s+)(is|was)\s+(raining|snowing|cold|hot|very|difficult|easy|important|possible|necessary|better|good|bad)\b'
+    explanation: >-
+      English sentences need a subject. Portuguese can drop it, English cannot:
+      add "it". "It's raining", "it's difficult".
+    cefr: A2
+    tags: [syntax, subject]
+
+  - id: grammar.people-plural
+    category: grammar
+    pt: "As pessoas é / O pessoal está"
+    wrong:
+      - "people is very nice here"
+      - "the people has money"
+      - "many people is coming"
+    right:
+      - "people are very nice here"
+      - "the people have money"
+      - "many people are coming"
+    patterns:
+      - '\bpeople (is|was|has|isn''t|wasn''t|hasn''t)\b'
+    explanation: >-
+      "People" is already plural: "people are", "people have". The singular is
+      "person".
+    cefr: A2
+    tags: [agreement, nouns]
+
+  - id: grammar.uncountable-plural
+    category: grammar
+    pt: "Informações, conselhos, móveis"
+    wrong:
+      - "I need more informations"
+      - "he gave me good advices"
+      - "we bought new furnitures"
+    right:
+      - "I need more information"
+      - "he gave me some good advice"
+      - "we bought new furniture"
+    patterns:
+      - '\b(informations|advices|furnitures|equipments|knowledges|softwares|feedbacks|homeworks|trainings|moneys)\b'
+    explanation: >-
+      These nouns are uncountable in English and take no "-s": information,
+      advice, furniture, equipment. For one item, say "a piece of advice".
+    cefr: B1
+    tags: [nouns, countability]
+
+  - id: grammar.did-base-form
+    category: grammar
+    pt: "Eu não fui / Você foi?"
+    wrong:
+      - "I didn't went to the party"
+      - "did you went there"
+    right:
+      - "I didn't go to the party"
+      - "did you go there"
+    patterns:
+      - '\b(did|didn''t|did not)( (i|you|he|she|it|we|they|the \w+|my \w+))?( not)? (went|came|saw|were|had|made|took|got|said|ate|knew|told|gave|found|left|felt|thought|bought|brought|wrote|spoke)\b'
+    explanation: >-
+      After "did" and "didn't", the verb goes back to its base form: "I didn't
+      go", "did you see". The past is already in "did".
+    cefr: A2
+    tags: [tense, auxiliaries]
+
+  - id: grammar.there-has
+    category: grammar
+    pt: "Tem muita gente aqui"
+    wrong:
+      - "has many people here"
+      - "there has a problem"
+      - "in Brazil has a lot of beaches"
+    right:
+      - "there are many people here"
+      - "there is a problem"
+      - "in Brazil there are a lot of beaches"
+      - "there have been many problems"
+    patterns:
+      - '\bthere (has|have)\b(?! been)'
+      - '(?:^|[.!?]\s+)has (a|an|many|a lot|lots|some|much)\b'
+      - '\b(here|in \w+) has (a|an|many|a lot|lots|some|much)\b'
+    explanation: >-
+      Existence is "there is" and "there are". Portuguese "tem" in this sense
+      is not "has": "there are many people here".
+    cefr: A2
+    tags: [syntax, existence]
+
+  - id: grammar.since-present
+    category: grammar
+    pt: "Moro aqui desde 2010"
+    wrong:
+      - "I live here since 2010"
+      - "I work in this company since March"
+      - "she studies English since last year"
+    right:
+      - "I have lived here since 2010"
+      - "I have worked in this company since March"
+      - "she has studied English since last year"
+    patterns:
+      - '\b(i|you|we|they) (live|work|study|know|play|teach|date) [^.!?]{0,40}since\b'
+      - '\b(he|she|it) (lives|works|studies|knows|plays|teaches|dates) [^.!?]{0,40}since\b'
+    explanation: >-
+      For something that started in the past and still continues, English uses
+      the present perfect: "I have lived here since 2010". The simple present
+      with "since" sounds unfinished.
+    cefr: B1
+    tags: [tense, present-perfect]
+
+  - id: grammar.want-that
+    category: grammar
+    pt: "Quero que você venha"
+    wrong:
+      - "I want that you come with me"
+      - "she wants that I call her"
+    right:
+      - "I want you to come with me"
+      - "she wants me to call her"
+    patterns:
+      - '\b(want|wants|wanted|need|needs|needed|prefer|prefers|would like) that (i|you|he|she|we|they|the \w+|my \w+)\b'
+    explanation: >-
+      English uses object plus infinitive, not "that": "I want you to come".
+      Portuguese needs the subjunctive here; English does not have it.
+    cefr: B1
+    tags: [syntax, subjunctive]
+
+  - id: grammar.how-is-called
+    category: grammar
+    pt: "Como se chama isso?"
+    wrong:
+      - "how is called this"
+      - "how do you call this in English"
+    right:
+      - "what is this called"
+      - "what do you call this in English"
+    patterns:
+      - '\bhow is (it |this |that )?called\b'
+      - '\bhow (do|does|did) (you|i|we|they) call\b'
+    explanation: >-
+      Ask with "what", not "how": "What is this called?" or "What do you call
+      this?" "How" asks about the manner, not the name.
+    cefr: B1
+    tags: [questions, syntax]
+
+  - id: grammar.double-negative
+    category: grammar
+    pt: "Não vi ninguém"
+    wrong:
+      - "I didn't see nobody"
+      - "I don't know nothing about it"
+      - "she didn't say nothing"
+    right:
+      - "I didn't see anybody"
+      - "I don't know anything about it"
+      - "she didn't say anything"
+    patterns:
+      - '\b(didn''t|don''t|doesn''t|did not|do not|does not|can''t|cannot|won''t|haven''t|hasn''t) \w+ (nobody|nothing|nowhere|none|no one)\b'
+      - '\b(didn''t|don''t|doesn''t) (see|know|say|tell|have|want|need|find) (nobody|nothing|nowhere)\b'
+    explanation: >-
+      One negative per clause: "I didn't see anybody". Portuguese doubles the
+      negative, English replaces it with "any-" words.
+    cefr: B1
+    tags: [negation, syntax]

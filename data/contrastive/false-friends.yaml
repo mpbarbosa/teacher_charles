@@ -1,0 +1,327 @@
+# Falsos cognatos: a palavra existe em inglês, mas não quer dizer o que o
+# português sugere. O aluno não percebe que errou — a frase sai gramatical.
+#
+# Convenções (schema em data/schema/contrastive-item.schema.json):
+#   patterns  regex sobre o texto do aluno, com IGNORECASE. Quando presente, é
+#             a única coisa que casa; os exemplos de `wrong` existem para
+#             testá-lo (tests/test_contrastive.py roda um teste por item).
+#   ambiguous true quando o padrão também casa com inglês correto. O item vira
+#             candidato e a análise (E4) decide; sem isso o professor
+#             "corrigiria" frase certa.
+#   explanation  vai para o aluno, em inglês (decisão 1.1 do plano).
+
+items:
+  - id: false-friend.pretend-pretender
+    category: false-friend
+    pt: "Eu pretendo viajar no ano que vem"
+    wrong:
+      - "I pretend to travel next year"
+      - "she pretends to buy a house"
+    right:
+      - "I intend to travel next year"
+      - "I plan to travel next year"
+    patterns:
+      - '\b(i|you|we|they) pretend to\b'
+      - '\b(he|she|it) pretends to\b'
+    explanation: >-
+      "Pretend" means to act as if something were true, not to have a plan.
+      Portuguese "pretender" is English "intend" or "plan".
+    cefr: B1
+    ambiguous: true
+    notes: "I pretend to be a doctor é inglês correto; só a análise distingue."
+    tags: [verbs, intention]
+
+  - id: false-friend.actually-atualmente
+    category: false-friend
+    pt: "Atualmente eu moro em São Paulo"
+    wrong:
+      - "actually I live in Sao Paulo"
+      - "actually I work from home"
+    right:
+      - "currently I live in Sao Paulo"
+      - "I now live in Sao Paulo"
+    patterns:
+      - '\bactually i (live|work|study|teach|am)\b'
+    explanation: >-
+      "Actually" corrects a wrong idea ("Actually, I am not a doctor"). For
+      Portuguese "atualmente", say "currently" or "right now".
+    cefr: B1
+    ambiguous: true
+    tags: [adverbs, time]
+
+  - id: false-friend.actual-atual
+    category: false-friend
+    pt: "A situação atual da empresa"
+    wrong:
+      - "the actual situation is difficult"
+      - "in the actual moment we cannot hire"
+      - "my actual job is better"
+    right:
+      - "the current situation is difficult"
+      - "at the moment we cannot hire"
+      - "my current job is better"
+    patterns:
+      - '\bactual (situation|moment|job|company|government|price|version|state|year|month)\b'
+      - '\bin the actual\b'
+    explanation: >-
+      "Actual" means real, as opposed to imagined. Portuguese "atual" is
+      "current": the current situation, my current job.
+    cefr: B1
+    ambiguous: true
+    tags: [adjectives, time]
+
+  - id: false-friend.realize-realizar
+    category: false-friend
+    pt: "Realizamos uma reunião ontem"
+    wrong:
+      - "we realized a meeting yesterday"
+      - "they will realize an event in May"
+    right:
+      - "we held a meeting yesterday"
+      - "they will hold an event in May"
+    patterns:
+      - '\brealiz(e|es|ed|ing) (a|an) (meeting|event|party|interview|survey|workshop|presentation)\b'
+    explanation: >-
+      "Realize" means to become aware of something. For Portuguese "realizar"
+      with an event, use "hold"; with a project or a task, "carry out".
+    cefr: B1
+    tags: [verbs, work]
+
+  - id: false-friend.eventually-eventualmente
+    category: false-friend
+    pt: "Eventualmente eu vou à academia"
+    wrong:
+      - "I eventually go to the gym"
+      - "eventually I work on Saturdays"
+    right:
+      - "I occasionally go to the gym"
+      - "once in a while I work on Saturdays"
+    patterns:
+      - '\bi eventually (go|work|study|travel|visit|play|watch|cook|run)\b'
+      - '\beventually i (go|work|study|travel|visit|play|watch|cook|run)\b'
+    explanation: >-
+      "Eventually" means in the end, after some time. Portuguese
+      "eventualmente" is "occasionally" or "from time to time".
+    cefr: B2
+    ambiguous: true
+    tags: [adverbs, frequency]
+
+  - id: false-friend.assist-assistir
+    category: false-friend
+    pt: "Assisti o filme ontem"
+    wrong:
+      - "I assisted the movie yesterday"
+      - "we assist TV every night"
+      - "did you assist the game"
+    right:
+      - "I watched the movie yesterday"
+      - "we watch TV every night"
+      - "did you watch the game"
+    patterns:
+      - '\bassist(s|ed|ing)? (a |an |the )?(movie|film|tv|television|game|match|series|video|show)\b'
+    explanation: >-
+      "Assist" means to help. Portuguese "assistir" is "watch": watch a movie,
+      watch TV, watch the game.
+    cefr: A2
+    tags: [verbs, media]
+
+  - id: false-friend.attend-atender
+    category: false-friend
+    pt: "Preciso atender o telefone"
+    wrong:
+      - "I need to attend the phone"
+      - "she attended the call"
+    right:
+      - "I need to answer the phone"
+      - "she answered the call"
+    patterns:
+      - '\battend(s|ed|ing)? (the |a |my |your )?(phone|telephone|call|client|customer)\b'
+    explanation: >-
+      "Attend" means to be present at something: attend a meeting, attend a
+      class. For Portuguese "atender", use "answer" (the phone) or "serve" and
+      "help" (a customer).
+    cefr: B1
+    tags: [verbs, work]
+
+  - id: false-friend.comprehensive-compreensivo
+    category: false-friend
+    pt: "Meu chefe é muito compreensivo"
+    wrong:
+      - "he is very comprehensive with me"
+      - "I was comprehensive about her problem"
+      - "my boss is very comprehensive"
+    right:
+      - "he is very understanding with me"
+      - "I was understanding about her problem"
+      - "the report is very comprehensive"
+    patterns:
+      # Sujeito tem que ser pessoa: "the report is very comprehensive" é
+      # inglês correto e não pode cair aqui.
+      - '\b(he|she|they|i|you|we) (is|was|are|were|am) (very |really |so |quite )?comprehensive\b'
+      - '\b(my|our|his|her|their|your) (boss|teacher|professor|manager|mother|father|wife|husband|friend|doctor|colleague|family|parents) (is|was|are|were) (very |really |so |quite )?comprehensive\b'
+    explanation: >-
+      "Comprehensive" describes something complete and detailed, like a report.
+      A person who understands your situation is "understanding".
+    cefr: B2
+    tags: [adjectives, people]
+
+  - id: false-friend.parents-parentes
+    category: false-friend
+    pt: "Tenho muitos parentes na Bahia"
+    wrong:
+      - "I have many parents in Bahia"
+      - "he has a lot of parents in Minas"
+    right:
+      - "I have many relatives in Bahia"
+      - "he has a lot of relatives in Minas"
+    patterns:
+      - '\b(have|has|had) (many|a lot of|lots of|several|some|few|two|three) parents\b'
+    explanation: >-
+      "Parents" means only your mother and father. Portuguese "parentes" is
+      "relatives" or "family".
+    cefr: A2
+    tags: [nouns, family]
+
+  - id: false-friend.costume-costume
+    category: false-friend
+    pt: "É um costume no Brasil"
+    wrong:
+      - "it is a costume in Brazil"
+      - "we have the costume of eating rice and beans"
+    right:
+      - "it is a custom in Brazil"
+      - "we have the habit of eating rice and beans"
+    patterns:
+      - '\b(a|the|our|this) costume (in|of|to|here)\b'
+    explanation: >-
+      A "costume" is the clothing you wear to a party or on stage. Portuguese
+      "costume" is "custom" (a shared practice) or "habit" (something you do).
+    cefr: B1
+    tags: [nouns, culture]
+
+  - id: false-friend.fabric-fabrica
+    category: false-friend
+    pt: "Ele trabalha numa fábrica"
+    wrong:
+      - "he works in a fabric"
+      - "I visited the fabric last week"
+    right:
+      - "he works in a factory"
+      - "I visited the factory last week"
+    patterns:
+      - '\bwork(s|ed|ing)? (in|at) (a|the) fabric\b'
+      - '\b(visit|visited|visiting|saw|see) (a|the) fabric\b'
+    explanation: >-
+      "Fabric" is the material clothes are made of. Portuguese "fábrica" is
+      "factory" or "plant".
+    cefr: A2
+    tags: [nouns, work]
+
+  - id: false-friend.novel-novela
+    category: false-friend
+    pt: "Minha mãe assiste novela"
+    wrong:
+      - "my mother watches novels on TV"
+      - "the novel of eight o'clock is popular"
+    right:
+      - "my mother watches soap operas on TV"
+      - "the eight o'clock soap opera is popular"
+    patterns:
+      - '\bwatch(es|ed|ing)? (a |the )?novels?\b'
+      - '\bnovels? on (tv|television)\b'
+      - '\bnovel of (six|seven|eight|nine)\b'
+    explanation: >-
+      A "novel" is a book. The daily TV drama is a "soap opera".
+    cefr: A2
+    tags: [nouns, media]
+
+  - id: false-friend.deceive-decepcionar
+    category: false-friend
+    pt: "O filme me decepcionou"
+    wrong:
+      - "the movie deceived me"
+      - "I was deceived with the result"
+    right:
+      - "the movie disappointed me"
+      - "I was disappointed with the result"
+    patterns:
+      - '\b(the |this |that )?(movie|film|book|game|result|service|food|trip|restaurant|hotel|show) (really )?deceived me\b'
+      - '\b(was|were|am|is|are) deceived with\b'
+    explanation: >-
+      "Deceive" means to lie to someone on purpose. Portuguese "decepcionar"
+      is "disappoint": the movie disappointed me.
+    cefr: B2
+    tags: [verbs, feelings]
+
+  - id: false-friend.anticipate-antecipar
+    category: false-friend
+    pt: "Antecipamos a reunião para segunda"
+    wrong:
+      - "we anticipated the meeting to Monday"
+      - "can we anticipate the appointment"
+    right:
+      - "we moved the meeting up to Monday"
+      - "can we bring the appointment forward"
+    patterns:
+      - '\banticipat(e|es|ed|ing) (the|our|my|a|an|this) (meeting|appointment|call|trip|flight|payment|deadline|date)\b'
+    explanation: >-
+      "Anticipate" means to expect something. To make an event happen earlier,
+      say "move it up" or "bring it forward".
+    cefr: B2
+    ambiguous: true
+    tags: [verbs, work]
+
+  - id: false-friend.pasta-pasta
+    category: false-friend
+    pt: "Me manda a pasta com os documentos"
+    wrong:
+      - "send me the pasta with the documents"
+      - "the files are in that pasta"
+    right:
+      - "send me the folder with the documents"
+      - "the files are in that folder"
+    patterns:
+      - '\bpasta (with|of) the (documents|files|papers|reports|contracts)\b'
+      - '\b(in|on) (that|this|the|my|your) pasta\b'
+    explanation: >-
+      "Pasta" is food. Portuguese "pasta" is a "folder", on your computer or
+      on your desk.
+    cefr: A2
+    tags: [nouns, office]
+
+  - id: false-friend.support-suportar
+    category: false-friend
+    pt: "Não suporto esse barulho"
+    wrong:
+      - "I can't support this noise"
+      - "she cannot support him anymore"
+    right:
+      - "I can't stand this noise"
+      - "she cannot stand him anymore"
+    patterns:
+      - '\b(can''t|cannot|can not|couldn''t|could not) support\b'
+    explanation: >-
+      "Support" means to help or to hold something up. Portuguese "suportar"
+      in the sense of tolerating is "stand" or "put up with".
+    cefr: B1
+    ambiguous: true
+    notes: "I can't support this claim é correto: a análise confirma."
+    tags: [verbs, feelings]
+
+  - id: false-friend.resume-resumir
+    category: false-friend
+    pt: "Deixa eu resumir a história"
+    wrong:
+      - "let me resume the story"
+      - "can you resume the article for me"
+    right:
+      - "let me summarize the story"
+      - "can you summarize the article for me"
+    patterns:
+      - '\bresume (the|this|that|my|your) (story|article|text|book|idea|situation|report)\b'
+    explanation: >-
+      "Resume" means to start again after a pause. Portuguese "resumir" is
+      "summarize" or "sum up".
+    cefr: B2
+    ambiguous: true
+    tags: [verbs, speaking]

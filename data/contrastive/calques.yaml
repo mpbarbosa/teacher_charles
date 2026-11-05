@@ -1,0 +1,321 @@
+# Decalques: a estrutura do português traduzida palavra por palavra. A frase
+# sai compreensível e errada — e é o erro que mais sobrevive à fluência.
+#
+# Convenções em data/contrastive/false-friends.yaml.
+
+items:
+  - id: calque.age-have
+    category: calque
+    pt: "Eu tenho 30 anos"
+    wrong:
+      - "I have 30 years"
+      - "I have 30 years old"
+      - "she has 25 years"
+      - "my son has 7 years"
+    right:
+      - "I am 30 years old"
+      - "I'm 30"
+      - "she is 25"
+      - "my son is 7 years old"
+    patterns:
+      - '\b(i|you|we|they) have \d+ years?\b'
+      - '\b(he|she|it|my \w+|his \w+|her \w+|your \w+) has \d+ years?\b'
+    explanation: >-
+      In English, age is something you are, not something you have: "I am 30
+      years old", or just "I'm 30".
+    cefr: A2
+    tags: [age, have-be]
+
+  - id: calque.how-many-years
+    category: calque
+    pt: "Quantos anos você tem?"
+    wrong:
+      - "how many years do you have"
+      - "how many years does he have"
+    right:
+      - "how old are you"
+      - "how old is he"
+    patterns:
+      - '\bhow many years (do|does|did) \w+ have\b'
+    explanation: >-
+      Ask about age with "how old": "How old are you?" The question with
+      "years" sounds like you are asking about experience.
+    cefr: A2
+    tags: [age, questions]
+
+  - id: calque.make-question
+    category: calque
+    pt: "Posso fazer uma pergunta?"
+    wrong:
+      - "can I make a question"
+      - "he made a question about the test"
+      - "I want to do a question"
+    right:
+      - "can I ask a question"
+      - "he asked a question about the test"
+      - "I want to ask a question"
+    patterns:
+      - '\b(make|makes|made|making|do|does|did|doing) (a|an|one|some|two|another) (quick |short |small )?questions?\b'
+    explanation: >-
+      Questions are asked, not made: "ask a question". "Make a question" sounds
+      like you are writing one for an exam.
+    cefr: A2
+    tags: [collocation, speaking]
+
+  - id: calque.give-a-look
+    category: calque
+    pt: "Dá uma olhada nisso"
+    wrong:
+      - "give a look at this"
+      - "can you give a look"
+    right:
+      - "take a look at this"
+      - "can you have a look"
+    patterns:
+      - '\b(give|gives|gave|giving) (a|an) (quick |fast |second )?look\b'
+    explanation: >-
+      The collocation is "take a look" or "have a look". "Give a look" means
+      something else: a look you direct at someone.
+    cefr: B1
+    tags: [collocation]
+
+  - id: calque.have-hunger
+    category: calque
+    pt: "Estou com fome"
+    wrong:
+      - "I have hunger"
+      - "I am with hunger"
+      - "he has thirst"
+    right:
+      - "I am hungry"
+      - "I'm starving"
+      - "he is thirsty"
+    patterns:
+      - '\b(have|has|had) (hunger|thirst)\b'
+      - '\b(am|is|are|was|were) with (hunger|thirst)\b'
+    explanation: >-
+      English uses an adjective for these states: "I'm hungry", "I'm thirsty".
+      Portuguese "estar com" does not translate as "have" or "be with".
+    cefr: A2
+    tags: [states, have-be]
+
+  - id: calque.have-cold
+    category: calque
+    pt: "Estou com frio"
+    wrong:
+      - "I have cold"
+      - "I am with cold"
+      - "she has heat"
+    right:
+      - "I am cold"
+      - "I'm freezing"
+      - "she is hot"
+      - "I have a cold"
+    patterns:
+      - '\b(i|you|we|they) have (cold|heat)\b'
+      - '\b(he|she|it) has (cold|heat)\b'
+      - '\b(am|is|are|was|were) with (cold|heat)\b'
+    explanation: >-
+      Temperature is an adjective: "I'm cold", "she's hot". Note that "I have a
+      cold", with the article, is correct and means you are sick.
+    cefr: A2
+    tags: [states, have-be]
+
+  - id: calque.have-sleep
+    category: calque
+    pt: "Estou com sono"
+    wrong:
+      - "I have sleep"
+      - "I am with sleep"
+    right:
+      - "I am sleepy"
+      - "I'm tired"
+      - "I have sleep problems"
+    patterns:
+      - '\b(have|has|had) sleep\b(?! (problems|issues|apnea|disorder|paralysis|schedule))'
+      - '\b(am|is|are|was|were) with sleep\b'
+    explanation: >-
+      Say "I'm sleepy" or "I'm tired". "Sleep" as a noun works in other
+      phrases, like "I need some sleep".
+    cefr: A2
+    tags: [states, have-be]
+
+  - id: calque.have-reason
+    category: calque
+    pt: "Você tem razão"
+    wrong:
+      - "you have reason"
+      - "he has reason about that"
+    right:
+      - "you are right"
+      - "he is right about that"
+      - "I have reason to believe you"
+    patterns:
+      - '\b(have|has|had) reason\b(?! to)'
+    explanation: >-
+      Being correct is "to be right": "you're right". "Have reason to" means
+      something different: "I have reason to believe you".
+    cefr: B1
+    tags: [states, have-be]
+
+  - id: calque.have-certainty
+    category: calque
+    pt: "Tenho certeza"
+    wrong:
+      - "I have certainty"
+      - "I have the certainty that he will come"
+    right:
+      - "I am sure"
+      - "I'm certain that he will come"
+    patterns:
+      - '\b(have|has|had) (the )?certainty\b'
+    explanation: >-
+      Say "I'm sure" or "I'm certain". "Certainty" is a formal noun and almost
+      never used this way.
+    cefr: B1
+    tags: [states, have-be]
+
+  - id: calque.explain-me
+    category: calque
+    pt: "Me explica isso"
+    wrong:
+      - "explain me this"
+      - "can you explain me the difference"
+      - "she explained me the rule"
+    right:
+      - "explain this to me"
+      - "can you explain the difference to me"
+      - "she explained the rule to me"
+    patterns:
+      - '\bexplain(s|ed|ing)? (me|us|him|her|them)\b'
+    explanation: >-
+      "Explain" needs "to" before the person: "explain it to me". Compare with
+      "tell me", which takes the person directly.
+    cefr: B1
+    tags: [verbs, word-order]
+
+  - id: calque.depend-of
+    category: calque
+    pt: "Depende de você"
+    wrong:
+      - "it depends of the weather"
+      - "that depends of you"
+    right:
+      - "it depends on the weather"
+      - "that depends on you"
+    patterns:
+      - '\bdepend(s|ed|ing)? of\b'
+    explanation: >-
+      The preposition is "on": "it depends on the weather".
+    cefr: A2
+    tags: [prepositions]
+
+  - id: calque.married-with
+    category: calque
+    pt: "Ela é casada com um professor"
+    wrong:
+      - "she is married with a teacher"
+      - "they got married with each other"
+    right:
+      - "she is married to a teacher"
+      - "they got married to each other"
+    patterns:
+      - '\bmarried with\b'
+    explanation: >-
+      You are married "to" someone. "Married with" is followed by children:
+      "married with two kids".
+    cefr: B1
+    tags: [prepositions, family]
+
+  - id: calque.enter-in
+    category: calque
+    pt: "Ele entrou na sala"
+    wrong:
+      - "he entered in the room"
+      - "I will enter in the university next year"
+    right:
+      - "he entered the room"
+      - "he came into the room"
+      - "I will start university next year"
+    patterns:
+      - '\benter(s|ed|ing)? in(to)? the (room|house|building|office|classroom|university|school|car|bus)\b'
+    explanation: >-
+      "Enter" takes no preposition: "enter the room". With a preposition, use a
+      different verb: "come into the room", "go into the room".
+    cefr: B1
+    tags: [prepositions, verbs]
+
+  - id: calque.lose-the-bus
+    category: calque
+    pt: "Perdi o ônibus"
+    wrong:
+      - "I lost the bus"
+      - "we lost the flight"
+      - "he lost the train"
+    right:
+      - "I missed the bus"
+      - "we missed the flight"
+      - "he missed the train"
+    patterns:
+      - '\blos(e|es|t|ing) (the|my|our|his|her|that) (bus|flight|train|plane|subway|appointment|class)\b'
+    explanation: >-
+      When you arrive too late, you "miss" it: "I missed the bus". "Lose"
+      means you no longer have something.
+    cefr: A2
+    tags: [verbs, travel]
+
+  - id: calque.know-meet
+    category: calque
+    pt: "Conheci ele no ano passado"
+    wrong:
+      - "I knew him last year"
+      - "I knew her at a party"
+    right:
+      - "I met him last year"
+      - "I met her at a party"
+    patterns:
+      - '\bknew (him|her|them|you|my \w+|his \w+|her \w+) (last|at|in|on|during|when)\b'
+    explanation: >-
+      The first time is "meet": "I met him last year". "Knew" describes a state
+      that lasted, not the moment you were introduced.
+    cefr: B1
+    ambiguous: true
+    notes: "I knew him back then é correto; a análise decide pelo contexto."
+    tags: [verbs, past]
+
+  - id: calque.make-a-course
+    category: calque
+    pt: "Fiz um curso de inglês"
+    wrong:
+      - "I made a course of English"
+      - "she will make a course next year"
+    right:
+      - "I took an English course"
+      - "I did an English course"
+      - "she will take a course next year"
+    patterns:
+      - '\b(make|makes|made|making) (a|an|one|another) course\b'
+      - '\bcourse of (english|spanish|french|portuguese|programming|design|history)\b'
+    explanation: >-
+      You "take" a course, and the subject comes before the noun: "an English
+      course", not "a course of English".
+    cefr: B1
+    tags: [collocation, study]
+
+  - id: calque.make-birthday
+    category: calque
+    pt: "Fiz 30 anos ontem"
+    wrong:
+      - "I made 30 years yesterday"
+      - "I make birthday in May"
+    right:
+      - "I turned 30 yesterday"
+      - "my birthday is in May"
+    patterns:
+      - '\b(make|makes|made|making) \d+ years?\b'
+      - '\b(make|makes|made|making) (my |his |her |your )?birthday\b'
+    explanation: >-
+      For reaching an age, English uses "turn": "I turned 30". For the date,
+      "my birthday is in May".
+    cefr: A2
+    tags: [age, collocation]

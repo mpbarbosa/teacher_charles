@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teacher-charles.local/schema/contrastive-item.schema.json",
+  "additionalProperties": false,
+  "description": "Um item curado da base.\n\n``extra=\"forbid\"`` é deliberado: um campo com nome errado num YAML curado à\nmão é erro de curadoria, e falhar na carga é melhor que ignorar em silêncio\num padrão que o curador achava que estava valendo.",
+  "properties": {
+    "id": {
+      "pattern": "^(?:false-friend|calque|grammar|pronunciation)\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "false-friend",
+        "calque",
+        "grammar",
+        "pronunciation"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "pt": {
+      "minLength": 1,
+      "title": "Pt",
+      "type": "string"
+    },
+    "wrong": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Wrong",
+      "type": "array"
+    },
+    "right": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Right",
+      "type": "array"
+    },
+    "patterns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Patterns",
+      "type": "array"
+    },
+    "explanation": {
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "cefr": {
+      "default": "B1",
+      "enum": [
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2"
+      ],
+      "title": "Cefr",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "ambiguous": {
+      "default": false,
+      "title": "Ambiguous",
+      "type": "boolean"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "id",
+    "category",
+    "pt",
+    "wrong",
+    "right",
+    "explanation"
+  ],
+  "title": "ContrastiveItem",
+  "type": "object"
+}

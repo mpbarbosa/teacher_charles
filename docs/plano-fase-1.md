@@ -314,11 +314,51 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 | **E0** ✅ | **Fundação** — pyproject/uv, pacote, SQLite + migração, `check_env.py`, FastAPI com `/health` | `uv run teacher-charles` sobe em `localhost:8000` e `/health` reporta se o modelo está acessível |
 | **E1** ✅ | **Provider do LLM** — Protocol `ChatProvider`, Ollama com streaming, `openai_compat` atrás de flag, erros e timeout tratados, `fake` para testes | **Feito.** 4 testes de integração fazem turnos reais contra o Ollama local (47 pedaços de streaming, 1º em 1,0s); 58 unitários rodam sem modelo nenhum |
 | **E2** ✅ | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Feito.** Conversa em inglês de ponta a ponta no navegador, verificada com o modelo real. Latência medida na §1.4 |
-| **E3** | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | `match("I have 30 years")` devolve `calque.age-have`; o loader rejeita item fora do schema |
+| **E3** ✅ | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | **Feito.** 43 itens (17 falsos cognatos, 17 decalques, 9 de interferência estrutural) e 205 testes, dos quais 172 são quatro por item; 0 falso positivo em 16 frases corretas, 9 de 10 frases com erro típico pegas. Ver §5.1 |
 | **E4** | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | Suíte de ~25 frases com erro conhecido passa; a precisão medida fica registrada neste doc |
 | **E5** | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | Trocar o nível do aluno muda visivelmente a resposta, verificado em teste de snapshot |
 | **E6** | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | Os três modos funcionam na UI e o drill usa erros de fato cometidos, não genéricos |
 | **E7** | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | Um aluno consegue ver no que erra mais; um dev clona e roda seguindo só o README |
+
+### 5.1 O que a E3 estabeleceu
+
+**O padrão é escrito à mão; os exemplos errados são o teste dele.** Quando um item
+traz `patterns`, só eles casam — os literais de `wrong` não entram. É o que impede o
+teste por item de ser vacuoso: se o padrão de `calque.age-have` não generalizar de
+*30* para *25*, a suíte quebra. Os 43 itens têm padrão escrito à mão, exercitado por
+102 exemplos errados e 108 corretos. Derivar o padrão dos literais de `wrong` continua
+possível, e é o atalho para quem for curar item de forma fixa.
+
+**Um casamento é suspeita, não veredito.** Oito itens casam também com inglês
+correto (*I pretend to be a doctor* está certo; *I pretend to travel* é decalque de
+*pretendo*). Eles vêm marcados `ambiguous: true`: a base os oferece como candidatos
+e quem decide é a análise da E4. O que o matcher garante é que o candidato certo
+*está* na lista — e um teste limita os ambíguos a no máximo um terço da base, porque
+uma base em que a maioria depende do modelo não é anteparo nenhum.
+
+**Medição, não estimativa.** Contra 16 frases corretas que um aluno B1 produz:
+nenhum falso positivo. Contra 10 frases com erro típico: 9 pegas. A que escapou era
+`has many beaches in Bahia` depois de vírgula — e escapar ali está certo, porque
+*Brazil is big and has many beaches* é inglês correto com o mesmo recorte. Essa é a
+fronteira do casamento determinístico, e é onde a E4 entra.
+
+**Dois achados que só a medição daria.** O padrão de *comprehensive* exigia pronome
+e perdia justamente a forma mais comum do erro (*my boss is very comprehensive*);
+foi corrigido com lista de substantivos de pessoa, para não morder *the report is
+very comprehensive*. E `I have a cold` (correto, "estou resfriado") passou a ser
+exemplo de `right` em `calque.have-cold`, virando guarda contra o padrão crescer
+demais.
+
+**`pronunciation.yaml` não entrou.** A estrutura em §3 o prevê, mas não há o que
+casar em texto: *th* e vogal epentética são erros de fala. O arquivo entra na Fase
+1.5, junto com o áudio. A categoria já existe no schema.
+
+**O schema é gerado, não mantido à mão.** O modelo pydantic é a fonte única;
+`data/schema/contrastive-item.schema.json` sai de
+`scripts/dump_contrastive_schema.py` e um teste falha se os dois divergirem.
+
+**O `/health` conta os itens.** Base que não carrega é 503, não primeiro turno
+quebrado na cara do aluno.
 
 ### Rodar em dev
 

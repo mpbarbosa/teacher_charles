@@ -7,9 +7,10 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entregas E0–E2.** Dá para conversar em inglês de ponta a
-> ponta no navegador. A correção estruturada com regra citada (E3/E4), os modos
-> e o error log ainda não existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md)
+> **Estado: Fase 1, entregas E0–E3.** Dá para conversar em inglês de ponta a
+> ponta no navegador, e a base contrastiva com 43 regras curadas já está de pé e
+> testada. Ligar essas regras à correção que chega ao aluno é a E4; os modos e o
+> error log ainda não existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md)
 > para o escopo e a ordem das entregas.
 
 ## Decisões que moldam o projeto
@@ -107,13 +108,51 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
 
-Os testes não precisam de modelo nenhum: o `health` é exercitado com transporte HTTP
-falso. Os testes de integração contra o Ollama de verdade chegam na E1.
+A suíte não precisa de modelo nenhum: o `health` é exercitado com transporte HTTP
+falso e o chat com um provider `fake`. Os testes marcados `integration` batem num
+Ollama de verdade e se pulam sozinhos quando não há um:
+
+```bash
+uv run pytest -m integration
+```
+
+## A base contrastiva
+
+`data/contrastive/*.yaml` é o diferencial do produto: as regras curadas que impedem
+o modelo de inventar gramática. São 43 itens em três arquivos — falsos cognatos
+(*pretend* / *pretender*), decalques (*I have 30 years*) e interferência estrutural
+(*people is*).
+
+Para acrescentar um item, copie um vizinho no YAML e preencha:
+
+| Campo | O que é |
+|---|---|
+| `id` | `categoria.nome-curto`, e a categoria tem que bater com o campo `category` |
+| `pt` | o português que causa o erro — sem isso não é uma base contrastiva |
+| `wrong` / `right` | exemplos reais; os testes usam os dois lados |
+| `patterns` | regex sobre a fala do aluno. Sem eles, os literais de `wrong` viram o padrão |
+| `explanation` | vai para o aluno, **em inglês** |
+| `ambiguous` | `true` quando o padrão também casa com inglês correto |
+
+Então rode a suíte. Todo exemplo de `wrong` tem que casar com o próprio item, e
+nenhum `right` pode casar — é assim que um padrão largo demais é pego na hora de
+escrever, e não na frente do aluno:
+
+```bash
+uv run pytest tests/test_contrastive.py
+```
+
+O schema em `data/schema/` é **gerado** do modelo pydantic, nunca editado à mão:
+
+```bash
+uv run python scripts/dump_contrastive_schema.py
+```
 
 ## Onde fica cada coisa
 
 ```
 data/        base de erros típicos de brasileiros — VERSIONADA, é conteúdo do produto
+  contrastive/ os itens curados em YAML; schema/ o JSON Schema gerado deles
 prompts/     persona e instruções em .md, versionados, recarregados sem reiniciar
 src/         o código
   llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)

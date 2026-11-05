@@ -10,6 +10,7 @@ from teacher_charles.app import create_app
 from teacher_charles.config import Settings
 from teacher_charles.health import _matches, probe_model
 from teacher_charles.llm import FakeProvider
+from teacher_charles.teaching.contrastive import ContrastiveError
 
 
 def make_settings(tmp_path, **overrides) -> Settings:
@@ -143,7 +144,37 @@ def test_health_endpoint_ok_when_everything_ready(tmp_path, patched_client):
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    body = response.json()
+    assert body["status"] == "ok"
+    # A base contrastiva da E3 é conteúdo do produto: o /health conta os itens.
+    assert body["contrastive"]["ok"] is True
+    assert body["contrastive"]["items"] >= 40
+
+
+def test_health_endpoint_degrades_when_contrastive_base_is_broken(
+    tmp_path, patched_client, monkeypatch
+):
+    """Base contrastiva que não carrega é 503.
+
+    Sem ela o professor volta a improvisar gramática — o problema nº 1 da
+    análise. Descobrir isso no /health é melhor que no primeiro turno do aluno.
+    """
+    patched_client({"models": [{"name": "qwen3:4b"}]})
+
+    def quebrada(_directory):
+        raise ContrastiveError("id repetido: calque.age-have")
+
+    monkeypatch.setattr("teacher_charles.app.load_base", quebrada)
+
+    with TestClient(create_app(make_settings(tmp_path), provider=FakeProvider())) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["model"]["ok"] is True
+    assert body["contrastive"]["ok"] is False
+    assert "calque.age-have" in body["contrastive"]["detail"]
 
 
 def test_index_page_renders(tmp_path, patched_client):
