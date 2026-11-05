@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 import uvicorn
@@ -30,6 +31,14 @@ def build_parser(defaults_host: str, defaults_port: int) -> argparse.ArgumentPar
 def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     args = build_parser(settings.host, settings.port).parse_args(argv)
+
+    # Sem isto o root logger fica em WARNING e as mensagens do app somem —
+    # inclusive o aviso de aquecimento falho, que é justamente o que se quer
+    # ver quando o primeiro turno está lento.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)-8s %(name)s: %(message)s",
+    )
 
     print(f"Teacher Charles {__version__}")
     print(f"  modelo : {settings.llm_model} via {settings.provider}")

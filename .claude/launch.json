@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "teacher-charles",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "teacher-charles", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

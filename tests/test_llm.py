@@ -334,7 +334,7 @@ async def test_openai_ignores_think_option():
 def settings_for(tmp_path, **overrides) -> Settings:
     base = {"db_path": tmp_path / "f.db"}
     base.update(overrides)
-    return Settings(**base)
+    return Settings(_env_file=None, **base)
 
 
 def test_build_provider_defaults_to_ollama(tmp_path):

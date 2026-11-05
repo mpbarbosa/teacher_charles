@@ -41,11 +41,18 @@ class Settings(BaseSettings):
     provider: str = "ollama"
 
     # Default da Fase 1. Nesta classe de hardware o gargalo é banda de
-    # memória: 4B Q4 roda a ~20-25 tok/s, 8B a ~10-13, 14B a ~6 (inviável).
+    # memória, e o Ollama oficial roda em CPU pura (não usa a iGPU Intel).
+    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B, o que põe um 4B em ~7-8 tok/s
+    # e um 8B em ~3,5. Ver docs/plano-fase-1.md §1.3.
     llm_model: str = "qwen3:4b"
 
     ollama_url: str = "http://localhost:11434"
     request_timeout_s: float = 120.0
+
+    # Carregar um modelo do disco custa ~15s nesta máquina, e isso cai todo
+    # no primeiro turno do aluno. Aquecer na subida move essa espera para
+    # enquanto a página ainda está sendo lida.
+    llm_warmup: bool = True
 
     # Modelos de raciocínio (Qwen3, entre outros) pensam antes de responder, e
     # isso custa segundos que uma conversa não tem. None deixa o default do

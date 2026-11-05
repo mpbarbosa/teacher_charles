@@ -100,6 +100,44 @@ máquina e passa a ser opção só para quem tem GPU.
 A decisão 1.1 é o que torna 1.3 sustentável. Se o produto fosse bilíngue, 4B não daria
 conta das explicações em português e o hardware mínimo teria que subir.
 
+### 1.4 Latência medida na E2
+
+Com a conversa funcionando, dá para medir o que o aluno sente, e não só tokens
+por segundo. Medido no navegador e por `curl`, com `qwen2.5:3b-instruct-q4_K_M`:
+
+| Momento | Primeira palavra | Turno completo |
+|---|---|---|
+| Primeiro turno, Ollama frio, **sem** aquecimento | 16–19 s | ~23 s |
+| Primeiro turno, com aquecimento na subida | **7,4 s** | 11,0 s |
+| Turnos seguintes (regime permanente) | **0,7–1,1 s** | 4,3–4,6 s |
+
+Duas descobertas estão por trás disso, e as duas viraram código:
+
+**Carregar o modelo não era o problema principal.** A primeira versão do
+aquecimento mandava um `"hi"` solto, o que carregava o modelo e mesmo assim
+deixava o primeiro turno em 19 s. A causa era o **cache de prefixo**: os 427
+tokens da persona não estavam nele, e o turno pagava a avaliação inteira. Os
+mesmos 427 tokens custam 0,4–0,7 s quando o prefixo está cacheado
+(`prompt_eval_cached_count` = 412). O aquecimento passou a mandar a persona
+exatamente como um turno real manda.
+
+**Daí a persona ter que ser estável.** Interpolar valores que mudam no prompt
+de sistema — o nível do aluno, a data, um contador — jogaria esse cache fora a
+cada turno e devolveria os segundos que o aquecimento economizou. Isto é uma
+restrição de projeto para a E5, que vai querer ajustar o prompt por nível: o
+ajuste vai **depois** da persona, não dentro dela.
+
+O que isto diz para o resto do plano:
+
+- Para **texto**, 0,7 s até a primeira palavra e ~4,3 s de turno é confortável.
+  O streaming faz o trabalho: o aluno lê enquanto o resto chega.
+- Para a **voz da Fase 1.5**, a meta de 1–2 s deixou de ser implausível. 0,7 s
+  até o primeiro token dá margem para TTS por sentença — desde que a Fase 1.5
+  comece medindo, como a §1.3 já dizia.
+- Sobra um incômodo honesto: 7,4 s no primeiro turno mesmo com aquecimento,
+  contra 0,7 s nos seguintes. Não está explicado. Fica para a E7, que é onde a
+  latência é medida a sério.
+
 ---
 
 ## 2. Princípio de arquitetura que organiza tudo
@@ -275,7 +313,7 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 |---|---|---|
 | **E0** ✅ | **Fundação** — pyproject/uv, pacote, SQLite + migração, `check_env.py`, FastAPI com `/health` | `uv run teacher-charles` sobe em `localhost:8000` e `/health` reporta se o modelo está acessível |
 | **E1** ✅ | **Provider do LLM** — Protocol `ChatProvider`, Ollama com streaming, `openai_compat` atrás de flag, erros e timeout tratados, `fake` para testes | **Feito.** 4 testes de integração fazem turnos reais contra o Ollama local (47 pedaços de streaming, 1º em 1,0s); 58 unitários rodam sem modelo nenhum |
-| **E2** | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Dá para conversar em inglês de ponta a ponta no navegador.** Primeiro momento em que isto é um produto |
+| **E2** ✅ | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Feito.** Conversa em inglês de ponta a ponta no navegador, verificada com o modelo real. Latência medida na §1.4 |
 | **E3** | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | `match("I have 30 years")` devolve `calque.age-have`; o loader rejeita item fora do schema |
 | **E4** | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | Suíte de ~25 frases com erro conhecido passa; a precisão medida fica registrada neste doc |
 | **E5** | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | Trocar o nível do aluno muda visivelmente a resposta, verificado em teste de snapshot |

@@ -62,6 +62,24 @@ class SessionRepo:
         )
         return int(cur.lastrowid)
 
+    def current_or_start(self, student_id: int, mode: str = "conversation") -> int:
+        """A sessão aberta do aluno, ou uma nova.
+
+        O aluno não deve precisar "criar uma sessão" para começar a falar;
+        abrir a página basta.
+        """
+        row = self._conn.execute(
+            """
+            SELECT id FROM session
+            WHERE student_id = ? AND ended_at IS NULL
+            ORDER BY id DESC LIMIT 1
+            """,
+            (student_id,),
+        ).fetchone()
+        if row is not None:
+            return int(row["id"])
+        return self.start(student_id, mode)
+
     def end(self, session_id: int) -> None:
         self._conn.execute(
             "UPDATE session SET ended_at = datetime('now') WHERE id = ?",

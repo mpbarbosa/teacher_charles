@@ -16,9 +16,23 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    """Abre uma conexão com os pragmas que queremos em todo lugar."""
+    """Abre uma conexão com os pragmas que queremos em todo lugar.
+
+    ``check_same_thread=False`` porque o app mantém **uma** conexão em
+    ``app.state.db`` e a usa de mais de uma thread: as rotas ``async`` rodam no
+    event loop, mas qualquer rota síncrona que venha a existir roda no
+    threadpool do FastAPI, e o ``TestClient`` também executa o app em outra
+    thread. É seguro aqui porque ``sqlite3.threadsafety == 3`` (modo
+    serializado): o guard do Python é mais estrito que o do SQLite.
+
+    A contrapartida, e ela é real: **nada no caminho de uma requisição pode
+    abrir transação de várias instruções** nesta conexão, porque duas
+    requisições podem se intercalar. Por isso todo método dos repositórios é
+    uma instrução autônoma. As migrações são a exceção, e rodam na subida,
+    antes de o servidor aceitar conexão.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, isolation_level=None)
+    conn = sqlite3.connect(db_path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # ON DELETE CASCADE do esquema só vale com isto ligado, e o SQLite
     # desliga por default em cada conexão nova.

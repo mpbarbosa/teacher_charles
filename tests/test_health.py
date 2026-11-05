@@ -20,7 +20,7 @@ def make_settings(tmp_path, **overrides) -> Settings:
         "db_path": tmp_path / "health.db",
     }
     base.update(overrides)
-    return Settings(**base)
+    return Settings(_env_file=None, **base)
 
 
 @pytest.mark.parametrize(

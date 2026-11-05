@@ -7,9 +7,10 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entrega E0 (fundação).** O backend sobe e reporta se o
-> ambiente está pronto. A interface de conversa chega na E2. Veja
-> [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a ordem das entregas.
+> **Estado: Fase 1, entregas E0–E2.** Dá para conversar em inglês de ponta a
+> ponta no navegador. A correção estruturada com regra citada (E3/E4), os modos
+> e o error log ainda não existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md)
+> para o escopo e a ordem das entregas.
 
 ## Decisões que moldam o projeto
 
@@ -60,8 +61,14 @@ ollama pull qwen3:4b
 uv run teacher-charles --reload
 ```
 
-Abra <http://localhost:8000>. O endpoint <http://localhost:8000/health> diz, em
-JSON, se o banco migrou e se o modelo está ao alcance.
+Abra <http://localhost:8000> e comece a conversar. O endpoint
+<http://localhost:8000/health> diz, em JSON, se o banco migrou e se o modelo
+está ao alcance.
+
+O modelo é aquecido em segundo plano na subida, com a persona, para o primeiro
+turno não pagar a carga do modelo nem a avaliação do prompt. Medido: sem isso o
+primeiro turno leva ~19s até a primeira palavra; com isso, ~7s, e os turnos
+seguintes ~0,7s. Desligue com `TC_LLM_WARMUP=false`.
 
 ### Já tem outro modelo baixado?
 
@@ -107,13 +114,17 @@ falso. Os testes de integração contra o Ollama de verdade chegam na E1.
 
 ```
 data/        base de erros típicos de brasileiros — VERSIONADA, é conteúdo do produto
-prompts/     persona e instruções em .md, versionados, carregados em runtime
+prompts/     persona e instruções em .md, versionados, recarregados sem reiniciar
 src/         o código
+  llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)
+  teaching/    a estrutura pedagógica — é esta pasta que é o produto
   store/       SQLite: esquema em .sql, migrações numeradas
-  health.py    sondagem do modelo
+  web/         página única: template Jinja, JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura
 scripts/     check_env.py (só stdlib, roda antes do uv sync)
 ```
+
+Editar um arquivo de `prompts/` vale no turno seguinte, sem reiniciar o servidor.
 
 Duas coisas **nunca** entram no repo:
 

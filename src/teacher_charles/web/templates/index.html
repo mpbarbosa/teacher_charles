@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Charles</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Teacher Charles</h1>
+    <div class="meta">
+      <span class="model" title="Modelo em uso">{{ model }}</span>
+      <button id="reset" type="button" title="Começar uma conversa nova">New conversation</button>
+    </div>
+  </header>
+
+  <main id="transcript" aria-live="polite" aria-label="Conversation">
+    {% for turn in history %}
+    <article class="turn {{ turn.role }}">
+      <div class="who">{{ "You" if turn.role == "student" else "Charles" }}</div>
+      <div class="what">{{ turn.content }}</div>
+    </article>
+    {% endfor %}
+
+    {% if not history %}
+    <article class="turn teacher empty-state">
+      <div class="who">Charles</div>
+      <div class="what">Hello! I'm Charles. Tell me about your day — in English.</div>
+    </article>
+    {% endif %}
+  </main>
+
+  <form id="composer" autocomplete="off">
+    <textarea id="message" rows="1" placeholder="Write in English…"
+              aria-label="Your message" required maxlength="4000"></textarea>
+    <button type="submit" id="send">Send</button>
+  </form>
+
+  <footer>
+    <span id="status"></span>
+    <span class="version">v{{ version }}</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
