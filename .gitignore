@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Ambiente local
+.env
+
+# Pesos de modelo nunca entram no repo (ficam em ~/.ollama)
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# Dados do aluno nunca entram no repo (ficam em XDG_DATA_HOME)
+*.db
+*.db-wal
+*.db-shm
