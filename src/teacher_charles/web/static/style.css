@@ -7,6 +7,8 @@
   --teacher: #ffffff;
   --accent: #1f6feb;
   --danger: #a40e26;
+  --curated: #1a7f52;
+  --loose: #8a6d1f;
   --radius: 10px;
 }
 
@@ -161,3 +163,36 @@ footer {
 }
 
 #status.error { color: var(--danger); }
+
+/* --- Correcoes ---------------------------------------------------------- */
+/*
+ * Anotam o turno do aluno; nao sao fala do professor. A borda verde marca a
+ * correcao com regra curada por tras -- a que nao foi improvisada pelo modelo.
+ */
+
+.corrections {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.correction {
+  border-left: 3px solid var(--loose);
+  padding: 0.4rem 0 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.correction.curated { border-left-color: var(--curated); }
+
+.correction .fix s { color: var(--muted); text-decoration-thickness: 1px; }
+
+.correction .fix strong { font-weight: 600; }
+
+.correction .why { color: var(--muted); margin-top: 0.15rem; }
+
+.correction .rule {
+  margin-top: 0.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  color: var(--curated);
+}

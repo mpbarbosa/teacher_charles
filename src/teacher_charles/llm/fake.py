@@ -7,7 +7,7 @@ modelo de verdade mede o modelo, não o código.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -25,6 +25,12 @@ class FakeProvider(ChatProvider):
 
     Com ``replies`` de vários itens, cada chamada consome o próximo; a última
     resposta se repete se houver mais chamadas que respostas.
+
+    ``replies_by_system`` responde por conteúdo em vez de por ordem: a chave é
+    um trecho do system prompt. Existe porque o turno duplo da E4 faz duas
+    etapas diferentes — conversa e análise — passarem pelo mesmo provider, e
+    elas rodam em paralelo. Roteirizar por índice, nesse caso, amarraria o teste
+    à ordem em que o event loop escalonou as duas, que não é contrato de nada.
     """
 
     name: ClassVar[str] = "fake"
@@ -35,6 +41,7 @@ class FakeProvider(ChatProvider):
         model: str = "fake-model",
         chunk_size: int = 4,
         error: Exception | None = None,
+        replies_by_system: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(model)
         self.replies: list[str] = [replies] if isinstance(replies, str) else list(replies)
@@ -43,6 +50,7 @@ class FakeProvider(ChatProvider):
         self.chunk_size = chunk_size
         # Para exercitar o tratamento de erro da camada de cima.
         self.error = error
+        self.replies_by_system: dict[str, str] = dict(replies_by_system or {})
         self.calls: list[RecordedCall] = []
         self.closed = False
 
@@ -57,7 +65,19 @@ class FakeProvider(ChatProvider):
         return self.calls[-1]
 
     def system_prompt_of_last_call(self) -> str:
-        return "\n".join(m.content for m in self.last_call.messages if m.role == "system")
+        return self._system_prompt(self.last_call.messages)
+
+    @staticmethod
+    def _system_prompt(messages: Sequence[Message]) -> str:
+        return "\n".join(m.content for m in messages if m.role == "system")
+
+    def calls_matching(self, needle: str) -> list[RecordedCall]:
+        """As chamadas cujo system prompt contém ``needle``.
+
+        Com duas etapas no mesmo provider, "a última chamada" deixou de
+        identificar uma etapa; o system prompt identifica.
+        """
+        return [c for c in self.calls if needle in self._system_prompt(c.messages)]
 
     async def stream(
         self,
@@ -73,11 +93,18 @@ class FakeProvider(ChatProvider):
         if self.error is not None:
             raise self.error
 
-        reply = self.replies[min(index, len(self.replies) - 1)]
+        reply = self._reply_for(index, messages)
         # Fatiado de propósito: quem consome tem que lidar com pedaços, igual
         # ao provider de verdade.
         for start in range(0, len(reply), self.chunk_size):
             yield reply[start : start + self.chunk_size]
+
+    def _reply_for(self, index: int, messages: Sequence[Message]) -> str:
+        system = self._system_prompt(messages)
+        for needle, scripted in self.replies_by_system.items():
+            if needle in system:
+                return scripted
+        return self.replies[min(index, len(self.replies) - 1)]
 
     async def aclose(self) -> None:
         self.closed = True

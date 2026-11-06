@@ -60,6 +60,26 @@ class Settings(BaseSettings):
     # precisa responder em 1-2s.
     llm_think: bool | None = None
 
+    # --- Ensino ----------------------------------------------------------
+    # Só manda ao aluno correção com regra curada por trás.
+    #
+    # Medido num 3B (plano §5.2): sobre 18 frases corretas, a análise inventou
+    # 12 correções, nenhuma citando regra, várias ensinando erro. Nas 24 frases
+    # com erro que acertou, todas citavam a regra esperada. Exigir a regra
+    # eliminou todos os falsos positivos sem custar nenhum acerto.
+    #
+    # Desligue se o modelo for grande o bastante para merecer confiança sem
+    # regra — e meça antes de confiar.
+    require_curated_rule: bool = True
+
+    # A análise espera a resposta terminar, em vez de correr junto com ela.
+    #
+    # Medido (plano §5.2): o Ollama atende um pedido por vez neste modelo, então
+    # disparar as duas juntas só adia a resposta — 11,2s até a primeira palavra
+    # contra 0,7s. Num provider de nuvem, ou num servidor que atenda dois
+    # pedidos ao mesmo tempo, `false` volta a ser melhor.
+    analysis_after_reply: bool = True
+
     # --- Nuvem opcional (recomendação §6 da análise inicial) -------------
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""

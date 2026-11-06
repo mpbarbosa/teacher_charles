@@ -315,7 +315,7 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 | **E1** ✅ | **Provider do LLM** — Protocol `ChatProvider`, Ollama com streaming, `openai_compat` atrás de flag, erros e timeout tratados, `fake` para testes | **Feito.** 4 testes de integração fazem turnos reais contra o Ollama local (47 pedaços de streaming, 1º em 1,0s); 58 unitários rodam sem modelo nenhum |
 | **E2** ✅ | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Feito.** Conversa em inglês de ponta a ponta no navegador, verificada com o modelo real. Latência medida na §1.4 |
 | **E3** ✅ | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | **Feito.** 43 itens (17 falsos cognatos, 17 decalques, 9 de interferência estrutural) e 205 testes, dos quais 172 são quatro por item; 0 falso positivo em 16 frases corretas, 9 de 10 frases com erro típico pegas. Ver §5.1 |
-| **E4** | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | Suíte de ~25 frases com erro conhecido passa; a precisão medida fica registrada neste doc |
+| **E4** ✅ | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | **Feito.** 31 frases com erro conhecido: 87% recebem correção, todas citando a regra esperada. 18 frases corretas: 0 corrigidas por engano. 0 de 49 turnos com JSON inválido. Ver §5.2 |
 | **E5** | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | Trocar o nível do aluno muda visivelmente a resposta, verificado em teste de snapshot |
 | **E6** | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | Os três modos funcionam na UI e o drill usa erros de fato cometidos, não genéricos |
 | **E7** | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | Um aluno consegue ver no que erra mais; um dev clona e roda seguindo só o README |
@@ -360,6 +360,127 @@ casar em texto: *th* e vogal epentética são erros de fala. O arquivo entra na 
 **O `/health` conta os itens.** Base que não carrega é 503, não primeiro turno
 quebrado na cara do aluno.
 
+### 5.2 O que a E4 mediu, e o que a medição mudou no desenho
+
+Modelo: `qwen2.5:3b-instruct-q4_K_M` em CPU pura. Suíte:
+`tests/fixtures/known_errors.yaml` — 31 frases com erro típico de brasileiro e
+18 frases corretas, as mesmas que o teste determinístico usa como portão.
+Reproduzir: `uv run python scripts/measure_analysis.py`.
+
+#### Resultado final
+
+| | |
+|---|---|
+| Frase com erro recebe correção | **87%** (27/31) |
+| Dessas, citando a regra esperada | **100%** (27/27) |
+| Frase correta corrigida por engano | **0%** (0/18) |
+| JSON inválido (precisou de retentativa) | **0%** (0/49) |
+| Análise degradada para "sem correção" | **0%** (0/49) |
+| Análise dispensada por não poder dar em nada | 37% (18/49) |
+| Latência da análise, isolada | mediana 8,4s |
+
+Verificado no navegador com o modelo real, e a diferença entre os dois tipos de
+turno é visível no rodapé: *I have 35 years* → primeira palavra 2,9s, turno
+14,3s, análise 9,4s, com a anotação curada aparecendo sobre a fala do aluno;
+*There have been many changes since the new manager arrived* → primeira palavra
+2,7s, turno **3,9s**, nenhuma análise e nenhuma correção. Inglês correto saiu
+quatro vezes mais barato que inglês com erro, que é como tem que ser.
+
+Três decisões saíram da medição, e nenhuma delas estava no plano original.
+
+#### 1. Correção sem regra curada não chega ao aluno
+
+A primeira medição, com o modelo livre para corrigir o que quisesse, deu
+**12 falsos positivos em 18 frases corretas** — e o detalhe que decidiu tudo:
+**nenhum** deles citava regra curada, enquanto **24 de 24** acertos citavam a
+regra esperada. Pior, vários falsos positivos *ensinavam erro*:
+
+| O aluno escreveu | O 3B "corrigiu" para |
+|---|---|
+| There have been many changes | There **has** been |
+| It depends on my boss | It **depend** on my boss |
+| because I was tired | because I was **sleepy** |
+| a doctor from Recife | a doctor from **Rio de Janeiro** |
+| an English course | a course in English |
+
+Então a política passou a ser: **só vai ao aluno a correção que cita regra da
+base**. Isso eliminou 100% dos falsos positivos sem custar nenhum acerto — não
+é troca, é ganho nos dois lados. O que o modelo propõe sem regra é contado
+(`Analysis.unverified`), porque essa contagem é a lista de curadoria da próxima
+rodada da base.
+
+É configurável (`TC_REQUIRE_CURATED_RULE=false`) porque a premissa é do
+modelo, não do desenho: um modelo maior pode merecer confiança sem regra. Mas
+quem desligar, meça antes — o script existe para isso
+(`--allow-unverified` mostra exatamente o que o modelo diria sozinho).
+
+#### 2. Conversa primeiro; "paralelo" aqui era ficção
+
+O plano §2 pedia as duas etapas no mesmo turno, e a primeira implementação as
+disparava juntas. Medido em 5 turnos de ponta a ponta:
+
+| | primeira palavra | turno completo |
+|---|---|---|
+| Análise em paralelo com a resposta | mediana **15,3s** | 16,4s |
+| Conversa primeiro, análise depois | mediana **6,1s** | 18,1s |
+
+O Ollama atende um pedido por vez neste modelo, então disparar as duas juntas
+não paraleliza nada: só põe a análise na frente da resposta. A ordem default
+passou a ser conversa primeiro — o aluno lê a resposta enquanto a correção é
+calculada, e a anotação aparece sobre o que ele escreveu alguns segundos
+depois. O modo paralelo fica como opção (`TC_ANALYSIS_AFTER_REPLY=false`),
+porque num provider de nuvem ou num servidor que atenda dois pedidos ao mesmo
+tempo ele volta a ser o melhor arranjo.
+
+Fica registrado o efeito colateral que a medição expôs: **a primeira palavra
+degrada turno a turno** (0,1s → 3,8s → 6,1s → 7,9s → 10,8s em 5 turnos). Cada
+chamada de análise joga o prompt da conversa fora do cache de prefixo do
+Ollama, e o turno seguinte paga a persona e o histórico de novo. Isso é dívida
+conhecida, não resolvida: a saída provável é a análise num segundo modelo, com
+cache próprio, e a medição vira item da E7.
+
+#### 3. Frase sem candidato não vira pergunta ao modelo
+
+Consequência direta da política: se a base não levantou candidato e a correção
+precisa de regra, nada que o modelo devolvesse poderia chegar ao aluno. Então
+não se pergunta. São 37% dos turnos da suíte — turnos de inglês correto — que
+passaram a custar **zero** chamada de modelo, zero espera e, principalmente,
+zero evicção do cache de prefixo da conversa.
+
+#### O que ficou ruim, dito por inteiro
+
+**4 de 31 erros escapam** (`I lost the bus`, `I have many parents`, `we
+realized a meeting`, `I work here since 2019`). Em todos, a base levantou a
+regra certa e a pôs no prompt, e o 3B respondeu "sem erros" — são frases
+gramaticais em inglês, erradas só na leitura contrastiva. Uma linha no prompt
+("as regras abaixo foram revisadas à mão; se uma casa, reporte") subiu o recall
+de 77% para 87%; os 13% restantes são limite do modelo, não do código.
+
+Nesses quatro turnos o aluno não fica sem correção — mas não por garantia, e sim
+porque o outro canal funcionou. Rodando os quatro de ponta a ponta, o professor
+corrigiu **nos quatro**, na prosa, com a redação curada que a dica levou ao
+prompt da resposta:
+
+> aluno: *I lost the bus this morning.*
+> Charles: *When you arrive too late, you "miss" it: "I missed the bus."*
+
+O que falta nesses turnos é o registro estruturado, e com ele a linha no error
+log. E o inverso também acontece: na verificação no navegador, com *I have 35
+years*, a anotação estruturada saiu com a regra citada e a prosa do professor
+**não** corrigiu nada — só puxou assunto. Os dois canais se cobrem, nenhum dos
+dois sozinho é garantia, e é por isso que a correção que conta como dado é a
+estruturada.
+
+**O `corrected` de um 3B é medíocre.** Ele cita a regra certa e devolve
+`'has 32 years, she is a nurse.'` => `'is 32 years, she is a nurse.'`, que
+ainda está errado. A explicação que o aluno lê é a curada, então o dano é
+limitado — mas o texto corrigido, não. É o argumento mais forte a favor de um
+modelo melhor para a etapa de análise, que é barata em tokens e não precisa ser
+o mesmo modelo da conversa.
+
+**A janela de 2 correções por turno nunca encheu** na suíte: o 3B devolve uma
+por vez. Não é limite exercitado ainda.
+
 ### Rodar em dev
 
 ```bash
@@ -378,9 +499,9 @@ Variáveis de ambiente em `.env` (modelo, provider, caminho do banco), com
 
 | Risco | Como lidamos |
 |---|---|
-| O 4B devolve JSON malformado na etapa de análise | Validação pydantic + retry com instrução mais estrita + fallback que degrada para "sem correção" em vez de quebrar o turno. Medido na E4. |
-| O 4B explica gramática pior que o esperado | A base contrastiva é o anteparo: onde há regra curada, a explicação vem dela, não do modelo. Medido na E1: um 3B "corrigiu" *I have 30 years* para *I have thirty years* — trocou o dígito e manteve o decalque. É o problema nº 1 da análise em uma linha, e a razão de a E3/E4 existirem. Subir para 8B **não** é mais a saída nesta máquina (3,5 tok/s); a saída é a regra curada. |
-| Latência do turno duplo (análise + resposta) | **Agravado pela medição da §1.3 (7–8 tok/s num 4B).** A resposta sai em streaming enquanto a análise roda, e a análise tem que devolver JSON curto. A E4 mede o custo real do turno duplo em vez de presumir. |
+| O 4B devolve JSON malformado na etapa de análise | Validação pydantic + retry com instrução mais estrita + fallback que degrada para "sem correção" em vez de quebrar o turno. **Medido na E4: 0 de 49 turnos precisaram de retentativa.** O risco não se materializou neste modelo; o anteparo fica, porque é barato e o modelo pode mudar. |
+| O 4B explica gramática pior que o esperado | **Materializou-se, e o anteparo funcionou.** A E4 mediu um 3B inventando 12 correções em 18 frases corretas, várias ensinando erro (*There have been* → *has been*), e nenhuma citando regra — enquanto 100% dos acertos citavam a regra esperada. Daí a política: sem regra curada, a correção não chega ao aluno (§5.2). Medido antes, na E1: um 3B "corrigiu" *I have 30 years* para *I have thirty years* — trocou o dígito e manteve o decalque. É o problema nº 1 da análise em uma linha, e a razão de a E3/E4 existirem. Subir para 8B **não** é mais a saída nesta máquina (3,5 tok/s); a saída é a regra curada. |
+| Latência do turno duplo (análise + resposta) | **Materializou-se, e pior do que o previsto.** A E4 mediu: em paralelo, a primeira palavra sai em 15,3s porque o Ollama atende um pedido por vez — o paralelismo era ficção. Default virou conversa primeiro, análise depois (6,1s), e turno sem candidato na base não chama o modelo. Resta a evicção do cache de prefixo, que faz a primeira palavra degradar turno a turno; ver §5.2. |
 | Curar ~100 itens contrastivos dá trabalho | E3 entrega 40 e segue crescendo. O schema e os testes garantem que crescer não degrada. |
 
 ---

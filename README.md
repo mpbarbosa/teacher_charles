@@ -7,11 +7,12 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entregas E0–E3.** Dá para conversar em inglês de ponta a
-> ponta no navegador, e a base contrastiva com 43 regras curadas já está de pé e
-> testada. Ligar essas regras à correção que chega ao aluno é a E4; os modos e o
-> error log ainda não existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md)
-> para o escopo e a ordem das entregas.
+> **Estado: Fase 1, entregas E0–E4.** Dá para conversar em inglês de ponta a
+> ponta no navegador, e cada turno produz correção estruturada — com a regra
+> curada citada, persistida em SQLite e visível ao lado do que o aluno escreveu.
+> O perfil por nível, os modos e a tela de error log ainda não existem. Veja
+> [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a ordem das
+> entregas.
 
 ## Decisões que moldam o projeto
 
@@ -148,6 +149,62 @@ O schema em `data/schema/` é **gerado** do modelo pydantic, nunca editado à m�
 uv run python scripts/dump_contrastive_schema.py
 ```
 
+## Como um turno funciona
+
+Cada turno do aluno tem duas etapas, nesta ordem:
+
+```
+fala do aluno
+   │
+   ├─ casa com data/contrastive/        (microssegundos, determinístico)
+   │     └─ a regra entra no prompt da resposta como dica curada
+   │
+   ├─ 1. resposta do professor ─────────> streaming na tela, primeira palavra em ~1s
+   │
+   └─ 2. análise (JSON validado) ───────> correção anotada sobre o que o aluno escreveu
+                                          e persistida em SQLite
+```
+
+Quem informa a resposta **não** é a análise, é o casamento determinístico — que
+é de graça. A análise vem depois do último pedaço da resposta porque disparar as
+duas juntas não paraleliza nada: o Ollama atende um pedido por vez, e medido
+(plano §5.2) a primeira palavra do professor saía em 15,3s em vez de 6,1s. O
+aluno lê a resposta enquanto a correção é calculada.
+
+Três coisas não são confiadas ao prompt, porque prompt não é garantia:
+
+| | |
+|---|---|
+| **Correção sem regra curada não chega ao aluno** | Medido: num 3B, 12 de 18 frases corretas recebiam correção inventada, e nenhuma citava regra — várias ensinavam erro. Exigir a regra zerou os falsos positivos sem custar nenhum acerto. |
+| **A regra citada é verificada** | Se a base casou no mesmo trecho, o `rule_id` e a explicação são os da regra curada. O modelo não tem voto — e `rule_id` que não existe na base é descartado. |
+| **Span que o aluno não disse é descartado** | Correção sobre palavra inventada desorienta mais que correção nenhuma. |
+
+Daí decorre uma economia: frase que não casa com regra nenhuma **não vira
+pergunta ao modelo**, porque a resposta não poderia chegar ao aluno de todo
+jeito. São 37% dos turnos da suíte de medição.
+
+JSON inválido tem uma retentativa com instrução mais estrita e, se falhar de
+novo, o turno segue **sem correção** — nunca com exceção na cara do aluno. A
+frequência disso é medida, não presumida (deu 0 em 49 turnos):
+
+```bash
+uv run python scripts/measure_analysis.py
+```
+
+```bash
+uv run python scripts/measure_analysis.py --double-turn 5
+```
+
+O primeiro mede qualidade (precisão, falso positivo, JSON degradado) sobre as
+frases de `tests/fixtures/known_errors.yaml`; o segundo mede o custo real do
+turno duplo. Os números desta máquina estão no plano §5.2 — e `--allow-unverified`
+mostra o que o modelo diria se a política de regra curada estivesse desligada.
+
+Duas variáveis mudam esse comportamento, e as duas têm número por trás:
+`TC_REQUIRE_CURATED_RULE=false` solta o modelo para corrigir sem regra, e
+`TC_ANALYSIS_AFTER_REPLY=false` volta a disparar as duas etapas juntas (melhor
+num provider que atenda dois pedidos ao mesmo tempo).
+
 ## Onde fica cada coisa
 
 ```
@@ -157,10 +214,13 @@ prompts/     persona e instruções em .md, versionados, recarregados sem reinic
 src/         o código
   llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)
   teaching/    a estrutura pedagógica — é esta pasta que é o produto
+    turn.py      orquestra o turno: resposta e análise em paralelo
+    analyzer.py  fala do aluno -> correção estruturada e verificada
+    contrastive.py  carrega e consulta as regras curadas
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única: template Jinja, JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura
-scripts/     check_env.py (só stdlib, roda antes do uv sync)
+scripts/     check_env.py (só stdlib, roda antes do uv sync) e as medições
 ```
 
 Editar um arquivo de `prompts/` vale no turno seguinte, sem reiniciar o servidor.

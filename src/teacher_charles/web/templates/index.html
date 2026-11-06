@@ -20,6 +20,17 @@
     <article class="turn {{ turn.role }}">
       <div class="who">{{ "You" if turn.role == "student" else "Charles" }}</div>
       <div class="what">{{ turn.content }}</div>
+      {% if turn.corrections %}
+      <div class="corrections">
+        {% for c in turn.corrections %}
+        <div class="correction{{ ' curated' if c.rule_id else '' }}">
+          <div class="fix"><s>{{ c.span }}</s> <strong>{{ c.corrected }}</strong></div>
+          <div class="why">{{ c.explanation }}</div>
+          {% if c.rule_id %}<div class="rule">{{ c.rule_id }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </article>
     {% endfor %}
 

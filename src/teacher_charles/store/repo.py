@@ -1,15 +1,15 @@
 """Acesso aos dados.
 
-Só o que a E0 precisa para provar que o banco funciona de ponta a ponta, mais
-o mínimo que a E2 vai usar para persistir histórico de conversa. Agregações do
-error log são da E7.
+O que a E0 precisa para provar que o banco funciona de ponta a ponta, o que a
+E2 usa para persistir histórico de conversa e o que a E4 usa para persistir
+correção. Agregações do error log são da E7.
 """
 
 from __future__ import annotations
 
 import sqlite3
 
-from .models import CEFR_LEVELS, MODES, Student, Turn
+from .models import CEFR_LEVELS, MODES, Correction, Student, Turn
 
 
 class StudentRepo:
@@ -105,3 +105,69 @@ class TurnRepo:
             (session_id, limit),
         ).fetchall()
         return [Turn.from_row(r) for r in reversed(rows)]
+
+
+class CorrectionRepo:
+    """As correções, como dado contável.
+
+    O princípio da Fase 1 em uma tabela: a correção que o aluno recebe não é só
+    prosa na resposta do professor, é linha agregável. Sem isto não há error log
+    (E7), drill a partir do erro real (E6) nem repetição espaçada (Fase 2).
+
+    ``turn_id`` aponta para o turno **do aluno** — o turno que contém o erro —,
+    não para a resposta do professor.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def add(
+        self,
+        turn_id: int,
+        *,
+        span: str,
+        corrected: str,
+        error_type: str,
+        explanation: str,
+        rule_id: str | None = None,
+    ) -> int:
+        cur = self._conn.execute(
+            """
+            INSERT INTO correction (turn_id, span, corrected, error_type, rule_id, explanation)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (turn_id, span, corrected, error_type, rule_id, explanation),
+        )
+        return int(cur.lastrowid)
+
+    def for_turn(self, turn_id: int) -> list[Correction]:
+        rows = self._conn.execute(
+            "SELECT * FROM correction WHERE turn_id = ? ORDER BY id",
+            (turn_id,),
+        ).fetchall()
+        return [Correction.from_row(row) for row in rows]
+
+    def for_session(self, session_id: int) -> list[Correction]:
+        rows = self._conn.execute(
+            """
+            SELECT c.* FROM correction c
+            JOIN turn t ON t.id = c.turn_id
+            WHERE t.session_id = ?
+            ORDER BY c.id
+            """,
+            (session_id,),
+        ).fetchall()
+        return [Correction.from_row(row) for row in rows]
+
+    def count(self) -> int:
+        return self._conn.execute("SELECT count(*) AS n FROM correction").fetchone()["n"]
+
+    def count_with_rule(self) -> int:
+        """Quantas correções têm regra curada por trás.
+
+        A razão entre este número e ``count()`` é o que a E4 mede: quanto da
+        correção vem da base e quanto vem do modelo solto.
+        """
+        return self._conn.execute(
+            "SELECT count(*) AS n FROM correction WHERE rule_id IS NOT NULL"
+        ).fetchone()["n"]

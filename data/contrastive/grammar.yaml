@@ -85,15 +85,19 @@ items:
       - "has many people here"
       - "there has a problem"
       - "in Brazil has a lot of beaches"
+      - "In my city has many restaurants"
     right:
       - "there are many people here"
       - "there is a problem"
       - "in Brazil there are a lot of beaches"
       - "there have been many problems"
+      - "the man in the photo has many tattoos"
     patterns:
       - '\bthere (has|have)\b(?! been)'
-      - '(?:^|[.!?]\s+)has (a|an|many|a lot|lots|some|much)\b'
-      - '\b(here|in \w+) has (a|an|many|a lot|lots|some|much)\b'
+      - '(?:^|[.!?]\s+)(here )?has (a|an|many|a lot|lots|some|much)\b'
+      # Ancorado em começo de frase: "the man in the photo has many tattoos" é
+      # inglês correto com o mesmo recorte, e não pode cair aqui.
+      - '(?:^|[.!?]\s+)in [\w'' ]{2,24}? has (a|an|many|a lot|lots|some|much)\b'
     explanation: >-
       Existence is "there is" and "there are". Portuguese "tem" in this sense
       is not "has": "there are many people here".

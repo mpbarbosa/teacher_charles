@@ -1,0 +1,108 @@
+# Frases com erro conhecido, e frases corretas que não podem ser corrigidas.
+#
+# Esta é a suíte do critério de aceite da E4. Serve a dois usos, deliberadamente
+# diferentes:
+#
+# 1. `tests/test_analyzer.py` roda a parte determinística — a base contrastiva
+#    tem que levantar a regra esperada em toda frase de `errors`, e nenhuma em
+#    `clean`. Isso roda sem modelo nenhum e é o portão: regride, a suíte quebra.
+#
+# 2. `scripts/measure_analysis.py` roda a suíte inteira contra o modelo de
+#    verdade e mede precisão, recall e quanto da correção veio de regra curada.
+#    O resultado fica registrado no plano §5.2.
+#
+# As frases são paráfrases, não os exemplos dos itens: casar com o próprio
+# exemplo não prova que o padrão generaliza. Onde há vírgula, contexto e nome
+# próprio é de propósito — é assim que o aluno escreve.
+
+errors:
+  # --- decalques ---------------------------------------------------------
+  - text: "Hi Charles, I have 35 years and I work with marketing."
+    rules: [calque.age-have]
+  - text: "My wife has 32 years, she is a nurse."
+    rules: [calque.age-have]
+  - text: "Can I make a question about the exercise?"
+    rules: [calque.make-question]
+  - text: "How many years do you have, Charles?"
+    rules: [calque.how-many-years]
+  - text: "Please give a look at my email when you can."
+    rules: [calque.give-a-look]
+  - text: "I am with hunger, I will eat something later."
+    rules: [calque.have-hunger]
+  - text: "It depends of my boss, I think."
+    rules: [calque.depend-of]
+  - text: "She is married with a doctor from Recife."
+    rules: [calque.married-with]
+  - text: "I lost the bus this morning and arrived late at work."
+    rules: [calque.lose-the-bus]
+  - text: "Explain me the difference between these two words, please."
+    rules: [calque.explain-me]
+  - text: "You have reason, it was my mistake."
+    rules: [calque.have-reason]
+  - text: "I knew my wife at a party in 2015."
+    rules: [calque.know-meet]
+  - text: "I made a course of English two years ago."
+    rules: [calque.make-a-course]
+
+  # --- falsos cognatos ---------------------------------------------------
+  - text: "I pretend to study more this year."
+    rules: [false-friend.pretend-pretender]
+  - text: "Actually I work from home three days per week."
+    rules: [false-friend.actually-atualmente]
+  - text: "I assisted the game with my father on Sunday."
+    rules: [false-friend.assist-assistir]
+  - text: "My manager is very comprehensive about my schedule."
+    rules: [false-friend.comprehensive-compreensivo]
+  - text: "I have many parents in the countryside."
+    rules: [false-friend.parents-parentes]
+  - text: "He works in a fabric that makes shoes."
+    rules: [false-friend.fabric-fabrica]
+  - text: "Send me the pasta with the contracts, please."
+    rules: [false-friend.pasta-pasta]
+  - text: "We realized a meeting about the budget yesterday."
+    rules: [false-friend.realize-realizar]
+  - text: "The actual price is too high for me."
+    rules: [false-friend.actual-atual]
+
+  # --- interferência estrutural ------------------------------------------
+  - text: "People is friendly in my city."
+    rules: [grammar.people-plural]
+  - text: "I need more informations about the course."
+    rules: [grammar.uncountable-plural]
+  - text: "I didn't went to the party because I was tired."
+    rules: [grammar.did-base-form]
+  - text: "Is raining a lot here today."
+    rules: [grammar.subject-drop]
+  - text: "In my city has many restaurants near the beach."
+    rules: [grammar.there-has]
+  - text: "I work in this company since 2019."
+    rules: [grammar.since-present]
+  - text: "I want that you explain this again, please."
+    rules: [grammar.want-that]
+  - text: "How do you call this in English?"
+    rules: [grammar.how-is-called]
+  - text: "I don't know nothing about politics."
+    rules: [grammar.double-negative]
+
+# As formas corretas das mesmas frases, mais os casos que um padrão largo
+# morderia. Corrigir inglês certo é pior que deixar erro passar: destrói a
+# confiança do aluno no professor.
+clean:
+  - "I am 35 years old and I work in marketing."
+  - "Can I ask a question about the exercise?"
+  - "It depends on my boss, I think."
+  - "She is married to a doctor from Recife."
+  - "I missed the bus this morning and arrived late at work."
+  - "Could you explain the difference between these two words to me?"
+  - "You are right, it was my mistake."
+  - "I took an English course two years ago."
+  - "People are friendly in my city."
+  - "I have worked in this company since 2019."
+  - "I didn't go to the party because I was tired."
+  - "It is raining a lot here today."
+  - "There are many restaurants near the beach in my city."
+  - "I don't know anything about politics."
+  - "The report is comprehensive and well written."
+  - "I have a cold, so I stayed home yesterday."
+  - "What do you call this in English?"
+  - "There have been many changes since the new manager arrived."

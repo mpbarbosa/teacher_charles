@@ -29,8 +29,8 @@ from .llm import ChatProvider, build_provider, default_options
 from .llm.base import GenerationOptions, Message
 from .prompts import PromptLibrary
 from .store.db import init_db
-from .store.repo import SessionRepo, StudentRepo, TurnRepo
-from .teaching import Chunk, Done, Failed, TurnRunner
+from .store.repo import CorrectionRepo, SessionRepo, StudentRepo, TurnRepo
+from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, TurnRunner
 from .teaching.contrastive import ContrastiveError, load_base
 
 log = logging.getLogger(__name__)
@@ -88,16 +88,37 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         prompts = PromptLibrary(settings.prompts_dir)
         # Falha cedo se a persona não existe: sem ela o Charles não é ninguém.
         prompts.get("persona")
+        # Idem para a instrução da análise: sem ela não há correção estruturada.
+        prompts.get("analysis")
+
+        # A base contrastiva é carregada uma vez na subida. Se ela estiver
+        # quebrada, o /health reporta e a conversa segue sem regra curada — o
+        # que é pior que o normal, mas melhor que não subir.
+        try:
+            base = load_base(settings.data_dir / "contrastive")
+            log.info("base contrastiva: %d itens", len(base))
+            analyzer = Analyzer(
+                provider=chat,
+                prompts=prompts,
+                base=base,
+                require_curated_rule=settings.require_curated_rule,
+            )
+        except ContrastiveError as exc:
+            log.error("base contrastiva não carregou, turno segue sem análise: %s", exc)
+            analyzer = None
 
         app.state.settings = settings
         app.state.db = conn
         app.state.provider = chat
         app.state.prompts = prompts
+        app.state.analyzer = analyzer
         app.state.runner = TurnRunner(
             provider=chat,
             prompts=prompts,
             conn=conn,
             options=default_options(settings),
+            analyzer=analyzer,
+            analysis_after_reply=settings.analysis_after_reply,
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
@@ -140,13 +161,27 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         conn: sqlite3.Connection = app.state.db
         session_id = active_session(conn)
         history = TurnRepo(conn).history(session_id, limit=50)
+
+        # As correções de turnos passados voltam com o histórico: o que o aluno
+        # errou ontem continua visível quando ele reabre a página.
+        by_turn: dict[int, list[Any]] = {}
+        for c in CorrectionRepo(conn).for_session(session_id):
+            by_turn.setdefault(c.turn_id, []).append(c)
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
             context={
                 "version": __version__,
                 "model": settings.llm_model,
-                "history": [{"role": t.role, "content": t.content} for t in history],
+                "history": [
+                    {
+                        "role": t.role,
+                        "content": t.content,
+                        "corrections": by_turn.get(t.id, []),
+                    }
+                    for t in history
+                ],
             },
         )
 
@@ -169,11 +204,17 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 async for event in runner.run(session_id, payload.message):
                     if isinstance(event, Chunk):
                         frame = {"type": "chunk", "text": event.text}
+                    elif isinstance(event, Analyzed):
+                        # A correção é dado, não prosa: vai num frame próprio,
+                        # para a UI anotar o que o aluno disse em vez de
+                        # misturar com o texto do professor.
+                        frame = {"type": "analysis", **event.analysis.as_dict()}
                     elif isinstance(event, Done):
                         frame = {
                             "type": "done",
                             "first_chunk_ms": round(event.first_chunk_ms),
                             "total_ms": round(event.total_ms),
+                            "analysis_ms": round(event.analysis_ms),
                         }
                     elif isinstance(event, Failed):
                         frame = {"type": "error", "message": event.message}
@@ -201,11 +242,28 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         conn: sqlite3.Connection = app.state.db
         session_id = active_session(conn)
         turns = TurnRepo(conn).history(session_id, limit=200)
+        corrections = CorrectionRepo(conn).for_session(session_id)
+        by_turn: dict[int, list[dict[str, Any]]] = {}
+        for c in corrections:
+            by_turn.setdefault(c.turn_id, []).append(
+                {
+                    "span": c.span,
+                    "correction": c.corrected,
+                    "type": c.error_type,
+                    "rule_id": c.rule_id,
+                    "explanation": c.explanation,
+                }
+            )
         return JSONResponse(
             {
                 "session_id": session_id,
                 "turns": [
-                    {"role": t.role, "content": t.content, "created_at": t.created_at}
+                    {
+                        "role": t.role,
+                        "content": t.content,
+                        "created_at": t.created_at,
+                        "corrections": by_turn.get(t.id, []),
+                    }
                     for t in turns
                 ],
             }

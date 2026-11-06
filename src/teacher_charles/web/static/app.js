@@ -32,7 +32,52 @@ function addTurn(role, text) {
   article.append(who, what);
   transcript.append(article);
   scrollToEnd();
-  return what;
+  return { article, what };
+}
+
+/**
+ * Anexa as correcoes ao turno do aluno.
+ *
+ * A correcao e dado estruturado, nao texto do professor: ela anota o que o
+ * aluno disse. `rule_id` presente significa que a explicacao veio da base
+ * curada, nao da improvisacao do modelo -- e a UI mostra isso.
+ */
+function addCorrections(article, errors) {
+  if (!errors || errors.length === 0) return;
+
+  const box = document.createElement("div");
+  box.className = "corrections";
+
+  for (const error of errors) {
+    const item = document.createElement("div");
+    item.className = error.rule_id ? "correction curated" : "correction";
+
+    const fix = document.createElement("div");
+    fix.className = "fix";
+    const was = document.createElement("s");
+    was.textContent = error.span;
+    const now = document.createElement("strong");
+    now.textContent = error.correction;
+    fix.append(was, document.createTextNode(" "), now);
+
+    const why = document.createElement("div");
+    why.className = "why";
+    why.textContent = error.explanation;
+
+    item.append(fix, why);
+
+    if (error.rule_id) {
+      const rule = document.createElement("div");
+      rule.className = "rule";
+      rule.textContent = error.rule_id;
+      item.append(rule);
+    }
+
+    box.append(item);
+  }
+
+  article.append(box);
+  scrollToEnd();
 }
 
 function scrollToEnd() {
@@ -99,8 +144,8 @@ async function readFrames(response, onFrame) {
 }
 
 async function sendMessage(text) {
-  addTurn("student", text);
-  const target = addTurn("teacher", "");
+  const student = addTurn("student", text);
+  const { what: target } = addTurn("teacher", "");
   target.classList.add("streaming");
   setStatus("Charles is thinking…");
 
@@ -125,9 +170,17 @@ async function sendMessage(text) {
         }
         target.textContent += frame.text;
         scrollToEnd();
+      } else if (frame.type === "analysis") {
+        // Chega em geral antes de o professor terminar de falar: as duas
+        // etapas do turno rodam em paralelo.
+        addCorrections(student.article, frame.errors);
       } else if (frame.type === "done") {
+        const analysis = frame.analysis_ms
+          ? ` · analysis ${(frame.analysis_ms / 1000).toFixed(1)} s`
+          : "";
         setStatus(
-          `first word ${frame.first_chunk_ms} ms · turn ${(frame.total_ms / 1000).toFixed(1)} s`
+          `first word ${frame.first_chunk_ms} ms · turn ` +
+            `${(frame.total_ms / 1000).toFixed(1)} s${analysis}`
         );
       } else if (frame.type === "error") {
         target.classList.add("failed");

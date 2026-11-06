@@ -15,7 +15,6 @@ ninguém a baixar 2,5 GB só para rodar a suíte.
 
 from __future__ import annotations
 
-import os
 import time
 
 import pytest
@@ -31,47 +30,8 @@ from teacher_charles.llm.base import ProviderError
 
 pytestmark = pytest.mark.integration
 
-OLLAMA_URL = os.environ.get("TC_OLLAMA_URL", "http://localhost:11434")
 
-
-async def _pick_model() -> str:
-    try:
-        available = await list_models(OLLAMA_URL, timeout_s=3.0)
-    except ProviderError as exc:
-        pytest.skip(f"Ollama não está acessível em {OLLAMA_URL}: {exc}")
-
-    if not available:
-        pytest.skip("Ollama está de pé, mas não há nenhum modelo baixado")
-
-    forced = os.environ.get("TC_TEST_MODEL", "").strip()
-    if forced:
-        if forced not in available:
-            pytest.skip(f"TC_TEST_MODEL={forced} não está baixado")
-        return forced
-
-    configured = os.environ.get("TC_LLM_MODEL", "").strip()
-    if configured and configured in available:
-        return configured
-
-    # O menor que estiver presente: o teste deve ser rápido, não representativo.
-    def size_hint(name: str) -> tuple[int, str]:
-        for marker, rank in (("1b", 0), ("3b", 1), ("4b", 2), ("7b", 3), ("8b", 4)):
-            if marker in name.lower():
-                return (rank, name)
-        return (9, name)
-
-    return sorted(available, key=size_hint)[0]
-
-
-@pytest.fixture
-async def provider():
-    model = await _pick_model()
-    instance = OllamaProvider(model=model, base_url=OLLAMA_URL, request_timeout_s=180.0)
-    yield instance
-    await instance.aclose()
-
-
-async def test_real_turn_streams_text(provider):
+async def test_real_turn_streams_text(ollama_provider):
     """Um turno completo: pergunta vai, texto volta em pedaços.
 
     Pede várias frases de propósito. Uma resposta de uma palavra chega num
@@ -88,7 +48,7 @@ async def test_real_turn_streams_text(provider):
     started = time.monotonic()
     first_chunk_at: float | None = None
 
-    async for chunk in provider.stream(messages, options):
+    async for chunk in ollama_provider.stream(messages, options):
         if first_chunk_at is None:
             first_chunk_at = time.monotonic() - started
         chunks.append(chunk)
@@ -97,7 +57,7 @@ async def test_real_turn_streams_text(provider):
     total = time.monotonic() - started
 
     print(
-        f"\n  modelo={provider.model}  pedaços={len(chunks)}  "
+        f"\n  modelo={ollama_provider.model}  pedaços={len(chunks)}  "
         f"1º pedaço={first_chunk_at:.2f}s  total={total:.2f}s"
     )
 
@@ -113,7 +73,7 @@ async def test_real_turn_streams_text(provider):
     assert first_chunk_at < total, "o primeiro pedaço chegou junto com o último"
 
 
-async def test_real_correction_turn_shows_why_structure_belongs_in_code(provider):
+async def test_real_correction_turn_shows_why_structure_belongs_in_code(ollama_provider):
     """Prova que o canal funciona — e, de passagem, que o prompt não basta.
 
     Este teste afirma SÓ que um turno de correção vai e volta. Deliberadamente
@@ -141,21 +101,21 @@ async def test_real_correction_turn_shows_why_structure_belongs_in_code(provider
         ),
         Message(role="user", content="I have 30 years."),
     ]
-    answer = await provider.complete(
+    answer = await ollama_provider.complete(
         messages, GenerationOptions(temperature=0.0, max_tokens=32, think=False)
     )
-    print(f"\n  modelo={provider.model}  correção={answer.strip()!r}")
+    print(f"\n  modelo={ollama_provider.model}  correção={answer.strip()!r}")
 
     assert answer.strip(), "o modelo não devolveu texto nenhum"
     # O canal entregou uma frase em inglês; o acerto pedagógico é da E3/E4.
     assert len(answer.split()) >= 2, f"resposta degenerada: {answer!r}"
 
 
-async def test_real_missing_model_raises_model_not_found():
+async def test_real_missing_model_raises_model_not_found(ollama_url):
     """O 404 do Ollama tem que chegar como ModelNotFound, não como erro genérico."""
     provider = OllamaProvider(
         model="modelo-que-nao-existe:0b",
-        base_url=OLLAMA_URL,
+        base_url=ollama_url,
         request_timeout_s=15.0,
     )
     try:
@@ -165,9 +125,9 @@ async def test_real_missing_model_raises_model_not_found():
         await provider.aclose()
 
 
-async def test_real_list_models_returns_sorted_names():
+async def test_real_list_models_returns_sorted_names(ollama_url):
     try:
-        models = await list_models(OLLAMA_URL, timeout_s=3.0)
+        models = await list_models(ollama_url, timeout_s=3.0)
     except ProviderError as exc:
         pytest.skip(f"Ollama não está acessível: {exc}")
 
