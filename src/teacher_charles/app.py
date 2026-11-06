@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -38,6 +38,7 @@ from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
 from .teaching.turn import DEFAULT_LEVEL
+from .voice import SentenceAssembler, Voice, VoiceError, build_voice
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +101,19 @@ class ModeRequest(BaseModel):
     mode: str
 
 
+class SpeakRequest(BaseModel):
+    """Um trecho para falar.
+
+    O teto de 600 caracteres não é arbitrário: é o mesmo do ``KokoroTTS``, e
+    existe porque uma chamada por sentença é o desenho (ver
+    ``voice/segment.py``). Pedido maior que isso é sinal de que alguém está
+    mandando o parágrafo inteiro — o que anularia o TTS incremental.
+    """
+
+    text: str = Field(min_length=1, max_length=600)
+    voice: str | None = None
+
+
 def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -138,9 +152,21 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             analyzer = None
             planner = None
 
+        # ``None`` quando a voz está desligada, e isso é estado de primeira
+        # classe: o chat por texto da Fase 1 funciona inteiro sem voz.
+        #
+        # Construir não carrega peso nenhum — a carga é preguiçosa e acontece
+        # no aquecimento, que engole o erro. Então pedir voz com o peso fora
+        # do disco **não** derruba a subida; quem denuncia é o ``/health``,
+        # que fica degradado e diz qual motor reclamou do quê.
+        voice = build_voice(settings)
+        if voice is not None:
+            log.info("voz ligada: STT %s, TTS %s", voice.stt.model, voice.tts.model)
+
         app.state.settings = settings
         app.state.db = conn
         app.state.provider = chat
+        app.state.voice = voice
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.base = base if analyzer is not None else None
@@ -176,14 +202,23 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         )
         app.state.warmup = warmup
 
+        # A voz aquece em paralelo com o LLM, e por motivo diferente: o
+        # ``small.en`` chega a baixar na primeira vez, e o onnxruntime paga o
+        # primeiro traçado do grafo. Nenhum dos dois propaga erro — mesma
+        # política do aquecimento do modelo (ver ``base.SpeechToText.warm_up``).
+        app.state.voice_warmup = asyncio.create_task(voice.warm_up()) if voice is not None else None
+
         try:
             yield
         finally:
-            if warmup is not None and not warmup.done():
-                warmup.cancel()
-                with suppress(asyncio.CancelledError):
-                    await warmup
+            for task in (warmup, app.state.voice_warmup):
+                if task is not None and not task.done():
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
             await chat.aclose()
+            if voice is not None:
+                await voice.aclose()
             conn.close()
 
     app = FastAPI(
@@ -289,6 +324,27 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             ],
         }
 
+    def voice_payload() -> dict[str, Any]:
+        """O que a página precisa saber antes de mostrar microfone e alto-falante.
+
+        Existe como função, e não inline nos dois lugares, porque a página e o
+        ``/api/voice`` têm que concordar — duplicar a montagem é o jeito de
+        eles divergirem (plano §5.5).
+        """
+        voice: Voice | None = app.state.voice
+        if voice is None:
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "stt_model": voice.stt.model,
+            "tts_model": voice.tts.model,
+            "voice": voice.tts.voice,
+            # Vazio até o TTS carregar: `voices()` não força a carga, de
+            # propósito (ver ``voice/kokoro.py``).
+            "voices": list(voice.tts.voices()),
+            "ready": voice.stt.ready and voice.tts.ready,
+        }
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -332,6 +388,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "model": settings.llm_model,
                 "profile": profile_payload(conn),
                 "session": session_payload(conn),
+                "voice": voice_payload(),
                 "history": [
                     {
                         "role": t.role,
@@ -369,41 +426,85 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         É POST com corpo JSON, não ``EventSource``: aquele só faz GET, e a fala
         do aluno é dado pessoal que não deve ir em query string. O cliente lê a
         resposta com ``fetch`` e um reader de stream.
+
+        ## Os quadros ``sentence``, e por que o áudio não vem por aqui
+
+        Com voz ligada, o stream ganha um quadro ``sentence`` a cada sentença
+        que fecha — índice e texto limpo para fala. O áudio **não** vem nele: a
+        página pede cada sentença ao ``/api/tts`` num pedido próprio.
+
+        É de propósito. Áudio em SSE teria que ir em base64, o que são 33% a
+        mais de bytes num quadro que já atravessa o caminho crítico do texto; e
+        a síntese passaria a correr dentro do mesmo gerador que repassa os
+        pedaços do professor, atrasando a letra para adiantar o som. Num pedido
+        separado a síntese da sentença 1 corre **enquanto** o modelo escreve a
+        sentença 2, que é exatamente o que o TTS incremental existe para fazer.
         """
         conn: sqlite3.Connection = app.state.db
         runner: TurnRunner = app.state.runner
+        voice: Voice | None = app.state.voice
         student = active_student(conn)
         session_id = SessionRepo(conn).current_or_start(student.id)
 
         async def events() -> AsyncIterator[bytes]:
+            # Um montador por turno. Sem voz não há montador: não há para quem
+            # mandar sentença, e segmentar à toa seria trabalho perdido no
+            # caminho crítico.
+            assembler = SentenceAssembler() if voice is not None else None
+            spoken = 0
+
+            def sentence_frames(sentences: list[str]) -> list[dict[str, Any]]:
+                nonlocal spoken
+                frames = []
+                for text in sentences:
+                    frames.append({"type": "sentence", "index": spoken, "text": text})
+                    spoken += 1
+                return frames
+
             try:
                 async for event in runner.run(session_id, payload.message, student):
+                    # Lista, e não quadro único, porque um pedaço de texto pode
+                    # fechar uma sentença (ou duas) junto com ele. A ordem
+                    # dentro da lista importa: texto antes do pedido de áudio
+                    # dele, e o rabo antes do `done`.
+                    frames: list[dict[str, Any]] = []
                     if isinstance(event, Chunk):
-                        frame = {"type": "chunk", "text": event.text}
+                        frames.append({"type": "chunk", "text": event.text})
+                        if assembler is not None:
+                            frames += sentence_frames(assembler.push(event.text))
                     elif isinstance(event, Analyzed):
                         # A correção é dado, não prosa: vai num frame próprio,
                         # para a UI anotar o que o aluno disse em vez de
                         # misturar com o texto do professor.
-                        frame = {"type": "analysis", **event.analysis.as_dict()}
+                        frames.append({"type": "analysis", **event.analysis.as_dict()})
                     elif isinstance(event, Leveled):
                         # Vai em todo turno, não só na mudança: a UI mostra o
                         # nível em vigor, e um frame só na mudança deixaria o
                         # badge defasado depois de um reinício.
-                        frame = {"type": "level", **event.decision.as_dict()}
+                        frames.append({"type": "level", **event.decision.as_dict()})
                     elif isinstance(event, Done):
-                        frame = {
-                            "type": "done",
-                            "first_chunk_ms": round(event.first_chunk_ms),
-                            "total_ms": round(event.total_ms),
-                            "analysis_ms": round(event.analysis_ms),
-                        }
+                        # O rabo que o professor deixou sem pontuar sai ANTES
+                        # do `done`: a página trata `done` como "não vem mais
+                        # áudio" e fecha a fila.
+                        if assembler is not None:
+                            tail = assembler.flush()
+                            frames += sentence_frames([tail] if tail else [])
+                        frames.append(
+                            {
+                                "type": "done",
+                                "first_chunk_ms": round(event.first_chunk_ms),
+                                "total_ms": round(event.total_ms),
+                                "analysis_ms": round(event.analysis_ms),
+                            }
+                        )
                     elif isinstance(event, Failed):
-                        frame = {"type": "error", "message": event.message}
+                        frames.append({"type": "error", "message": event.message})
                     else:  # pragma: no cover - união fechada
                         continue
                     # Formato SSE, mesmo sobre POST: uma linha `data:` por
                     # evento. Simples de ler no cliente e de depurar no curl.
-                    yield f"data: {json.dumps(frame, ensure_ascii=False)}\n\n".encode()
+                    for frame in frames:
+                        yield f"data: {json.dumps(frame, ensure_ascii=False)}\n\n".encode()
             except ValueError as exc:
                 yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n".encode()
 
@@ -417,6 +518,94 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "X-Accel-Buffering": "no",
             },
         )
+
+    # --- voz (Fase 1.5) ---------------------------------------------------- #
+
+    def voice_or_503() -> Voice | JSONResponse:
+        """Os motores, ou a resposta que explica a ausência deles.
+
+        503 e não 404: a rota existe, o serviço é que não está pronto para
+        atendê-la — mesma distinção que o ``/health`` faz entre "subiu" e
+        "pronto para ensinar".
+        """
+        voice: Voice | None = app.state.voice
+        if voice is None:
+            return JSONResponse(
+                {
+                    "detail": "a voz está desligada neste servidor",
+                    "how": "suba com TC_VOICE_ENABLED=true "
+                    "(e `uv sync --extra voice` antes, se for a primeira vez)",
+                },
+                status_code=503,
+            )
+        return voice
+
+    @app.post("/api/stt")
+    async def speech_to_text(request: Request) -> JSONResponse:
+        """O que o aluno falou, em texto.
+
+        Recebe os bytes do arquivo no **corpo cru**, não em multipart: é um
+        blob só, o ``fetch`` do navegador manda um ``Blob`` direto, e multipart
+        exigiria ``python-multipart`` só para embrulhar um campo. Quem
+        decodifica o container (webm/opus, ogg, wav) é o motor.
+
+        Devolver só o texto é decisão de produto, não economia: a página põe a
+        transcrição **no campo de texto** em vez de mandar o turno. O STT erra,
+        e um erro de STT que vira turno faz o professor corrigir um erro que o
+        aluno não cometeu — o pior defeito possível neste produto, e justamente
+        o que a E3/E4 existem para evitar do lado do modelo. Com a transcrição
+        no campo, o erro do STT vira um ajuste de uma palavra.
+        """
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+
+        audio = await request.body()
+        if not audio:
+            return JSONResponse({"detail": "não veio áudio nenhum"}, status_code=422)
+
+        try:
+            transcript = await voice.stt.transcribe(audio)
+        except VoiceError as exc:
+            # Tipado, nunca por substring: ver ``voice/base.py``.
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+
+        return JSONResponse({"bytes": len(audio), **transcript.as_dict()})
+
+    @app.post("/api/tts")
+    async def text_to_speech(payload: SpeakRequest) -> Response:
+        """Uma sentença falada, em WAV.
+
+        Um pedido por sentença, e a página faz vários em sequência enquanto o
+        professor ainda escreve — ver o docstring de ``/api/chat``. O
+        ``KokoroTTS`` serializa com lock próprio, então pedidos concorrentes
+        viram fila em vez de disputa por CPU.
+        """
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+
+        try:
+            speech = await voice.tts.speak(payload.text, payload.voice)
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+
+        return Response(
+            content=speech.as_wav(),
+            media_type="audio/wav",
+            headers={
+                "Cache-Control": "no-store",
+                # Medição do turno de voz sem instrumentar o navegador: o
+                # tempo de síntese e a duração do áudio viajam com ele.
+                "X-Synthesis-Ms": str(round(speech.elapsed_ms)),
+                "X-Audio-Seconds": f"{speech.duration_s:.2f}",
+            },
+        )
+
+    @app.get("/api/voice")
+    async def voice_status() -> JSONResponse:
+        """O mesmo que a página recebe no carregamento, para depurar sem F12."""
+        return JSONResponse(voice_payload())
 
     @app.get("/api/history")
     async def history() -> JSONResponse:
@@ -593,12 +782,36 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         ]
         missing_modes = [mode for mode in MODES if not prompts.exists(mode_partial_name(mode))]
 
+        # A voz é opcional, então ela só conta para o status quando foi
+        # pedida. Pedida e não carregada é degradado, e com o motivo: o
+        # aquecimento engole o erro de propósito, e sem isto ele sumiria.
+        voice: Voice | None = app.state.voice
+        if voice is None:
+            voice_info: dict[str, Any] = {"ok": True, "enabled": False}
+        else:
+            voice_info = {
+                "ok": voice.stt.ready and voice.tts.ready,
+                "enabled": True,
+                "stt": {
+                    "model": voice.stt.model,
+                    "ready": voice.stt.ready,
+                    "detail": voice.stt.last_error,
+                },
+                "tts": {
+                    "model": voice.tts.model,
+                    "voice": voice.tts.voice,
+                    "ready": voice.tts.ready,
+                    "detail": voice.tts.last_error,
+                    "voices": len(voice.tts.voices()),
+                },
+            }
+
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
             # modelo e base contrastiva. Separar os três evita um health verde
             # enganoso.
             "status": "ok"
-            if (db_info["ok"] and model.ok and contrastive_info["ok"])
+            if (db_info["ok"] and model.ok and contrastive_info["ok"] and voice_info["ok"])
             else "degraded",
             "version": __version__,
             "database": db_info,
@@ -613,6 +826,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "missing": missing_modes,
             },
             "provider": type(app.state.provider).__name__,
+            "voice": voice_info,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
 

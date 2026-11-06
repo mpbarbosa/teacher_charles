@@ -18,6 +18,17 @@ const levelNote = document.getElementById("level-note");
 const nameInput = document.getElementById("student-name");
 const modeButtons = document.querySelectorAll("button.mode");
 
+// Pode nao existir: a voz e opcional, e sem ela a pagina nem carrega voice.js.
+// Dai o objeto inerte em vez de um `if` em cada ponto de uso.
+const voice = window.CharlesVoice ?? {
+  enabled: false,
+  speak() {},
+  startTurn() {},
+  endTurn() {},
+  stopSpeaking() {},
+  wire() {},
+};
+
 let busy = false;
 
 function addTurn(role, text) {
@@ -154,6 +165,8 @@ async function sendMessage(text) {
   setStatus("Charles is thinking…");
 
   let gotText = false;
+  // Zera a fila de audio do turno anterior antes de o novo comecar a chegar.
+  voice.startTurn();
 
   try {
     const response = await fetch("/api/chat", {
@@ -178,6 +191,11 @@ async function sendMessage(text) {
         // Chega em geral antes de o professor terminar de falar: as duas
         // etapas do turno rodam em paralelo.
         addCorrections(student.article, frame.errors);
+      } else if (frame.type === "sentence") {
+        // Uma sentenca fechou. O pedido de sintese sai agora, e corre
+        // enquanto o modelo escreve a proxima -- e disso que o TTS
+        // incremental vive.
+        voice.speak(frame.index, frame.text);
       } else if (frame.type === "level") {
         applyLevel(frame);
       } else if (frame.type === "done") {
@@ -200,6 +218,8 @@ async function sendMessage(text) {
     setStatus(`Could not reach the teacher: ${error.message}`, true);
   } finally {
     target.classList.remove("streaming");
+    // Nao vem mais sentenca: a fila para de esperar pelo indice seguinte.
+    voice.endTurn();
   }
 }
 
@@ -291,6 +311,21 @@ for (const button of modeButtons) {
   });
 }
 
+voice.wire({
+  status: setStatus,
+  transcript: (text) => {
+    // No campo, nunca direto no turno. O STT erra, e um erro de STT que vira
+    // turno faz o Charles corrigir um erro que o aluno nao cometeu -- ver o
+    // cabecalho de voice.js.
+    input.value = input.value.trim() ? `${input.value.trim()} ${text}` : text;
+    autoGrow();
+    input.focus();
+    // Cursor no fim, para o aluno conseguir corrigir a ultima palavra, que e
+    // onde o STT mais erra.
+    input.setSelectionRange(input.value.length, input.value.length);
+  },
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (busy) return;
@@ -311,6 +346,8 @@ form.addEventListener("submit", async (event) => {
 resetButton.addEventListener("click", async () => {
   if (busy) return;
   setBusy(true);
+  // Quem pede conversa nova nao quer ouvir o fim da anterior.
+  voice.stopSpeaking();
   try {
     await fetch("/api/reset", { method: "POST" });
     transcript.replaceChildren();

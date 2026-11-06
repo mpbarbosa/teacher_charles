@@ -152,6 +152,56 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 form button[type="submit"] { padding: 0.55rem 1.1rem; }
 
+/* --- voz (Fase 1.5) ---------------------------------------------------- */
+
+/* O botao de falar fica ANTES do campo de texto de proposito: a voz e a
+   entrada principal quando esta ligada, e o campo passa a ser onde o aluno
+   conserta o que o STT ouviu errado. */
+button.talk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.9rem;
+  white-space: nowrap;
+  touch-action: none; /* sem isto, segurar no toque rola a pagina */
+  user-select: none;
+}
+
+button.talk .dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--muted);
+  flex: none;
+}
+
+button.talk.recording { border-color: var(--danger); color: var(--danger); }
+button.talk.recording .dot {
+  background: var(--danger);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+/* Travado ligado: o aluno clicou em vez de segurar, e precisa saber que o
+   microfone continua aberto. Anel estatico, nao pulsante, para distinguir de
+   "estou gravando porque voce esta segurando". */
+button.talk.latched { box-shadow: 0 0 0 2px var(--danger); }
+
+@keyframes pulse {
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.talk.recording .dot { animation: none; }
+}
+
+.field.speak input { width: auto; }
+
+@media (max-width: 560px) {
+  /* Em tela estreita o rotulo vai embora e sobra a bolinha: o botao continua
+     grande o bastante para o dedo, e o campo de texto nao fica sem espaco. */
+  button.talk .talk-label { display: none; }
+}
+
 footer {
   display: flex;
   justify-content: space-between;

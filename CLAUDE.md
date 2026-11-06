@@ -13,8 +13,17 @@ exceção: o produto é "100% em inglês" por decisão de público (`docs/plano-
 
 ```bash
 uv sync --extra dev                      # ambiente (Python 3.12, pinado)
-python3 scripts/check_env.py             # RAM, disco, uv, Ollama, modelo — roda com o Python do sistema
+python3 scripts/check_env.py             # RAM, disco, uv, Ollama, modelo, pesos de voz
 uv run teacher-charles --reload          # http://localhost:8000
+```
+
+Voz (Fase 1.5) é **extra e desligada por default** — o chat por texto funciona
+inteiro sem ela, e são ~400 MB de wheels mais ~120 MB de pesos:
+
+```bash
+uv sync --extra dev --extra voice
+uv run python scripts/fetch_voice_models.py      # Kokoro; o Whisper se baixa sozinho
+TC_VOICE_ENABLED=true uv run teacher-charles
 ```
 
 ```bash
@@ -24,6 +33,10 @@ uv run pytest -m integration             # só os 9 que exercitam o Ollama local
 uv run pytest tests/test_turn.py::test_nome -x
 uv run ruff check . && uv run ruff format --check .
 ```
+
+Os testes de voz seguem a mesma regra: os de dublê rodam sem peso nenhum
+(`test_voice*.py`), e os 8 que carregam Whisper e Kokoro de verdade estão em
+`-m integration` e se pulam sozinhos quando os pesos não estão no disco.
 
 `uv run pytest` sem filtro **não** é o caminho rápido: os testes de integração
 se pulam sozinhos sem Ollama, mas com o Ollama de pé eles carregam modelo e o
@@ -51,13 +64,15 @@ o lugar certo não é código em `teaching/`.
 |---|---|
 | `llm/` | Providers atrás de `base.ChatProvider`. Nada fora deste pacote sabe se o modelo está no Ollama, num llama.cpp ou na nuvem. Só `stream()` é abstrato; `complete()` deriva dele. |
 | `teaching/` | O produto. **Agnóstico quanto à origem do texto** — recebe string, devolve eventos `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed`. É o que permite acoplar STT/TTS na Fase 1.5 sem reescrever o meio. |
+| `voice/` | As duas pontas da Fase 1.5 — STT e TTS — atrás de `base.SpeechToText` / `base.TextToSpeech`, no mesmo arranjo de `llm/`. **Não importa `teaching/`**: recebe bytes, devolve texto; recebe texto, devolve PCM. |
 | `store/` | SQLite pelo `sqlite3` da stdlib. Esquema em `.sql` numerado, sem ORM; as dataclasses de `models.py` só dão nome às linhas. |
 | `prompts.py` | Carrega `prompts/*.md` com cache por mtime: editar a persona vale no turno seguinte, sem reiniciar. |
 | `app.py` | FastAPI. Monta tudo no `lifespan` e guarda em `app.state`. |
 | `web/` | Página única: template Jinja + JS/CSS sem build step. |
 
-`config.py` nunca importa `llm` — a dependência corre num sentido só. É por isso
-que `default_options(settings)` vive em `llm/__init__.py` e não em `Settings`.
+`config.py` nunca importa `llm` **nem `voice`** — a dependência corre num sentido
+só. É por isso que `default_options(settings)` vive em `llm/__init__.py` e não em
+`Settings`.
 
 ## Invariantes que não são óbvias no arquivo que você está editando
 
@@ -122,6 +137,44 @@ bastante para alguém "consertar" sem querer; o teste
 **A fala do aluno é gravada antes de chamar o modelo**, e o histórico já a inclui
 — por isso `build_messages` não acrescenta a mensagem nova outra vez.
 
+**A transcrição do microfone vai para o campo de texto, não para o turno.** O
+STT erra; um erro de STT que vira turno faz o Charles corrigir um erro que o
+aluno não cometeu — a mesma classe de falha que a E3/E4 existem para evitar do
+lado do modelo. `POST /api/stt` devolve só o texto e **não grava turno nenhum**
+(`test_nao_grava_turno_nenhum`). É a única salvaguarda que não depende de qual
+modelo de STT está carregado, e ela existe porque a exatidão com sotaque
+brasileiro é a dívida aberta da Fase 1.5 (plano 1.5 §2.3).
+
+**O áudio não viaja no SSE.** Os quadros `sentence` do `/api/chat` carregam
+índice e texto; a página pede cada sentença ao `/api/tts` num pedido próprio.
+Base64 seria 33% a mais de bytes no caminho crítico do texto — mas a razão real
+é outra: sintetizar dentro do gerador que repassa os pedaços atrasaria a letra
+para adiantar o som. Separado, a síntese da sentença 1 corre enquanto o modelo
+escreve a 2, que é a única razão de o TTS por sentença existir.
+
+**O índice do quadro `sentence` não é decoração.** Os pedidos ao `/api/tts`
+resolvem fora de ordem; a fila do `voice.js` toca por índice. Tocar por ordem
+de chegada embaralharia a fala do professor na primeira vez que a rede
+hesitasse.
+
+**Fronteira de sentença vale também no fim do pedaço**, e isso é escolha de
+latência, não descuido (`voice/segment.py`). Esperar o espaço custaria um token
+de atraso em toda sentença — ~130 ms a 7-8 tok/s — pagos no único ponto do
+turno em que o aluno espera calado. O único caso indecidível, dígito antes do
+ponto (`3.` que pode virar `3.5`), espera; abreviação e inicial são decididas
+pelo que está antes do ponto.
+
+**Os motores de voz carregam preguiçosamente e o aquecimento engole o erro.**
+Derrubar a subida por causa de um peso ausente seria pior que um `/health`
+degradado. Daí `ready` e `last_error` em `voice/base.Loadable`: é o `/health`
+que denuncia, e `ready` nunca dispara carga — um health check não pode ter
+efeito colateral de centenas de megabytes.
+
+**`av` está preso em `<19`.** O `decode_audio` do `faster-whisper` 1.2 chama
+`av.open(metadata_errors=...)`, argumento que o PyAV 19 removeu. Com o 19
+instalado, **toda** transcrição estoura em `TypeError` antes de o modelo ver um
+sample. Não é cautela de versão; é incompatibilidade medida.
+
 **O perfil ativo é `student.seen_seq`, um contador — não uma marca de tempo.**
 Duas versões com relógio (segundo e milissegundo) quebraram o mesmo teste de
 troca-e-volta de perfil: as escritas caem no mesmo instante e o desempate
@@ -184,7 +237,10 @@ não detalhe de configuração:
 
 Três destinos, e confundi-los é erro de categoria:
 
-- **Pesos do modelo** — em `~/.ollama`, nunca no repo.
+- **Pesos do modelo** — em `~/.ollama`, nunca no repo. Os de voz também não:
+  Kokoro em `$XDG_CACHE_HOME/teacher-charles/voice` (cache, redownloadável) e
+  Whisper no cache do `huggingface_hub`. **Nunca em `XDG_DATA_HOME`**, que é
+  dado pessoal do aluno.
 - **Progresso do aluno** — `$XDG_DATA_HOME/teacher-charles/charles.db`, fora do
   repo. É dado pessoal. `*.db` está no `.gitignore`.
 - **Conhecimento curado** — `data/contrastive/*.yaml`, **versionado**: é conteúdo
@@ -199,10 +255,22 @@ e nível), E6 (os três modos) e E7 (tela de progresso, README e latência). A o
 de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
 `docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
 
-A Fase 1 está completa. O que vem depois está em `docs/plano-fase-1.md` §7:
-voz (Fase 1.5), avaliação de pronúncia e repetição espaçada (Fase 2).
+A Fase 1 está completa, e a **Fase 1.5 (voz) também** —
+`docs/plano-fase-1-5.md`. O aluno fala por push-to-talk, o Charles responde em
+voz alta sentença por sentença, tudo local. `teaching/`, `llm/` e `store/` não
+mudaram uma linha para isso: a voz entrou como duas pontas, que era a aposta
+do desvio da §4.
 
-Duas dívidas conhecidas, as duas medidas e registradas na §5.5: a análise custa
+A Fase 1.5 deixou duas dívidas, as duas medidas em `docs/plano-fase-1-5.md`:
+**5,4-7,4s até a primeira palavra falada** contra a meta de 1-2s (e a maior
+fatia é o LLM, não o áudio — a alavanca é a iGPU ociosa da §1.3), e a
+**exatidão do STT com sotaque brasileiro, que não foi medida** — o áudio das
+tabelas é sintético, e os 0% de WER são piso, não expectativa.
+
+O que vem depois está em `docs/plano-fase-1-5.md` §6: iGPU, turn-taking sem
+botão, avaliação de pronúncia e repetição espaçada (Fase 2).
+
+Duas dívidas conhecidas da Fase 1, as duas medidas e registradas na §5.5: a análise custa
 ~10s por turno com erro (o caminho é um modelo melhor só para ela, e a medição
 mostra que isso não atrapalha a conversa), e a primeira palavra está em 2,7s
 contra a meta de 1–2s da Fase 1.5.

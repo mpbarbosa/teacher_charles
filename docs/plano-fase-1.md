@@ -71,7 +71,9 @@ Extrapolando pela razão de tamanho: **4B ≈ 7–8 tok/s, 8B ≈ 3,5 tok/s, 14B
 
 A causa está medida também: `/api/ps` reporta `size_vram=0.00GB` para os dois modelos.
 **O Ollama padrão roda 100% em CPU e não toca a iGPU Intel** — não há build com
-suporte a Arc/SYCL no pacote oficial. Os 14 threads do Core Ultra 5 135U (que é um chip
+suporte a Arc/SYCL no pacote oficial. *(Valia para a versão medida aqui. O
+Ollama 0.35 passou a trazer `libggml-vulkan.so` no pacote; ver
+`plano-fase-1-5.md` §7.1.)* Os 14 threads do Core Ultra 5 135U (que é um chip
 U-series, de baixo consumo) são tudo o que está trabalhando.
 
 Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
@@ -85,10 +87,20 @@ Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
 - **A voz da Fase 1.5 fica em dúvida real.** A meta de 1–2s por turno pressupõe gerar a
   primeira sentença em menos de 1s; a 7 tok/s, 15 tokens levam ~2s, antes do TTS. Isso
   não condena a Fase 1.5, mas significa que ela começa por uma medição, não por
-  integração.
+  integração. **A dúvida se confirmou.** Medido na Fase 1.5: 5,4–7,4s até a primeira
+  palavra falada, e o LLM sozinho responde por 3,0–4,2s deles — mais que o STT e o TTS
+  somados. O áudio coube; o modelo de linguagem é que não.
 - **Há um caminho de aumento não explorado**: habilitar a iGPU via IPEX-LLM ou um
-  llama.cpp com Vulkan/SYCL. A Arc integrada do Meteor Lake tem compute relevante e hoje
-  está ociosa. Fica registrado como alavanca para a Fase 1.5, não como trabalho da
+  llama.cpp com Vulkan/SYCL. **Explorado e medido — ver `plano-fase-1-5.md` §7.**
+  Nem um nem outro foi preciso: o Ollama 0.35 já traz o backend Vulkan, e
+  `OLLAMA_VULKAN=1` o liga. O resultado divide esta previsão em duas: a
+  avaliação de prompt ganha 13× (e a primeira palavra do turno cai de 7,4 s para
+  0,9 s), mas **a geração quase não se move**: empata no 3B, porque a Arc
+  integrada usa a mesma DRAM e esta seção já tinha razão ao dizer que o gargalo
+  é banda de memória, e ganha 1,5× no 7B sem chegar ao piso de ~7–8 tok/s. O
+  default de 4B-class segue de pé. A Arc integrada do Meteor Lake tem compute relevante e hoje
+  está ociosa. Fica registrado como alavanca para a Fase 1.5 — e depois dela medida,
+  como **a** alavanca: é a única que move os 7s do turno de voz. Não como trabalho da
   Fase 1 — e é exatamente o tipo de troca que a abstração `ChatProvider` da E1 torna
   barata (o `openai_compat` já serve um llama.cpp local).
 
@@ -287,7 +299,7 @@ HTML/CSS/JS sem build step · pytest.
 
 | Fica fora | Quando entra |
 |---|---|
-| Voz — STT e TTS (`faster-whisper` + Kokoro) | **Fase 1.5** — ver §5 |
+| Voz — STT e TTS (`faster-whisper` + Kokoro) | **Fase 1.5 — feita.** Ver [plano-fase-1-5.md](plano-fase-1-5.md) |
 | Avaliação de pronúncia por fonemas | Fase 2 |
 | Repetição espaçada | Fase 2 |
 | Qualquer português na UI ou nas respostas | Não entra (decisão 1.1) |
@@ -311,6 +323,13 @@ terminar) e medição honesta da latência nesta máquina contra a meta de 1–2
 
 Se você preferir voz já na Fase 1, é uma troca razoável — o custo é um MVP mais demorado
 para chegar ao primeiro uso real.
+
+**Como terminou.** A Fase 1.5 foi feita e está em
+[plano-fase-1-5.md](plano-fase-1-5.md). A aposta do desvio se pagou: `teaching/`,
+`llm/` e `store/` não mudaram uma linha, e a voz entrou como duas pontas. A meta
+de latência, essa não: são 5,4–7,4 s até a primeira palavra falada, contra os
+1–2 s projetados — e a maior fatia é o LLM, não o áudio, exatamente onde a §1.3
+dizia que estaria.
 
 ---
 
@@ -1034,6 +1053,10 @@ Variáveis de ambiente em `.env` (modelo, provider, caminho do banco), com
 
 ## 7. Fora do caminho crítico, registrado para depois
 
+- **Fase 1.5 — feita.** Voz (STT e TTS) local, em
+  [plano-fase-1-5.md](plano-fase-1-5.md), com a medição que a §1.3 exigia como
+  pré-requisito e as duas dívidas que ela deixou: a latência de 5,4–7,4 s e a
+  exatidão do STT com sotaque brasileiro, ainda não medida.
 - **Fase 2**, como na análise inicial: avaliação de pronúncia por fonemas (wav2vec2 +
   alinhamento forçado), repetição espaçada, testes em hardware mais modesto.
 - Embeddings na base contrastiva, se ela passar de algumas centenas de itens.

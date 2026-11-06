@@ -25,6 +25,12 @@
         </select>
       </label>
       <span class="model" title="Modelo em uso">{{ model }}</span>
+      {% if voice.enabled %}
+      <label class="field speak" title="Charles fala a resposta em voz alta">
+        <input id="speak" type="checkbox" checked>
+        <span class="label">Charles speaks</span>
+      </label>
+      {% endif %}
       <a class="button" href="/progress" title="No que o aluno mais erra">Your mistakes</a>
       <button id="reset" type="button" title="Começar uma conversa nova">New conversation</button>
     </div>
@@ -77,7 +83,21 @@
     {% endif %}
   </main>
 
-  <form id="composer" autocomplete="off">
+  <form id="composer" autocomplete="off"
+        {% if voice.enabled %}data-voice="on"
+        data-stt-model="{{ voice.stt_model }}"
+        data-tts-voice="{{ voice.voice }}"{% endif %}>
+    {% if voice.enabled %}
+    {# Push-to-talk: segura, fala, solta. A transcricao vai para o campo de
+       texto, nao direto para o turno -- o STT erra, e um erro de STT que vira
+       turno faz o Charles corrigir um erro que o aluno nao cometeu. #}
+    <button type="button" id="talk" class="talk"
+            title="Hold to talk — your words go in the box, so you can fix them"
+            aria-label="Hold to talk">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="talk-label">Hold to talk</span>
+    </button>
+    {% endif %}
     <textarea id="message" rows="1" placeholder="Write in English…"
               aria-label="Your message" required maxlength="4000"></textarea>
     <button type="submit" id="send">Send</button>
@@ -89,6 +109,10 @@
     <span class="version">v{{ version }}</span>
   </footer>
 
+  {# voice.js antes de app.js: ele publica `window.CharlesVoice`, e o app.js
+     chama isso nos quadros `sentence`. Sem build step, a ordem das tags E a
+     dependencia. #}
+  {% if voice.enabled %}<script src="/static/voice.js"></script>{% endif %}
   <script src="/static/app.js"></script>
 </body>
 </html>
