@@ -1,5 +1,7 @@
 # Teacher Charles
 
+[![CI](https://github.com/mpbarbosa/teacher_charles/actions/workflows/ci.yml/badge.svg)](https://github.com/mpbarbosa/teacher_charles/actions/workflows/ci.yml)
+
 Um professor de inglês que roda **localmente** na sua máquina. Sem API paga, sem
 mandar suas conversas para a nuvem.
 
@@ -139,6 +141,13 @@ uv run pytest -m integration
 Eles se pulam sozinhos quando não há Ollama, então `uv run pytest` sem filtro
 fica verde numa máquina sem nada instalado — só demora, porque com Ollama de pé
 carrega modelo.
+
+É essa propriedade que torna o CI possível: o
+[workflow](.github/workflows/ci.yml) roda lint, formatação e a suíte sem
+modelo a cada push no `main` e a cada pull request, num runner que não tem
+Ollama nem 2 GB de pesos. O que o CI **não** faz é medir qualidade do modelo —
+isso é trabalho dos `scripts/measure_*.py`, que levam minutos e cujos números
+vão revisados para o plano, não para um check verde.
 
 ## A base contrastiva
 
