@@ -71,7 +71,9 @@ Extrapolando pela razão de tamanho: **4B ≈ 7–8 tok/s, 8B ≈ 3,5 tok/s, 14B
 
 A causa está medida também: `/api/ps` reporta `size_vram=0.00GB` para os dois modelos.
 **O Ollama padrão roda 100% em CPU e não toca a iGPU Intel** — não há build com
-suporte a Arc/SYCL no pacote oficial. Os 14 threads do Core Ultra 5 135U (que é um chip
+suporte a Arc/SYCL no pacote oficial. *(Valia para a versão medida aqui. O
+Ollama 0.35 passou a trazer `libggml-vulkan.so` no pacote; ver
+`plano-fase-1-5.md` §7.1.)* Os 14 threads do Core Ultra 5 135U (que é um chip
 U-series, de baixo consumo) são tudo o que está trabalhando.
 
 Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
@@ -89,7 +91,14 @@ Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
   palavra falada, e o LLM sozinho responde por 3,0–4,2s deles — mais que o STT e o TTS
   somados. O áudio coube; o modelo de linguagem é que não.
 - **Há um caminho de aumento não explorado**: habilitar a iGPU via IPEX-LLM ou um
-  llama.cpp com Vulkan/SYCL. A Arc integrada do Meteor Lake tem compute relevante e hoje
+  llama.cpp com Vulkan/SYCL. **Explorado e medido — ver `plano-fase-1-5.md` §7.**
+  Nem um nem outro foi preciso: o Ollama 0.35 já traz o backend Vulkan, e
+  `OLLAMA_VULKAN=1` o liga. O resultado divide esta previsão em duas: a
+  avaliação de prompt ganha 13× (e a primeira palavra do turno cai de 7,4 s para
+  0,9 s), mas **a geração quase não se move**: empata no 3B, porque a Arc
+  integrada usa a mesma DRAM e esta seção já tinha razão ao dizer que o gargalo
+  é banda de memória, e ganha 1,5× no 7B sem chegar ao piso de ~7–8 tok/s. O
+  default de 4B-class segue de pé. A Arc integrada do Meteor Lake tem compute relevante e hoje
   está ociosa. Fica registrado como alavanca para a Fase 1.5 — e depois dela medida,
   como **a** alavanca: é a única que move os 7s do turno de voz. Não como trabalho da
   Fase 1 — e é exatamente o tipo de troca que a abstração `ChatProvider` da E1 torna

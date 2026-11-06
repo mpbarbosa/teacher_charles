@@ -106,10 +106,15 @@ TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles
 
 Um 3B dá para desenvolver. Para uso de verdade, 4B é o default por um motivo: nesta
 classe de hardware o gargalo é banda de memória, e a vazão cai rápido com o tamanho.
-Medido nesta máquina (Intel Core Ultra 5 135U, **Ollama em CPU pura** — o pacote oficial
-não usa a iGPU Intel): **9,3 tok/s num 3B e 4,0 num 7B**, o que põe um 4B em ~7–8 tok/s
-e um 8B em ~3,5. Com streaming, 4B é tolerável para texto; 8B não é.
+Medido nesta máquina (Intel Core Ultra 5 135U, **Ollama em CPU pura**): **9,3 tok/s num
+3B e 4,0 num 7B**, o que põe um 4B em ~7–8 tok/s e um 8B em ~3,5. Com streaming, 4B é
+tolerável para texto; 8B não é.
 Ver [docs/plano-fase-1.md](docs/plano-fase-1.md) §1.3 para o método da medição.
+
+**A iGPU Intel muda metade dessa conta — ver [a seção da iGPU](#a-igpu-intel-opcional-e-recomendada).**
+A avaliação de prompt fica 13× mais rápida, e é ela que domina a espera pela primeira
+palavra; a geração empata num 3B e ganha 50% num 7B, mas sem chegar ao piso do
+tolerável.
 
 ## Configuração
 
@@ -126,6 +131,49 @@ O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
 Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_MODEL`,
 `TC_STT_CPU_THREADS`. Cada default tem uma medição atrás dele — ver a seção
 "Falar com o Charles".
+
+### A iGPU Intel: opcional, e recomendada
+
+Numa máquina com gráficos Intel integrados (Arc / Meteor Lake e parentes), o
+Ollama 0.35 já traz um backend Vulkan no pacote — não é preciso compilar
+`llama.cpp` nem instalar IPEX-LLM. Duas variáveis ligam:
+
+```bash
+OLLAMA_VULKAN=1 OLLAMA_IGPU_ENABLE=1 ollama serve
+```
+
+Precisa só do driver Mesa com o ICD Vulkan da Intel (`intel_icd.json`, que vem
+no `mesa-vulkan-drivers`) e de acesso a `/dev/dri/renderD128`. Para conferir
+que pegou, o log da subida traz `library=Vulkan ... type=iGPU`, e o `/api/ps`
+passa a reportar `size_vram` diferente de zero.
+
+Medido nesta máquina, com `qwen2.5:3b-instruct-q4_K_M`:
+
+| | CPU pura | iGPU Vulkan |
+|---|---|---|
+| Geração, 3B | 6,2 tok/s | 5,6 tok/s — **empata** |
+| Geração, 7B | 2,8 tok/s | 4,2 tok/s — **1,5×** |
+| Avaliação de prompt (~1k tokens, 3B) | 12,8 tok/s | **168 tok/s** |
+| Primeira palavra do turno | 7,4s | **0,9s** |
+| Turno de voz até ouvir a 1ª palavra | 6,3s | **4,0s** |
+
+**O que a iGPU compra é avaliação de prompt** — e como o prompt do turno tem
+~900 tokens (persona, nível, modo, histórico), é ela que domina a espera pela
+primeira palavra. Por isso o ganho no turno é bem maior que o ganho em qualquer
+número de vazão isolado.
+
+Geração é outra história: num 3B empata (os dois batem no mesmo teto de banda
+de memória — a Arc integrada usa a mesma DRAM que a CPU), e num 7B ganha 50%,
+porque aí os 14 threads do chip é que ficam para trás. Mesmo assim os 4,2 tok/s
+do 7B seguem abaixo do piso de ~7–8 tok/s: **a iGPU encolhe a punição por
+modelo grande, não a remove**, e o default de 4B-class continua valendo.
+
+Nada no produto muda: o provider continua sendo o `ollama`. Se o servidor da
+iGPU estiver noutra porta, basta `TC_OLLAMA_URL`.
+
+O método e a íntegra dos números estão em
+[docs/plano-fase-1-5.md](docs/plano-fase-1-5.md) §7, e o script que os produz é
+`scripts/measure_igpu.py`.
 
 ## Testes
 
@@ -405,8 +453,13 @@ qual modelo de reconhecimento está carregado.
 Os 5,4–7,4s são contra uma meta de 1–2s, e isso está registrado como dívida,
 não escondido. **A maior fatia é o modelo de linguagem** — 3,0–4,2s até a
 primeira sentença fechar —, não o áudio: o reconhecimento e a síntese somados
-custam menos que ele sozinho. A alavanca é a iGPU Intel, que está ociosa desde
-a Fase 1.
+custam menos que ele sozinho.
+
+**A alavanca era a iGPU Intel, e ela foi puxada.** Com o backend Vulkan ligado
+o turno de voz cai para **4,0s** e a relação se inverte: o LLM entrega a
+primeira sentença em 1,48s e o áudio soma 2,51s, então agora é o áudio a maior
+fatia. A meta de 1–2s segue não atingida. Números e método em
+[docs/plano-fase-1-5.md](docs/plano-fase-1-5.md) §7.
 
 Dois defaults saíram dessa medição e contrariam o que o plano previa:
 
@@ -461,10 +514,13 @@ rodar:
 | `scripts/measure_modes.py` | Os três modos contra o modelo real, com o drill andando (§5.4) |
 | `scripts/measure_latency.py` | Latência por turno, decomposta com as métricas do servidor (§5.5) |
 | `scripts/measure_voice.py` | STT, TTS e o orçamento do turno de voz (plano 1.5 §2 e §3.1) |
+| `scripts/measure_igpu.py` | Vazão na iGPU Intel contra a CPU pura, e a prova de que a GPU está no caminho (plano 1.5 §7) |
 
 Os três primeiros precisam de Ollama com o modelo baixado; o
 `measure_level.py` sem argumento roda sem modelo nenhum. O `measure_voice.py`
-precisa dos pesos de voz, e só o `--budget` precisa também do Ollama.
+precisa dos pesos de voz, e só o `--budget` precisa também do Ollama. O
+`measure_igpu.py` precisa de **dois** servidores de pé, um com o backend
+Vulkan — ele diz o comando quando não encontra o segundo.
 
 ## Quando dá errado
 
