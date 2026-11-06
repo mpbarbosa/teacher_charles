@@ -785,6 +785,11 @@ always. Never give the student a Portuguese sentence to translate."*
 Fica o padrão, que já apareceu na E4 e agora de novo: **todo verbo no prompt é
 uma permissão.** Modelo maior não erra menos; erra com mais convicção.
 
+Remedido no mesmo 7B depois da troca, três turnos de drill: nenhum português.
+O item que antes vinha como *"traduza 'Ela tem 28 anos'"* virou *"let's try a
+new sentence: 'She has 28 years,' and say it using 'is' instead"* — mesmo
+exercício, inteiro em inglês, que é o que a decisão 1.1 pede.
+
 #### O 7B é mais fluente e mais errado
 
 A mesma suíte no 7B dá a melhor ilustração que este projeto tem do seu próprio
@@ -817,6 +822,14 @@ esta etapa — o mesmo argumento da §5.2 sobre a análise.
 repetidamente recebe regras diferentes a cada vez, o que é o desejado, mas
 quem ficar na mesma sessão treina a mesma regra para sempre. Sessão longa de
 drill com várias regras é item da Fase 2, junto com a repetição espaçada.
+
+**No modo de correção, o 7B repete o erro do aluno dentro da sugestão.** Na
+remedição ele escreveu *"Here's how you might say it: 'I have 35 years and I
+work with marketing. Can I ask a question about the report?'"* — corrigiu o
+decalque da pergunta e deixou o da idade **dentro da frase modelo**. O aluno lê
+uma frase apresentada como certa e com o erro dele preservado. É o mesmo
+argumento de sempre: a prosa do modelo não é garantia de nada, e quem protege é
+a anotação estruturada, que nesse turno citou a regra certa.
 
 **O 3B prefere o exemplo curado ao do aluno.** O bloco leva as frases que o
 aluno escreveu (*"I have 35 years"*), e na verificação no navegador o modelo
