@@ -239,8 +239,9 @@ Três destinos, e confundi-los é erro de categoria:
 
 - **Pesos do modelo** — em `~/.ollama`, nunca no repo. Os de voz também não:
   Kokoro em `$XDG_CACHE_HOME/teacher-charles/voice` (cache, redownloadável) e
-  Whisper no cache do `huggingface_hub`. **Nunca em `XDG_DATA_HOME`**, que é
-  dado pessoal do aluno.
+  Whisper no cache do `huggingface_hub`. O reconhecedor de fonema da Fase 2
+  segue o Whisper, pela mesma razão — é repositório do Hub, e o Hub já tem
+  cache. **Nunca em `XDG_DATA_HOME`**, que é dado pessoal do aluno.
 - **Progresso do aluno** — `$XDG_DATA_HOME/teacher-charles/charles.db`, fora do
   repo. É dado pessoal. `*.db` está no `.gitignore`.
 - **Conhecimento curado** — `data/contrastive/*.yaml`, **versionado**: é conteúdo
@@ -267,13 +268,32 @@ fatia é o LLM, não o áudio — a alavanca é a iGPU ociosa da §1.3), e a
 **exatidão do STT com sotaque brasileiro, que não foi medida** — o áudio das
 tabelas é sintético, e os 0% de WER são piso, não expectativa.
 
-O que vem depois está em `docs/plano-fase-1-5.md` §6: iGPU, turn-taking sem
-botão, avaliação de pronúncia e repetição espaçada (Fase 2).
+A **Fase 2 está aberta** — `docs/plano-fase-2.md`: pronúncia por fonemas e
+repetição espaçada. Ela abriu pela medição, como a 1.5, e a medição já moveu o
+desenho em cinco lugares (§3 de lá). Os números que importam:
+
+- Metade da pilha de pronúncia **já está instalada** pelo extra `voice`: o
+  `phonemizer` + `espeakng_loader` que o Kokoro traz dão o G2P, e o
+  `onnxruntime` dá o runtime. O que falta é um peso de 318 MB.
+- O reconhecedor de fonema custa **RTF 0,17** — mais rápido que o Whisper que
+  já está no caminho — e por isso roda **depois** do turno, nunca dentro dele:
+  o caminho até a primeira palavra já está estourado em 3,99 s.
+- O piso é **0,061** de taxa de erro de fonema em fala correta e o sinal é
+  **0,119**, com 6 dos 8 erros curados nomeados pelo fonema certo. Mas o proxy
+  de sotaque brasileiro vai a **0,676**, e aí o alinhamento desaba: quando dois
+  de cada três fonemas discordam, nada é *o* erro.
+- Daí a E9 ser **portão e não etapa**: medir com voz humana brasileira é o que
+  decide se o avaliador existe. Nada de produto antes dela.
+
+O que vem depois está em `docs/plano-fase-2.md` §7: turn-taking sem botão,
+prosódia, a dívida da análise, e mobile/multiusuário.
 
 Duas dívidas conhecidas da Fase 1, as duas medidas e registradas na §5.5: a análise custa
 ~10s por turno com erro (o caminho é um modelo melhor só para ela, e a medição
 mostra que isso não atrapalha a conversa), e a primeira palavra está em 2,7s
-contra a meta de 1–2s da Fase 1.5.
+contra a meta de 1–2s da Fase 1.5. A §7 do plano 1.5 fechou a segunda ligando a
+iGPU (0,9s) e **não** fechou a primeira: a análise *gera* JSON, e geração
+empata entre CPU e iGPU.
 
 Há vários perfis de aluno numa máquina, e o ativo é o de maior `seen_seq`; login
 e multiusuário de verdade ficam fora da Fase 1 (plano §4).
