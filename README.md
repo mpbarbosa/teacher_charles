@@ -7,12 +7,13 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entregas E0–E4.** Dá para conversar em inglês de ponta a
+> **Estado: Fase 1, entregas E0–E5.** Dá para conversar em inglês de ponta a
 > ponta no navegador, e cada turno produz correção estruturada — com a regra
 > curada citada, persistida em SQLite e visível ao lado do que o aluno escreveu.
-> O perfil por nível, os modos e a tela de error log ainda não existem. Veja
-> [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a ordem das
-> entregas.
+> O perfil tem nível CEFR: ele muda o registro das respostas e se ajusta sozinho
+> a partir dos sinais de cada turno. Os modos e a tela de error log ainda não
+> existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a
+> ordem das entregas.
 
 ## Decisões que moldam o projeto
 
@@ -205,6 +206,46 @@ Duas variáveis mudam esse comportamento, e as duas têm número por trás:
 `TC_ANALYSIS_AFTER_REPLY=false` volta a disparar as duas etapas juntas (melhor
 num provider que atenda dois pedidos ao mesmo tempo).
 
+## O nível do aluno
+
+O perfil tem um nível CEFR (A2 a C2) e ele **faz diferença**: entra no prompt
+como segunda mensagem de sistema, logo depois da persona, vindo de
+`prompts/partials/level/`. Trocar o nível muda o registro da resposta — medido
+no modelo real, a frase do professor vai de 6,5 para 10,0 palavras entre A2 e
+C1, e o erro que ele escolhe corrigir muda (plano §5.3).
+
+Segunda mensagem, nunca interpolado na persona: o Ollama cacheia o prefixo do
+prompt, e um ajuste dentro da persona jogaria esse cache fora a cada turno.
+
+O nível de partida é o que o aluno declara no cabeçalho da página. Dali em
+diante ele se ajusta sozinho a partir de uma **rubrica determinística** sobre o
+texto de cada turno — comprimento de frase, palavra longa, conectivos e
+estruturas avançadas, menos uma penalidade por erro com regra curada. Nada disso
+é perguntado ao modelo: a mesma frase dá sempre o mesmo número, e cada número é
+conferível à mão.
+
+```bash
+uv run python scripts/measure_level.py              # matriz de confusão, sem modelo nenhum
+uv run python scripts/measure_level.py --hysteresis # quantos turnos até o nível andar
+uv run python scripts/measure_level.py --reply      # a mesma fala em cada nível, no modelo real
+```
+
+Duas regras moldam o ajuste, e as duas vêm de medição:
+
+| | |
+|---|---|
+| **Um turno nunca move o nível** | Turno com menos de 12 palavras não é evidência de nada, e o nível só anda quando 4 turnos contados seguidos apontam para o mesmo lado — um degrau por vez. Sem isso o aluno veria o registro do professor oscilar a cada mensagem. |
+| **C2 é autodeclarado** | A rubrica acerta 78% dos níveis e nunca erra por dois degraus, mas não distingue C1 de C2 em texto de chat. Então ela não estima C2, e não move quem está nele. |
+
+O que o aluno declarou fica guardado separado do nível em vigor
+(`self_declared_level` vs `cefr_level`), e toda mudança vira linha em
+`level_change` com o motivo. É o que permite responder "por que o Charles mudou
+o jeito de falar comigo".
+
+O nome no cabeçalho troca de perfil: são vários alunos numa máquina, cada um com
+nível e histórico próprios. Não é multiusuário com login — isso fica fora da
+Fase 1.
+
 ## Onde fica cada coisa
 
 ```
@@ -214,9 +255,10 @@ prompts/     persona e instruções em .md, versionados, recarregados sem reinic
 src/         o código
   llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)
   teaching/    a estrutura pedagógica — é esta pasta que é o produto
-    turn.py      orquestra o turno: resposta e análise em paralelo
+    turn.py      orquestra o turno: resposta, análise e sinais de nível
     analyzer.py  fala do aluno -> correção estruturada e verificada
     contrastive.py  carrega e consulta as regras curadas
+    level.py     fala do aluno -> nível CEFR estimado, com histerese
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única: template Jinja, JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

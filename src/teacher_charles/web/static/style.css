@@ -196,3 +196,48 @@ footer {
   font-size: 0.7rem;
   color: var(--curated);
 }
+
+/* --- Perfil no cabecalho ------------------------------------------------- */
+/*
+ * Nome e nivel ficam a vista, nao atras de uma tela de configuracao: o nivel
+ * muda o jeito de o Charles falar, e o aluno tem que poder discordar dele na
+ * hora. `data-source="auto"` marca o nivel que os sinais moveram, para a
+ * mudanca nao parecer coisa que aconteceu sozinha sem motivo.
+ */
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.field .label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.field input,
+.field select {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: var(--teacher);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.4rem;
+}
+
+.field input { width: 8rem; }
+
+.field input:focus,
+.field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+#level[data-source="auto"] {
+  border-color: var(--curated);
+  color: var(--curated);
+}
+
+#level-note { margin-right: auto; }
+
+#level-note.changed { color: var(--curated); }

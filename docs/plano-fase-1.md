@@ -125,7 +125,9 @@ exatamente como um turno real manda.
 de sistema — o nível do aluno, a data, um contador — jogaria esse cache fora a
 cada turno e devolveria os segundos que o aquecimento economizou. Isto é uma
 restrição de projeto para a E5, que vai querer ajustar o prompt por nível: o
-ajuste vai **depois** da persona, não dentro dela.
+ajuste vai **depois** da persona, não dentro dela. (Foi o que a E5 fez: segunda
+mensagem de sistema, que só invalida o cache quando o nível de fato muda — ver
+§5.3.)
 
 O que isto diz para o resto do plano:
 
@@ -151,7 +153,12 @@ Cada turno do aluno passa por duas etapas distintas:
 
 1. **Análise** — recebe a fala do aluno, o nível dele e os candidatos da base
    contrastiva; devolve JSON validado: `{errors: [{span, type, correction, rule_id,
-   explanation}], level_signals: {…}}`.
+   explanation}]}`.
+
+   O `level_signals` que esta linha previa **não** veio do modelo: a E5 o move
+   para código determinístico, porque a análise nem chama o modelo em turno de
+   inglês correto — que é onde mora a evidência de nível alto — e porque nota
+   atribuída por modelo não é depurável. Ver §5.3.
 2. **Resposta** — o professor responde conversando, já informado do que a análise achou.
 
 Três coisas decorrem disso, e nenhuma delas sai de graça de um prompt:
@@ -316,7 +323,7 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 | **E2** ✅ | **Chat mínimo** — rota SSE, UI de página única, histórico persistido, persona vinda de `prompts/persona.md` | **Feito.** Conversa em inglês de ponta a ponta no navegador, verificada com o modelo real. Latência medida na §1.4 |
 | **E3** ✅ | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | **Feito.** 43 itens (17 falsos cognatos, 17 decalques, 9 de interferência estrutural) e 205 testes, dos quais 172 são quatro por item; 0 falso positivo em 16 frases corretas, 9 de 10 frases com erro típico pegas. Ver §5.1 |
 | **E4** ✅ | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | **Feito.** 31 frases com erro conhecido: 87% recebem correção, todas citando a regra esperada. 18 frases corretas: 0 corrigidas por engano. 0 de 49 turnos com JSON inválido. Ver §5.2 |
-| **E5** | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | Trocar o nível do aluno muda visivelmente a resposta, verificado em teste de snapshot |
+| **E5** ✅ | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | **Feito.** A rubrica determinística acerta o nível exato em 78% de 32 amostras rotuladas e nunca erra por dois degraus; o nível entra como segunda mensagem de sistema e muda a resposta do modelo real (frase de 6,5 para 10,0 palavras entre A2 e C1, e o erro escolhido muda). Ver §5.3 |
 | **E6** | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | Os três modos funcionam na UI e o drill usa erros de fato cometidos, não genéricos |
 | **E7** | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | Um aluno consegue ver no que erra mais; um dev clona e roda seguindo só o README |
 
@@ -480,6 +487,188 @@ o mesmo modelo da conversa.
 
 **A janela de 2 correções por turno nunca encheu** na suíte: o 3B devolve uma
 por vez. Não é limite exercitado ainda.
+
+### 5.3 O que a E5 mediu, e o que a medição mudou no desenho
+
+A E5 dá ao perfil um nível que **faz diferença**: ele entra no prompt como
+segunda mensagem de sistema (`prompts/partials/level/`), e muda o registro da
+resposta. Quem decide esse nível é código — uma rubrica determinística sobre o
+texto do aluno — e não o modelo. Reproduzir:
+
+```bash
+uv run python scripts/measure_level.py              # matriz de confusão, sem modelo
+uv run python scripts/measure_level.py --hysteresis # quantos turnos até o nível andar
+uv run python scripts/measure_level.py --reply      # a mesma fala em cada nível, no modelo real
+```
+
+#### Por que os sinais são código, e não uma pergunta ao modelo
+
+O plano §2 pedia `level_signals` no JSON da análise. Isso não sobreviveu ao que
+a E4 construiu, por dois motivos:
+
+1. **A análise não chama o modelo quando a base não levanta candidato** — 37%
+   dos turnos da suíte da E4. E turno de inglês correto é exatamente onde mora
+   a evidência de nível alto. Pedir o sinal à análise seria medir nível só nos
+   turnos com erro.
+2. **Nota de modelo não é depurável.** O mesmo turno receberia B1 ou B2
+   conforme a amostragem, e não haveria como explicar nenhum dos dois. A
+   rubrica dá sempre o mesmo número para o mesmo texto, e cada número é
+   conferível à mão sobre a frase.
+
+A rubrica são quatro sinais positivos — comprimento médio de frase, proporção
+de palavra longa, conectivos avançados e estruturas avançadas por 100 palavras —
+menos uma penalidade por erro com regra curada. Erro **sem** regra curada não
+penaliza: é a mesma política da §5.2, e inflar a penalidade com o que o modelo
+achou sozinho rebaixaria o aluno por engano.
+
+#### Resultado: 78% de acerto exato, 100% a um degrau
+
+Suíte: `tests/fixtures/level_samples.yaml` — 32 amostras escritas à mão imitando
+o que cada nível de fato manda num chat, 8 por nível.
+
+| | A2 | B1 | B2 | C1 |
+|---|---|---|---|---|
+| **rótulo A2** | **8** | | | |
+| **rótulo B1** | | **7** | 1 | |
+| **rótulo B2** | | 1 | **3** | 4 |
+| **rótulo C1** | | | 1 | **7** |
+
+| | |
+|---|---|
+| Acerto exato | **78%** (25/32) |
+| Acerto a um degrau | **100%** (32/32) |
+| Pontas da escala (A2 e C1) | 15 de 16 |
+
+O que a matriz diz, e é o achado mais importante da E5: **a rubrica separa bem
+as pontas e confunde o meio.** A2 nunca passa de A2; C1 erra uma vez para B2. O
+B2 é a classe fraca — metade das amostras lê como C1 —, e isso é limite do
+método, não bug: a diferença entre um B2 e um C1 num chat está em precisão
+lexical e nuance, não em contagem de palavra longa.
+
+É por isso que o ajuste tem inércia, e não é por cautela genérica: um erro de um
+degrau se corrige sozinho em quatro turnos, e nenhum turno sozinho move nada.
+
+#### 1. A rubrica não estima C2 — porque tentar piorava
+
+A primeira versão tinha corte de C1→C2 em 0,82, depois 0,92. Medido: **três das
+oito amostras B2 iam para C2**, errando por dois degraus, porque o score satura
+fácil (uma frase longa com um conectivo já encosta no teto). O corte saiu.
+
+Consequência implementada: C2 é nível **autodeclarado**, e os sinais não movem
+quem está nele — sobre um C2 esta rubrica não tem o que dizer, nem para cima nem
+para baixo. Era isso ou fingir uma precisão que o método não tem.
+
+#### 2. A contração era o maior buraco, e não o peso dos sinais
+
+A primeira rodada deu 44% de acerto, e a inspeção mostrou por quê: as amostras
+B1 e B2 vinham com **zero** estruturas avançadas. O padrão de aspecto perfeito
+pedia `have|has|had`, e o aluno escreve `I've been working`. Tratar a contração
+subiu o acerto mais que qualquer ajuste de peso depois.
+
+#### 3. A calibração sem restrição chegava a uma regra degenerada
+
+A busca em grade livre atinge **88%** de acerto — dando 0,8 do peso a
+comprimento de frase e palavra longa, ou seja, "texto mais longo é nível mais
+alto". Vale na amostra e quebra no primeiro C1 que escreva uma linha curta e
+certeira. A calibração final impõe piso de 0,15 por sinal e aceita 78%: 10
+pontos de acerto na amostra pagos por uma rubrica que mede quatro coisas em vez
+de uma.
+
+#### 4. O preço da inércia, medido
+
+`--hysteresis` simula um aluno cujas mensagens são todas do mesmo nível e conta
+turnos até o perfil chegar lá:
+
+| Declarado | Escreve como | Caminho | Turnos |
+|---|---|---|---|
+| A2 | B1 | A2 → B1 | 4 |
+| A2 | C1 | A2 → B1 → B2 → C1 | 12 |
+| B1 | B2 | B1 → B2 | 4 |
+| C1 | B1 | C1 → B2 → B1 | 8 |
+| C1 | B2 | — | **nunca** |
+
+A simulação acima zera a janela a cada degrau, e foi ela que expôs um bug: o
+código **não** zerava. Os mesmos quatro turnos que moveram o nível continuavam
+na janela e o moviam de novo no turno seguinte — quatro turnos bons levariam um
+A2 a C1 em seis. `level_change.at_signal_id` marca até onde a janela já foi
+consumida, e declarar o nível na mão também a fecha: senão a evidência
+acumulada antes da escolha do aluno a desfaria no turno seguinte, que é o
+oposto de ele ter a última palavra.
+
+Quatro turnos por degrau é o custo de não oscilar. A última linha é o preço da
+confusão B2/C1: como metade das amostras B2 lê como C1, a janela nunca fecha
+para baixo, e um C1 declarado que escreve como B2 fica em C1. É dívida
+conhecida; a saída é a rubrica melhorar no meio da escala, não a janela
+encurtar.
+
+#### 5. O nível muda a resposta, e dá para ver
+
+Mesma fala do aluno, mesmo modelo (`qwen2.5:3b-instruct-q4_K_M`), só mudando o
+partial de nível. Entrada: *"I have 35 years and I work with marketing.
+Yesterday I go to a meeting with my boss."*
+
+| Nível | Palavras por frase | Resposta |
+|---|---|---|
+| A2 | 6,5 | *You said "I have 35 years." In English, age uses to be: "I am 35 years old." How was your day? Did you have any meetings?* |
+| B1 | 7,7 | *…"I am 35 years old." How was your day at work?* |
+| B2 | 8,3 | *You said "I go to a meeting." In English, we use "I went to a meeting." So — what did you and your boss discuss?* |
+| C1 | 10,0 | *…"I went to a meeting" for the past. So — what marketing projects are you working on right now?* |
+
+O efeito é real e modesto, e vale dizer as duas coisas. A frase cresce
+monotonicamente com o nível (6,5 → 7,7 → 8,3 → 10,0), e **o erro escolhido
+muda**: em A2 e B1 o 3B corrige o decalque de idade, que é o erro que trava
+comunicação; em B2 e C1 ele deixa isso de lado e corrige o tempo verbal, com
+pergunta de seguimento mais específica. O que o 3B não faz é a parte mais
+ambiciosa dos partials — idioma, nuance, discordar do aluno em C1. Isso é limite
+do modelo: o ajuste chega ao prompt, o prompt chega ao modelo, e o modelo entrega
+o que um 3B entrega.
+
+E a mesma sonda num 7B (`qwen2.5:7b-instruct-q4_K_M`) desmente qualquer
+conclusão fácil sobre *direção*: lá a resposta de A2 saiu com **70** palavras e a
+de C1 com **58** — ou seja, mais longa no nível que pede frase curta, porque o
+7B resolveu explicar as duas correções com calma para o A2. O que as duas
+medições concordam é que **o ajuste chega e muda a saída**; o quanto e para que
+lado é propriedade do modelo, não do partial. (De passagem, o 7B levou 28,9s num
+turno já aquecido contra 7,8s do 3B — a decisão 1.3 continua de pé.)
+
+Verificado no navegador, com o provider falso para a mecânica da tela: quatro
+turnos escritos como um B2 moveram o badge de B1 para B2, com a nota *"Charles
+moved you up to B2."* no rodapé e a borda do seletor mudando de cor para marcar
+que o nível agora é estimado e não declarado. Trocar o nome no cabeçalho troca
+de perfil — `ana` entra em B1 com a tela limpa, voltar para `student` traz B2 e
+o histórico de volta — e escolher o nível na mão volta a marcá-lo como
+autodeclarado.
+
+#### 6. Perfil ativo é contador, não relógio
+
+São vários alunos numa máquina (o nome no cabeçalho troca de perfil), sem login:
+multiusuário continua fora da Fase 1. O perfil ativo é o visto por último, e as
+duas primeiras implementações disso estavam erradas — `datetime('now')`
+(resolução de segundo) e depois `strftime` com milissegundo. Um teste de
+troca-e-volta de perfil quebrou nas duas: as escritas caem no mesmo instante, o
+desempate por id devolve sempre o mesmo aluno. `student.seen_seq` é um contador,
+não depende de relógio nenhum, e continua uma instrução SQL autônoma — que é o
+que a conexão compartilhada exige.
+
+#### O que ficou ruim, dito por inteiro
+
+**32 amostras escritas à mão não são um corpus.** As constantes foram calibradas
+contra elas, então 78% é o acerto na suíte que as escolheu — não uma medida
+independente. O que protege contra overfit é a restrição do piso por sinal e o
+teste que proíbe erro de dois degraus; o que resolveria de verdade é recalibrar
+sobre turnos reais, e `level_signal` guarda os números de todo turno justamente
+para isso ser possível depois.
+
+**Nenhuma amostra C2, de propósito.** Ver item 1.
+
+**A penalidade por erro quase não foi exercitada.** As amostras não têm
+correção associada, então o peso do erro (0,35) está escolhido por
+proporcionalidade — um erro a cada 12 palavras derruba um degrau —, e não
+medido. É o primeiro número a revisar quando houver turno real no banco.
+
+**O nível novo só vale no turno seguinte.** O turno que move o nível já foi
+gerado com o registro antigo. Refazer a resposta custaria o turno inteiro para
+ganhar um ajuste que o aluno não pediu.
 
 ### Rodar em dev
 

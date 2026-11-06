@@ -10,6 +10,20 @@
   <header>
     <h1>Teacher Charles</h1>
     <div class="meta">
+      <label class="field" title="Quem está estudando — trocar o nome troca de perfil">
+        <span class="label">Student</span>
+        <input id="student-name" type="text" value="{{ profile.name }}"
+               maxlength="60" autocomplete="off" aria-label="Your name">
+      </label>
+      <label class="field" title="Nível CEFR: muda o registro das respostas do Charles">
+        <span class="label">Level</span>
+        <select id="level" aria-label="Your level"
+                data-source="{{ profile.level_source }}">
+          {% for option in profile.levels %}
+          <option value="{{ option }}" {{ 'selected' if option == profile.level }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <span class="model" title="Modelo em uso">{{ model }}</span>
       <button id="reset" type="button" title="Começar uma conversa nova">New conversation</button>
     </div>
@@ -49,6 +63,7 @@
   </form>
 
   <footer>
+    <span id="level-note"></span>
     <span id="status"></span>
     <span class="version">v{{ version }}</span>
   </footer>

@@ -29,19 +29,24 @@ from .llm import ChatProvider, build_provider, default_options
 from .llm.base import GenerationOptions, Message
 from .prompts import PromptLibrary
 from .store.db import init_db
-from .store.repo import CorrectionRepo, SessionRepo, StudentRepo, TurnRepo
-from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, TurnRunner
+from .store.models import CEFR_LEVELS, Student
+from .store.repo import CorrectionRepo, LevelRepo, SessionRepo, StudentRepo, TurnRepo
+from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, Leveled, TurnRunner
 from .teaching.contrastive import ContrastiveError, load_base
+from .teaching.level import LevelTracker, partial_name
+from .teaching.turn import DEFAULT_LEVEL
 
 log = logging.getLogger(__name__)
 
 WEB_DIR = PACKAGE_ROOT / "web"
 
-# Na E2 há um aluno só. Perfil e múltiplos alunos são da E5.
+# O perfil que existe antes de o aluno dizer o nome dele. A partir da E5 há
+# vários perfis numa máquina — o ativo é o visto por último —, mas não há login:
+# multiusuário fica fora da Fase 1 (plano §4).
 DEFAULT_STUDENT = "student"
 
 
-async def _warm_up(provider: ChatProvider, prompts: PromptLibrary) -> None:
+async def _warm_up(provider: ChatProvider, prompts: PromptLibrary, level: str) -> None:
     """Carrega o modelo **e** põe a persona no cache de prefixo.
 
     O prompt tem que ser o mesmo de um turno real, com a persona como mensagem
@@ -54,12 +59,19 @@ async def _warm_up(provider: ChatProvider, prompts: PromptLibrary) -> None:
     /health já diz isso, e derrubar a subida por causa do aquecimento seria
     pior do que um primeiro turno lento.
     """
+    messages = [Message(role="system", content=prompts.get("persona"))]
+    # O prefixo cacheado tem que ser o do turno real, e desde a E5 o turno real
+    # manda persona **e** ajuste de nível como mensagens de sistema. Aquecer só
+    # com a persona deixaria o partial fora do cache, e o primeiro turno pagaria
+    # a avaliação dele.
+    name = partial_name(level)
+    if prompts.exists(name):
+        messages.append(Message(role="system", content=prompts.get(name)))
+    messages.append(Message(role="user", content="Hello."))
+
     try:
         await provider.complete(
-            [
-                Message(role="system", content=prompts.get("persona")),
-                Message(role="user", content="Hello."),
-            ],
+            messages,
             GenerationOptions(temperature=0.0, max_tokens=1, think=False),
         )
         log.info("modelo %s aquecido, persona em cache", provider.model)
@@ -71,6 +83,17 @@ async def _warm_up(provider: ChatProvider, prompts: PromptLibrary) -> None:
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class ProfileRequest(BaseModel):
+    """O que o aluno pode mudar no perfil dele.
+
+    Os dois campos são opcionais: trocar de perfil e corrigir o nível são
+    pedidos diferentes, e a UI faz um por vez.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    level: str | None = None
 
 
 def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
@@ -112,6 +135,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.provider = chat
         app.state.prompts = prompts
         app.state.analyzer = analyzer
+        app.state.tracker = LevelTracker(conn)
         app.state.runner = TurnRunner(
             provider=chat,
             prompts=prompts,
@@ -119,13 +143,22 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             options=default_options(settings),
             analyzer=analyzer,
             analysis_after_reply=settings.analysis_after_reply,
+            tracker=app.state.tracker,
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
         # essa espera caía inteira no primeiro turno do aluno (16,3s até a
         # primeira palavra, contra 1,1s nos turnos seguintes). Aquecer em
         # segundo plano move isso para enquanto a página ainda está sendo lida.
-        warmup = asyncio.create_task(_warm_up(chat, prompts)) if settings.llm_warmup else None
+        # Aquece com o nível do perfil ativo: é o prompt que o primeiro turno
+        # vai mandar de verdade.
+        active = StudentRepo(conn).active()
+        warm_level = active.cefr_level if active is not None else DEFAULT_LEVEL
+        warmup = (
+            asyncio.create_task(_warm_up(chat, prompts, warm_level))
+            if settings.llm_warmup
+            else None
+        )
         app.state.warmup = warmup
 
         try:
@@ -150,9 +183,34 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
 
     # --- helpers ---------------------------------------------------------- #
 
+    def active_student(conn: sqlite3.Connection) -> Student:
+        """O perfil em uso: o visto por último, ou o default na primeira vez."""
+        students = StudentRepo(conn)
+        return students.active() or students.get_or_create(DEFAULT_STUDENT)
+
     def active_session(conn: sqlite3.Connection) -> int:
-        student = StudentRepo(conn).get_or_create(DEFAULT_STUDENT)
-        return SessionRepo(conn).current_or_start(student.id)
+        return SessionRepo(conn).current_or_start(active_student(conn).id)
+
+    def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
+        student = active_student(conn)
+        changes = LevelRepo(conn).changes(student.id, limit=10)
+        return {
+            "name": student.name,
+            "level": student.cefr_level,
+            "self_declared_level": student.self_declared_level,
+            "level_source": student.level_source,
+            "levels": list(CEFR_LEVELS),
+            "history": [
+                {
+                    "from": c.from_level,
+                    "to": c.to_level,
+                    "source": c.source,
+                    "reason": c.reason,
+                    "at": c.created_at,
+                }
+                for c in changes
+            ],
+        }
 
     # --- páginas ---------------------------------------------------------- #
 
@@ -174,6 +232,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             context={
                 "version": __version__,
                 "model": settings.llm_model,
+                "profile": profile_payload(conn),
                 "history": [
                     {
                         "role": t.role,
@@ -197,11 +256,12 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         """
         conn: sqlite3.Connection = app.state.db
         runner: TurnRunner = app.state.runner
-        session_id = active_session(conn)
+        student = active_student(conn)
+        session_id = SessionRepo(conn).current_or_start(student.id)
 
         async def events() -> AsyncIterator[bytes]:
             try:
-                async for event in runner.run(session_id, payload.message):
+                async for event in runner.run(session_id, payload.message, student):
                     if isinstance(event, Chunk):
                         frame = {"type": "chunk", "text": event.text}
                     elif isinstance(event, Analyzed):
@@ -209,6 +269,11 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                         # para a UI anotar o que o aluno disse em vez de
                         # misturar com o texto do professor.
                         frame = {"type": "analysis", **event.analysis.as_dict()}
+                    elif isinstance(event, Leveled):
+                        # Vai em todo turno, não só na mudança: a UI mostra o
+                        # nível em vigor, e um frame só na mudança deixaria o
+                        # badge defasado depois de um reinício.
+                        frame = {"type": "level", **event.decision.as_dict()}
                     elif isinstance(event, Done):
                         frame = {
                             "type": "done",
@@ -269,6 +334,52 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             }
         )
 
+    @app.get("/api/profile")
+    async def get_profile() -> JSONResponse:
+        return JSONResponse(profile_payload(app.state.db))
+
+    @app.post("/api/profile")
+    async def set_profile(payload: ProfileRequest) -> JSONResponse:
+        """Troca de perfil e/ou declara o nível.
+
+        Mandar um ``name`` que não existe cria o perfil — é como se escolhe o
+        aluno, sem login e sem tela de cadastro. Mandar ``level`` redefine o
+        nível autodeclarado: o aluno tem a última palavra sobre o próprio nível,
+        e o ajuste automático parte do que ele disse.
+        """
+        conn: sqlite3.Connection = app.state.db
+        students = StudentRepo(conn)
+
+        level = payload.level.strip().upper() if payload.level else None
+        if level is not None and level not in CEFR_LEVELS:
+            return JSONResponse(
+                {"detail": f"nível inválido: {payload.level!r}", "levels": list(CEFR_LEVELS)},
+                status_code=422,
+            )
+
+        name = payload.name.strip() if payload.name else None
+        if name:
+            student = students.get_or_create(name, cefr_level=level or DEFAULT_LEVEL)
+            students.touch(student.id)
+        else:
+            student = active_student(conn)
+
+        if level is not None and level != student.cefr_level:
+            levels = LevelRepo(conn)
+            levels.log_change(
+                student.id,
+                student.cefr_level,
+                level,
+                source="self",
+                reason="the student set the level",
+                # Zera a janela de histerese: a evidência acumulada antes da
+                # declaração desfaria a escolha do aluno no turno seguinte.
+                at_signal_id=levels.last_signal_id(student.id),
+            )
+            students.set_level(student.id, level, source="self")
+
+        return JSONResponse(profile_payload(conn))
+
     @app.post("/api/reset")
     async def reset() -> JSONResponse:
         """Encerra a sessão atual e começa outra.
@@ -276,7 +387,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         O histórico antigo fica no banco — é o material do error log da E7.
         """
         conn: sqlite3.Connection = app.state.db
-        student = StudentRepo(conn).get_or_create(DEFAULT_STUDENT)
+        student = active_student(conn)
         sessions = SessionRepo(conn)
         sessions.end(sessions.current_or_start(student.id))
         return JSONResponse({"session_id": sessions.current_or_start(student.id)})
@@ -313,6 +424,13 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         except ContrastiveError as exc:
             contrastive_info = {"ok": False, "items": 0, "detail": str(exc)}
 
+        # Partial de nível que falta não derruba o turno — a resposta sai com a
+        # persona sozinha —, mas tira silenciosamente o ajuste por nível, que é
+        # metade da E5. Silencioso é exatamente o que o /health existe para
+        # evitar, então o que falta aparece aqui sem mudar o status.
+        prompts: PromptLibrary = app.state.prompts
+        missing_levels = [level for level in CEFR_LEVELS if not prompts.exists(partial_name(level))]
+
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
             # modelo e base contrastiva. Separar os três evita um health verde
@@ -324,6 +442,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "database": db_info,
             "model": model.as_dict(),
             "contrastive": contrastive_info,
+            "level_partials": {
+                "ok": not missing_levels,
+                "missing": missing_levels,
+            },
             "provider": type(app.state.provider).__name__,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)

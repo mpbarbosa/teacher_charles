@@ -13,8 +13,17 @@ from teacher_charles.llm.base import GenerationOptions
 from teacher_charles.prompts import PromptLibrary
 from teacher_charles.store import db
 from teacher_charles.store.repo import CorrectionRepo, SessionRepo, StudentRepo, TurnRepo
-from teacher_charles.teaching import Analyzed, Analyzer, Chunk, Done, Failed, TurnRunner
+from teacher_charles.teaching import (
+    Analyzed,
+    Analyzer,
+    Chunk,
+    Done,
+    Failed,
+    Leveled,
+    TurnRunner,
+)
 from teacher_charles.teaching.contrastive import load_base
+from teacher_charles.teaching.level import AGREEING_TURNS, LevelTracker, partial_name
 from teacher_charles.teaching.turn import MAX_HINT_RULES
 
 
@@ -43,8 +52,8 @@ def runner_for(provider, prompts, conn, **kwargs) -> TurnRunner:
     return TurnRunner(provider=provider, prompts=prompts, conn=conn, **kwargs)
 
 
-async def collect(runner, session_id, text):
-    return [event async for event in runner.run(session_id, text)]
+async def collect(runner, session_id, text, student=None):
+    return [event async for event in runner.run(session_id, text, student)]
 
 
 # --- Caminho felizmente comum --------------------------------------------- #
@@ -434,3 +443,145 @@ async def test_no_analyzer_keeps_the_e2_turn(prompts, conn, session_id):
     assert not any(isinstance(e, Analyzed) for e in events)
     assert events[-1].analysis_ms == 0.0
     assert [m.role for m in provider.last_call.messages] == ["system", "user"]
+
+
+# --- O ajuste por nível (E5) ---------------------------------------------- #
+#
+# Estes testes usam os prompts **de verdade**, de `prompts/`: o critério de
+# aceite da E5 é sobre o produto, não sobre um partial inventado no tmp_path.
+
+
+@pytest.fixture
+def real_prompts():
+    return PromptLibrary(REPO_ROOT / "prompts")
+
+
+@pytest.fixture
+def student(conn):
+    return StudentRepo(conn).get_or_create("ana", cefr_level="B1")
+
+
+def test_level_prompt_is_the_second_system_message(real_prompts, conn, session_id):
+    """Depois da persona, nunca dentro dela.
+
+    O Ollama cacheia o prefixo do prompt. Como segunda mensagem, o ajuste de
+    nível só invalida o cache quando o nível muda; interpolado na persona,
+    invalidaria a cada turno e devolveria os segundos que o aquecimento
+    economizou (plano §1.4).
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn)
+    messages = runner.build_messages(session_id, "hello there", "B2")
+
+    assert messages[0].content == real_prompts.get("persona")
+    assert messages[1].role == "system"
+    assert messages[1].content == real_prompts.get(partial_name("B2"))
+
+
+def test_changing_the_level_changes_the_prompt(real_prompts, conn, session_id):
+    """O critério de aceite da E5, na parte que não depende do modelo.
+
+    Dois níveis têm que produzir prompts diferentes, com a persona idêntica nos
+    dois: o que muda é o ajuste, não quem o Charles é.
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn)
+
+    beginner = runner.build_messages(session_id, "hello there", "A2")
+    advanced = runner.build_messages(session_id, "hello there", "C1")
+
+    assert beginner[0] == advanced[0], "a persona não pode mudar com o nível"
+    assert beginner[1] != advanced[1]
+    assert "A2" in beginner[1].content and "C1" in advanced[1].content
+    # E o ajuste de verdade chega ao modelo, não só ao build_messages.
+    assert len({len(beginner), len(advanced)}) == 1
+
+
+async def test_the_student_level_reaches_the_model(real_prompts, conn, session_id, student):
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn)
+
+    await collect(runner, session_id, "I work with marketing here", student)
+
+    system = provider.system_prompt_of_last_call()
+    assert real_prompts.get(partial_name("B1")) in system
+    assert real_prompts.get(partial_name("C1")) not in system
+
+
+async def test_turn_without_student_falls_back_to_the_entry_level(real_prompts, conn, session_id):
+    """Sem perfil, o turno é o da E2 com o registro de entrada do produto."""
+    provider = FakeProvider()
+    await collect(runner_for(provider, real_prompts, conn), session_id, "hello there")
+    assert real_prompts.get(partial_name("B1")) in provider.system_prompt_of_last_call()
+
+
+async def test_missing_level_partial_does_not_break_the_turn(prompts, conn, session_id, student):
+    """`prompts` (o fixture do tmp_path) só tem a persona.
+
+    Arquivo de prompt que falta não deveria derrubar a aula: o turno volta a
+    ser o da E2.
+    """
+    provider = FakeProvider()
+    events = await collect(runner_for(provider, prompts, conn), session_id, "hello", student)
+
+    assert isinstance(events[-1], Done)
+    assert provider.last_call.messages[0].content == "You are Charles."
+    assert len([m for m in provider.last_call.messages if m.role == "system"]) == 1
+
+
+async def test_level_event_comes_in_every_turn_with_a_profile(
+    real_prompts, conn, session_id, student
+):
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn, tracker=LevelTracker(conn))
+
+    events = await collect(runner, session_id, "I work with marketing in a company here", student)
+
+    leveled = [e for e in events if isinstance(e, Leveled)]
+    assert len(leveled) == 1
+    assert leveled[0].decision.level == "B1"
+    assert leveled[0].decision.changed is False
+    # Antes do Done: o Done fecha o turno.
+    assert isinstance(events[-1], Done)
+
+
+async def test_the_level_in_force_only_changes_the_next_turn(
+    real_prompts, conn, session_id, student
+):
+    """Mudar o nível no meio do turno não refaz a resposta já gerada."""
+    provider = FakeProvider(replies="ok")
+    runner = runner_for(provider, real_prompts, conn, tracker=LevelTracker(conn))
+    text = (
+        "Although I have worked in logistics for almost ten years, I would rather "
+        "understand how the current process works, which nobody has documented, "
+        "before suggesting any change to the team."
+    )
+
+    changed = None
+    for _ in range(AGREEING_TURNS):
+        profile = StudentRepo(conn).get(student.id)
+        events = await collect(runner, session_id, text, profile)
+        for event in events:
+            if isinstance(event, Leveled) and event.decision.changed:
+                changed = event.decision
+
+    assert changed is not None and changed.level == "B2"
+    # O turno que mudou o nível ainda foi gerado com o prompt de B1...
+    assert real_prompts.get(partial_name("B1")) in provider.system_prompt_of_last_call()
+    # ...e o próximo já sai com o de B2.
+    await collect(runner, session_id, "and what about you", StudentRepo(conn).get(student.id))
+    assert real_prompts.get(partial_name("B2")) in provider.system_prompt_of_last_call()
+
+
+async def test_level_tracking_failure_does_not_kill_the_turn(
+    real_prompts, conn, session_id, student
+):
+    """A resposta do professor já saiu; nível quebrado não pode levá-la embora."""
+
+    class Broken(LevelTracker):
+        def observe(self, *args, **kwargs):
+            raise RuntimeError("banco sumiu")
+
+    runner = runner_for(FakeProvider(), real_prompts, conn, tracker=Broken(conn))
+    events = await collect(runner, session_id, "I work with marketing here", student)
+
+    assert not [e for e in events if isinstance(e, Leveled)]
+    assert isinstance(events[-1], Done)

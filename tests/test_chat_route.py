@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from teacher_charles.app import create_app
 from teacher_charles.config import Settings
 from teacher_charles.llm import FakeProvider, ProviderUnavailable
+from teacher_charles.prompts import PromptLibrary
 
 
 def settings_for(tmp_path, **overrides) -> Settings:
@@ -383,3 +384,153 @@ def test_warmup_failure_does_not_break_startup(tmp_path):
 
     with TestClient(create_app(settings, provider=provider)) as client:
         assert client.get("/api/history").status_code == 200
+
+
+# --- Perfil e nível (E5) -------------------------------------------------- #
+
+
+def test_profile_starts_at_the_entry_level(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/profile").json()
+
+    assert body["level"] == "B1"
+    assert body["self_declared_level"] == "B1"
+    assert body["level_source"] == "self"
+    assert body["levels"] == ["A2", "B1", "B2", "C1", "C2"]
+    assert body["history"] == []
+
+
+def test_student_can_declare_the_level(client_and_provider):
+    client, _ = client_and_provider
+    body = client.post("/api/profile", json={"level": "b2"}).json()
+
+    assert body["level"] == "B2"
+    assert body["self_declared_level"] == "B2", "o aluno redefine o ponto de partida"
+    assert body["level_source"] == "self"
+    assert body["history"][0] == {
+        **body["history"][0],
+        "from": "B1",
+        "to": "B2",
+        "source": "self",
+    }
+
+
+def test_invalid_level_is_refused(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/profile", json={"level": "Z9"})
+    assert response.status_code == 422
+    assert client.get("/api/profile").json()["level"] == "B1"
+
+
+def test_naming_a_new_student_switches_profile(client_and_provider):
+    """Vários alunos numa máquina, sem login (plano §4)."""
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "C1"})
+
+    other = client.post("/api/profile", json={"name": "ana"}).json()
+    assert other["name"] == "ana"
+    assert other["level"] == "B1", "perfil novo começa no nível de entrada"
+
+    # E o perfil ativo continua sendo o último escolhido.
+    assert client.get("/api/profile").json()["name"] == "ana"
+
+    back = client.post("/api/profile", json={"name": "student"}).json()
+    assert back["level"] == "C1", "o perfil antigo manteve o nível dele"
+
+
+def test_the_level_in_force_reaches_the_prompt(client_and_provider):
+    client, provider = client_and_provider
+    client.post("/api/profile", json={"level": "A2"})
+    client.post("/api/chat", json={"message": "I work with marketing"})
+
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "A2" in system
+
+
+def test_chat_reports_the_level_in_every_turn(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/chat", json={"message": "I have 30 years"})
+    frames = frames_from(response)
+
+    level = [f for f in frames if f["type"] == "level"]
+    assert len(level) == 1
+    assert level[0]["level"] == "B1"
+    assert level[0]["changed"] is False
+    assert level[0]["counted"] is False, "quatro palavras não são evidência de nível"
+    # O frame de nível vem antes do done, que fecha o turno.
+    assert frames[-1]["type"] == "done"
+
+
+def test_the_level_moves_after_enough_turns(client_and_provider):
+    client, _ = client_and_provider
+    text = (
+        "Although I have worked in logistics for almost ten years, I would rather "
+        "understand how the current process works, which nobody has documented, "
+        "before suggesting any change to the team."
+    )
+
+    moved = []
+    for _ in range(4):
+        frames = frames_from(client.post("/api/chat", json={"message": text}))
+        moved += [f for f in frames if f["type"] == "level" and f["changed"]]
+
+    assert [(f["previous"], f["level"]) for f in moved] == [("B1", "B2")]
+
+    profile = client.get("/api/profile").json()
+    assert profile["level"] == "B2"
+    assert profile["level_source"] == "auto"
+    assert profile["self_declared_level"] == "B1"
+    assert profile["history"][0]["to"] == "B2"
+
+
+def test_index_renders_the_profile(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "C1"})
+    page = client.get("/").text
+
+    assert 'id="level"' in page
+    assert '<option value="C1" selected>' in page
+    assert 'id="student-name"' in page
+
+
+def test_health_reports_missing_level_partials(tmp_path):
+    """Partial que falta tira metade da E5 em silêncio; o /health conta."""
+    empty = tmp_path / "prompts"
+    empty.mkdir()
+    (empty / "persona.md").write_text("You are Charles.", encoding="utf-8")
+    (empty / "analysis.md").write_text("You find mistakes.", encoding="utf-8")
+
+    app = create_app(settings_for(tmp_path), provider=FakeProvider())
+    with TestClient(app) as client:
+        # Troca a biblioteca de prompts por uma sem partial de nível, que é o
+        # estado que o teste descreve: o repo de verdade tem os cinco.
+        app.state.prompts = PromptLibrary(empty)
+        body = client.get("/health").json()
+
+    assert body["level_partials"] == {
+        "ok": False,
+        "missing": ["A2", "B1", "B2", "C1", "C2"],
+    }
+    # Mas o serviço não fica degradado por isso: o turno ainda funciona sem o
+    # ajuste de registro, como na E2.
+    assert body["database"]["ok"] is True
+
+
+def test_declaring_a_level_survives_the_next_turn(client_and_provider):
+    """O aluno tem a última palavra, e ela não pode ser desfeita no turno seguinte."""
+    client, _ = client_and_provider
+    text = (
+        "Although I have worked in logistics for almost ten years, I would rather "
+        "understand how the current process works, which nobody has documented, "
+        "before suggesting any change to the team."
+    )
+    for _ in range(3):
+        client.post("/api/chat", json={"message": text})
+
+    assert client.post("/api/profile", json={"level": "A2"}).json()["level"] == "A2"
+
+    frames = frames_from(client.post("/api/chat", json={"message": text}))
+    level = [f for f in frames if f["type"] == "level"][0]
+    assert level["changed"] is False
+    assert client.get("/api/profile").json()["level"] == "A2"

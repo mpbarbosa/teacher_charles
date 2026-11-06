@@ -13,6 +13,9 @@ const input = document.getElementById("message");
 const sendButton = document.getElementById("send");
 const statusLine = document.getElementById("status");
 const resetButton = document.getElementById("reset");
+const levelSelect = document.getElementById("level");
+const levelNote = document.getElementById("level-note");
+const nameInput = document.getElementById("student-name");
 
 let busy = false;
 
@@ -174,6 +177,8 @@ async function sendMessage(text) {
         // Chega em geral antes de o professor terminar de falar: as duas
         // etapas do turno rodam em paralelo.
         addCorrections(student.article, frame.errors);
+      } else if (frame.type === "level") {
+        applyLevel(frame);
       } else if (frame.type === "done") {
         const analysis = frame.analysis_ms
           ? ` · analysis ${(frame.analysis_ms / 1000).toFixed(1)} s`
@@ -195,6 +200,72 @@ async function sendMessage(text) {
   } finally {
     target.classList.remove("streaming");
   }
+}
+
+/**
+ * Mostra o nivel em vigor depois do turno.
+ *
+ * O frame chega em TODO turno, nao so quando o nivel muda: o badge tem que
+ * estar certo depois de um reinicio, nao so depois de uma mudanca. A nota em
+ * ingles aparece apenas na mudanca -- o aluno merece saber por que o Charles
+ * passou a falar diferente com ele.
+ */
+function applyLevel(frame) {
+  if (!levelSelect) return;
+  levelSelect.value = frame.level;
+  levelSelect.dataset.source = frame.changed ? "auto" : levelSelect.dataset.source;
+  if (frame.changed) {
+    const direction = frame.level > frame.previous ? "up" : "down";
+    levelNote.textContent = `Charles moved you ${direction} to ${frame.level}.`;
+    levelNote.classList.add("changed");
+  }
+}
+
+async function postProfile(body) {
+  const response = await fetch("/api/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+if (levelSelect) {
+  levelSelect.addEventListener("change", async () => {
+    const chosen = levelSelect.value;
+    try {
+      const profile = await postProfile({ level: chosen });
+      levelSelect.value = profile.level;
+      levelSelect.dataset.source = profile.level_source;
+      levelNote.textContent = `Level set to ${profile.level}.`;
+      levelNote.classList.remove("changed");
+    } catch (error) {
+      setStatus(`Could not change your level: ${error.message}`, true);
+    }
+  });
+}
+
+if (nameInput) {
+  // Trocar o nome troca de aluno, e o historico da tela e do outro perfil:
+  // recarregar e mais honesto que manter a conversa de outra pessoa na tela.
+  const switchProfile = async () => {
+    const name = nameInput.value.trim();
+    if (!name || name === nameInput.defaultValue) return;
+    try {
+      await postProfile({ name });
+      window.location.reload();
+    } catch (error) {
+      setStatus(`Could not switch profile: ${error.message}`, true);
+    }
+  };
+  nameInput.addEventListener("change", switchProfile);
+  nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      switchProfile();
+    }
+  });
 }
 
 form.addEventListener("submit", async (event) => {

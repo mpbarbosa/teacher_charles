@@ -7,7 +7,7 @@ import sqlite3
 import pytest
 
 from teacher_charles.store import db
-from teacher_charles.store.repo import SessionRepo, StudentRepo, TurnRepo
+from teacher_charles.store.repo import LevelRepo, SessionRepo, StudentRepo, TurnRepo
 
 
 @pytest.fixture
@@ -141,3 +141,134 @@ def test_correction_allows_null_rule_id(conn):
     )
     row = conn.execute("SELECT * FROM correction").fetchone()
     assert row["rule_id"] is None
+
+
+# --- Perfil e nível (E5) -------------------------------------------------- #
+
+
+def test_new_student_records_the_declared_level(conn):
+    student = StudentRepo(conn).get_or_create("ana", cefr_level="B2")
+    assert student.cefr_level == "B2"
+    assert student.self_declared_level == "B2"
+    assert student.level_source == "self"
+    assert student.seen_seq > 0
+
+
+def test_auto_adjustment_does_not_touch_the_declared_level(conn):
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana", cefr_level="B1")
+
+    moved = students.set_level(student.id, "B2", source="auto")
+    assert moved.cefr_level == "B2"
+    assert moved.self_declared_level == "B1", "a referência externa tem que sobreviver"
+    assert moved.level_source == "auto"
+
+
+def test_the_student_redefines_the_starting_point(conn):
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana", cefr_level="B1")
+    students.set_level(student.id, "B2", source="auto")
+
+    declared = students.set_level(student.id, "C1", source="self")
+    assert (declared.cefr_level, declared.self_declared_level) == ("C1", "C1")
+    assert declared.level_source == "self"
+
+
+def test_invalid_level_source_is_rejected(conn):
+    student = StudentRepo(conn).get_or_create("ana")
+    with pytest.raises(ValueError):
+        StudentRepo(conn).set_level(student.id, "B2", source="vibes")
+
+
+def test_active_student_is_the_last_one_seen(conn):
+    students = StudentRepo(conn)
+    assert students.active() is None
+
+    first = students.get_or_create("ana")
+    second = students.get_or_create("joao")
+    assert students.active().name == second.name
+
+    students.touch(first.id)
+    assert students.active().name == first.name
+
+
+def test_set_level_on_a_missing_student(conn):
+    with pytest.raises(LookupError):
+        StudentRepo(conn).set_level(999, "B2")
+
+
+def test_level_signals_are_recorded_and_queried(conn):
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana")
+    session_id = SessionRepo(conn).start(student.id)
+    turns = TurnRepo(conn)
+    levels = LevelRepo(conn)
+
+    counted = turns.append(session_id, "student", "a long enough message about work")
+    skipped = turns.append(session_id, "student", "ok")
+
+    levels.record(
+        counted,
+        words=20,
+        sentences=2,
+        long_words=4,
+        connectives=1,
+        structures=1,
+        errors=0,
+        score=0.55,
+        estimated_level="B1",
+        counted=True,
+    )
+    levels.record(
+        skipped,
+        words=1,
+        sentences=1,
+        long_words=0,
+        connectives=0,
+        structures=0,
+        errors=0,
+        score=0.0,
+        estimated_level="A2",
+        counted=False,
+    )
+
+    # A linha descartada fica gravada, mas não entra na evidência.
+    assert levels.signals_for_turn(skipped).counted is False
+    assert levels.recent_levels(student.id) == ["B1"]
+
+
+def test_level_changes_are_logged_per_student(conn):
+    students = StudentRepo(conn)
+    ana = students.get_or_create("ana")
+    joao = students.get_or_create("joao")
+    levels = LevelRepo(conn)
+
+    levels.log_change(ana.id, "B1", "B2", source="auto", reason="4 turns in a row")
+    levels.log_change(joao.id, "B1", "A2", source="self")
+
+    changes = levels.changes(ana.id)
+    assert [(c.from_level, c.to_level, c.source) for c in changes] == [("B1", "B2", "auto")]
+    assert changes[0].reason == "4 turns in a row"
+    assert [c.to_level for c in levels.changes(joao.id)] == ["A2"]
+
+
+def test_level_signals_die_with_the_turn(conn):
+    """ON DELETE CASCADE: sinal órfão é lixo que ninguém vai limpar depois."""
+    student = StudentRepo(conn).get_or_create("ana")
+    session_id = SessionRepo(conn).start(student.id)
+    turn_id = TurnRepo(conn).append(session_id, "student", "something long enough here")
+    LevelRepo(conn).record(
+        turn_id,
+        words=20,
+        sentences=1,
+        long_words=3,
+        connectives=0,
+        structures=0,
+        errors=0,
+        score=0.4,
+        estimated_level="B1",
+        counted=True,
+    )
+
+    conn.execute("DELETE FROM turn WHERE id = ?", (turn_id,))
+    assert LevelRepo(conn).signals_for_turn(turn_id) is None
