@@ -36,6 +36,7 @@ volta a ser o melhor arranjo. É configuração, não reescrita.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 import time
 from collections.abc import AsyncIterator
@@ -44,8 +45,22 @@ from typing import Literal
 
 from ..llm.base import ChatProvider, GenerationOptions, Message, ProviderError
 from ..prompts import PromptLibrary
-from ..store.repo import CorrectionRepo, TurnRepo
+from ..store.models import Student
+from ..store.repo import CorrectionRepo, SessionRepo, TurnRepo
 from .analyzer import Analysis, Analyzer
+from .level import LevelDecision, LevelTracker
+from .level import partial_name as level_partial_name
+from .modes import (
+    DEFAULT_MODE,
+    DrillPlanner,
+    DrillTarget,
+    drill_block,
+    drill_reminder,
+    max_findings,
+)
+from .modes import partial_name as mode_partial_name
+
+log = logging.getLogger(__name__)
 
 # Quantos turnos do histórico vão no prompt.
 #
@@ -59,6 +74,10 @@ DEFAULT_HISTORY_TURNS = 20
 # correção por turno, duas no máximo; mais que três candidatos só encheria o
 # prompt.
 MAX_HINT_RULES = 3
+
+# Nível usado quando o turno não traz aluno nenhum — testes de conversa, e o
+# script de medição. É o nível de entrada do produto (plano §4).
+DEFAULT_LEVEL = "B1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +102,19 @@ class Analyzed:
 
 
 @dataclass(frozen=True, slots=True)
+class Leveled:
+    """O que este turno disse sobre o nível do aluno.
+
+    Sai em todo turno com perfil, mesmo quando nada muda: a UI mostra o nível
+    em vigor, e um evento só na mudança deixaria a tela defasada depois de um
+    reinício.
+    """
+
+    decision: LevelDecision
+    kind: Literal["level"] = "level"
+
+
+@dataclass(frozen=True, slots=True)
 class Done:
     """Fim do turno, com o que foi gravado e quanto tempo levou."""
 
@@ -104,7 +136,7 @@ class Failed:
     kind: Literal["failed"] = "failed"
 
 
-TurnEvent = Chunk | Analyzed | Done | Failed
+TurnEvent = Chunk | Analyzed | Leveled | Done | Failed
 
 
 async def _settle(task: asyncio.Task[Analysis]) -> None:
@@ -153,10 +185,13 @@ class TurnRunner:
         history_turns: int = DEFAULT_HISTORY_TURNS,
         analyzer: Analyzer | None = None,
         analysis_after_reply: bool = True,
+        tracker: LevelTracker | None = None,
+        planner: DrillPlanner | None = None,
     ) -> None:
         self._provider = provider
         self._prompts = prompts
         self._turns = TurnRepo(conn)
+        self._sessions = SessionRepo(conn)
         self._corrections = CorrectionRepo(conn)
         self._options = options or GenerationOptions()
         self._history_turns = history_turns
@@ -164,6 +199,12 @@ class TurnRunner:
         # assim que os testes de conversa seguem simples.
         self._analyzer = analyzer
         self._analysis_after_reply = analysis_after_reply
+        # Sem tracker o turno não acompanha nível: é assim que os testes de
+        # conversa seguem simples, e é o que o script de medição usa.
+        self._tracker = tracker
+        # Sem planner o modo drill ainda funciona: o bloco diz que não há regra
+        # para treinar, que é a verdade quando a base não carregou.
+        self._planner = planner
 
     # --- prompt da resposta ---------------------------------------------- #
 
@@ -191,20 +232,94 @@ class TurnRunner:
             "explanation instead of your own:\n" + "\n".join(lines)
         )
 
-    def build_messages(self, session_id: int, student_text: str) -> list[Message]:
-        """Persona, histórico, a mensagem nova e, por fim, a dica do turno.
+    def level_prompt(self, level: str) -> str:
+        """O ajuste de registro deste nível, ou string vazia.
+
+        Partial ausente não é erro: o turno segue com a persona sozinha, que é
+        o comportamento da E2. Um arquivo de prompt que falta não deveria
+        derrubar a aula do aluno.
+        """
+        return self._optional_prompt(level_partial_name(level))
+
+    def mode_prompt(self, mode: str) -> str:
+        """O comportamento deste modo, ou string vazia (mesma regra do nível)."""
+        return self._optional_prompt(mode_partial_name(mode))
+
+    def _optional_prompt(self, name: str) -> str:
+        return self._prompts.get(name) if self._prompts.exists(name) else ""
+
+    def stable_prefix(
+        self,
+        level: str = DEFAULT_LEVEL,
+        mode: str = DEFAULT_MODE,
+    ) -> list[Message]:
+        """As mensagens de sistema que não mudam de turno para turno.
+
+        Persona, ajuste de nível e comportamento do modo — nesta ordem, da que
+        muda menos para a que muda mais. É **este** prefixo que o Ollama
+        mantém em cache, e é por isso que ele existe como método: o
+        aquecimento aquece exatamente o que o turno manda.
+
+        Medido na E7 (plano §5.5): quando o aquecimento mandava só a persona e
+        o turno mandava persona + nível + modo, o primeiro turno chegava com
+        53% do prompt em cache e pagava 11,6s de avaliação. O aquecimento não
+        tinha envelhecido mal por descuido — ele duplicava uma lista que a E5 e
+        a E6 depois mudaram. Duplicata some; sobra uma lista só.
+        """
+        messages = [Message(role="system", content=self._prompts.get("persona"))]
+
+        adjustment = self.level_prompt(level)
+        if adjustment:
+            messages.append(Message(role="system", content=adjustment))
+
+        behaviour = self.mode_prompt(mode)
+        if behaviour:
+            messages.append(Message(role="system", content=behaviour))
+
+        return messages
+
+    def build_messages(
+        self,
+        session_id: int,
+        student_text: str,
+        level: str = DEFAULT_LEVEL,
+        mode: str = DEFAULT_MODE,
+        drill: DrillTarget | None = None,
+    ) -> list[Message]:
+        """Persona, nível, modo, dados do drill, histórico e, por fim, os pedidos.
+
+        A ordem tem duas metades e dois critérios. No começo, **estabilidade**:
+        o que muda menos vem antes, porque o cache é de prefixo. No fim,
+        **eficácia**: a dica curada e o pedido do drill ficam depois da fala do
+        aluno, porque instrução longe do ponto de geração se dilui — medido na
+        E4 com a dica e de novo na E6 com o drill (plano §5.2 e §5.4).
 
         A persona vem primeiro e inalterada de propósito: o Ollama cacheia o
         prefixo do prompt (``prompt_eval_cached_count``), então um system prompt
         estável é avaliado uma vez e não a cada turno. Interpolar valores que
         mudam aqui jogaria esse cache fora.
 
+        O ajuste de nível é a **segunda** mensagem, nunca texto interpolado na
+        persona (plano §1.4). Como segunda mensagem ele só invalida o cache
+        quando o nível de fato muda — o que acontece a cada muitos turnos, e não
+        a cada turno. Dentro da persona, invalidaria sempre.
+
         A dica das regras vai no **fim**, depois da fala do aluno, pelo mesmo
         motivo: o cache é de prefixo. Posta logo após a persona, ela empurraria
         todo o histórico para fora do prefixo comum com o turno anterior e faria
         o modelo reavaliar a conversa inteira a cada turno.
         """
-        messages = [Message(role="system", content=self._prompts.get("persona"))]
+        # Persona, nível e modo: a parte estável, que o aquecimento já pôs no
+        # cache. Nível antes de modo porque o cache é de prefixo e o nível muda
+        # menos — trocar de modo não deveria invalidar o ajuste de nível que já
+        # estava lá.
+        messages = self.stable_prefix(level, mode)
+
+        # O bloco do drill é dado apurado pela aplicação (qual regra, com que
+        # palavras do aluno), não comportamento: o "como treinar" está no
+        # partial acima. Estável dentro da sessão, então não custa cache.
+        if mode == "drill":
+            messages.append(Message(role="system", content=drill_block(drill)))
 
         # O histórico já inclui a fala do aluno recém-gravada, então a
         # mensagem nova não é acrescentada duas vezes.
@@ -212,18 +327,68 @@ class TurnRunner:
             role = "user" if turn.role == "student" else "assistant"
             messages.append(Message(role=role, content=turn.content))
 
-        hint = self.rule_hint(student_text)
-        if hint:
-            messages.append(Message(role="system", content=hint))
+        # A dica curada e o pedido do drill vão no fim, depois da fala do
+        # aluno: medido na E4 e na E6, instrução longe do ponto de geração se
+        # dilui. Mas vão **dentro da última mensagem do aluno**, e não como
+        # mensagem de sistema — ver ``_with_notes``.
+        notes = [self.rule_hint(student_text)]
+        if mode == "drill":
+            notes.append(drill_reminder(drill))
 
-        return messages
+        return self._with_notes(messages, [note for note in notes if note])
+
+    @staticmethod
+    def _with_notes(messages: list[Message], notes: list[str]) -> list[Message]:
+        """Anexa as notas do turno à última mensagem do aluno.
+
+        Elas já estiveram como mensagem de sistema no fim da lista, e a E7
+        mediu o preço disso: **o histórico inteiro parava de ser cacheado**. O
+        total cacheado ficava preso no prefixo estável (674 tokens, turno após
+        turno) enquanto o prompt crescia para 950, e a primeira palavra ia de
+        2,8s para 9,1s em seis turnos.
+
+        A causa não é o cache do Ollama, é o template de chat: ele junta as
+        mensagens de sistema no topo. Uma mensagem de sistema no fim da lista é
+        **renderizada logo depois da persona**, então ela muda a cada turno
+        dentro do prefixo — e invalida tudo o que vem depois. Era isso que a
+        §5.2 tinha diagnosticado como evicção causada pela análise; a análise
+        não tinha nada a ver (plano §5.5).
+
+        Dentro da última mensagem do aluno, a nota fica onde se pretendia que
+        ficasse — no fim do prompt renderizado —, e o que muda a cada turno
+        passa a ficar depois de todo o histórico, que volta a ser cacheado.
+        """
+        if not notes or not messages:
+            return messages
+
+        last = messages[-1]
+        if last.role != "user":
+            # Sem fala do aluno no fim não há onde anexar sem bagunçar a
+            # ordem; cai no comportamento antigo, que é raro e inofensivo.
+            return [*messages, Message(role="system", content="\n\n".join(notes))]
+
+        joined = "\n\n".join(notes)
+        return [
+            *messages[:-1],
+            Message(role="user", content=f"{last.content}\n\n[Teacher's notes: {joined}]"),
+        ]
 
     # --- análise ---------------------------------------------------------- #
 
-    def _start_analysis(self, student_text: str) -> _Pending | None:
+    def _start_analysis(
+        self,
+        student_text: str,
+        level: str = DEFAULT_LEVEL,
+        mode: str = DEFAULT_MODE,
+    ) -> _Pending | None:
         if self._analyzer is None:
             return None
-        return _Pending(task=asyncio.create_task(self._analyzer.analyze(student_text)))
+        # O teto de correções é do modo: em `correction` o aluno pediu os erros.
+        return _Pending(
+            task=asyncio.create_task(
+                self._analyzer.analyze(student_text, level, max_findings=max_findings(mode))
+            )
+        )
 
     def _persist(self, student_turn_id: int, analysis: Analysis) -> tuple[int, ...]:
         return tuple(
@@ -256,27 +421,88 @@ class TurnRunner:
             correction_ids=self._persist(student_turn_id, analysis),
         )
 
+    # --- modo -------------------------------------------------------------- #
+
+    def session_mode(self, session_id: int) -> tuple[str, str | None]:
+        """O modo da sessão e a regra em treino, com default seguro.
+
+        Sessão que não existe mais (teste, banco limpo no meio do caminho) cai
+        no modo de conversa em vez de derrubar o turno: perder a aula por causa
+        de uma linha de sessão seria desproporcional.
+        """
+        try:
+            session = self._sessions.get(session_id)
+        except LookupError:
+            return DEFAULT_MODE, None
+        return session.mode, session.drill_rule_id
+
+    def drill_target(self, student: Student | None, rule_id: str | None) -> DrillTarget | None:
+        """A regra em treino, resolvida em alvo com as frases do próprio aluno.
+
+        A escolha da regra acontece quando a sessão de drill começa, não aqui:
+        uma regra por sessão (ver ``teaching/modes.py``).
+        """
+        if self._planner is None or student is None or not rule_id:
+            return None
+        return self._planner.target_for(student.id, rule_id)
+
+    # --- nível ------------------------------------------------------------ #
+
+    def _observe_level(
+        self,
+        student: Student,
+        student_turn_id: int,
+        text: str,
+        analysis: Analysis | None,
+    ) -> Leveled | None:
+        """Acompanha o nível. Nunca levanta: a resposta do professor já saiu.
+
+        O nível novo vale a partir do **próximo** turno — este já foi gerado com
+        o registro antigo. Reabrir o prompt para refazer a resposta custaria o
+        turno inteiro para ganhar um ajuste de registro que o aluno não pediu.
+        """
+        if self._tracker is None:
+            return None
+        try:
+            decision = self._tracker.observe(student.id, student_turn_id, text, analysis)
+        except Exception:  # noqa: BLE001 - nível nunca derruba o turno
+            log.exception("acompanhamento de nível falhou (turno segue)")
+            return None
+        return Leveled(decision=decision)
+
     # --- o turno ---------------------------------------------------------- #
 
-    async def run(self, session_id: int, student_text: str) -> AsyncIterator[TurnEvent]:
+    async def run(
+        self,
+        session_id: int,
+        student_text: str,
+        student: Student | None = None,
+    ) -> AsyncIterator[TurnEvent]:
         text = student_text.strip()
         if not text:
             raise ValueError("a fala do aluno está vazia")
+
+        level = student.cefr_level if student is not None else DEFAULT_LEVEL
+        mode, rule_id = self.session_mode(session_id)
+        drill = self.drill_target(student, rule_id) if mode == "drill" else None
 
         # Grava a fala do aluno ANTES de chamar o modelo. Se a geração falhar,
         # o que o aluno disse não se perde.
         student_turn_id = self._turns.append(session_id, "student", text)
 
-        messages = self.build_messages(session_id, text)
+        messages = self.build_messages(session_id, text, level, mode, drill)
 
         # Quando as duas etapas disputam o mesmo modelo, começar a análise
         # aqui atrasa a primeira palavra do professor em segundos (medido:
         # 11,2s contra 0,7s). Default: ela espera o fim da resposta.
-        pending = None if self._analysis_after_reply else self._start_analysis(text)
+        pending = None if self._analysis_after_reply else self._start_analysis(text, level, mode)
 
         pieces: list[str] = []
         started = time.monotonic()
         first_chunk_ms: float | None = None
+        # A análise, quando sai, é também insumo do nível: erro com regra
+        # curada é o único sinal negativo da rubrica (plano §5.2).
+        analysis: Analysis | None = None
 
         try:
             async for piece in self._provider.stream(messages, self._options):
@@ -295,6 +521,7 @@ class TurnRunner:
                 if pending is not None and not pending.emitted and pending.task.done():
                     event = self._collect(pending, student_turn_id)
                     if event is not None:
+                        analysis = event.analysis
                         yield event
         except ProviderError as exc:
             # A resposta morreu; a análise perde o destino. Cancelar evita
@@ -319,7 +546,7 @@ class TurnRunner:
         # A resposta saiu inteira; agora a análise tem o modelo para si. O
         # aluno está lendo, então este tempo não é tela parada.
         if pending is None:
-            pending = self._start_analysis(text)
+            pending = self._start_analysis(text, level, mode)
 
         # O Analyzer tem timeout próprio, então esperar aqui não pendura o
         # turno.
@@ -327,7 +554,15 @@ class TurnRunner:
             await _settle(pending.task)
             event = self._collect(pending, student_turn_id)
             if event is not None:
+                analysis = event.analysis
                 yield event
+
+        # O nível vem depois da análise porque depende dela, e antes do Done
+        # porque o Done fecha o turno.
+        if student is not None:
+            leveled = self._observe_level(student, student_turn_id, text, analysis)
+            if leveled is not None:
+                yield leveled
 
         yield Done(
             reply=reply,

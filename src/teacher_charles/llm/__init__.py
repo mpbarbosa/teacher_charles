@@ -11,6 +11,7 @@ from ..config import Settings
 from .base import (
     DEFAULT_OPTIONS,
     ChatProvider,
+    GenerationMetrics,
     GenerationOptions,
     Message,
     ModelNotFound,
@@ -27,6 +28,7 @@ __all__ = [
     "DEFAULT_OPTIONS",
     "ChatProvider",
     "FakeProvider",
+    "GenerationMetrics",
     "GenerationOptions",
     "Message",
     "ModelNotFound",

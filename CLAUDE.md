@@ -19,15 +19,16 @@ uv run teacher-charles --reload          # http://localhost:8000
 
 ```bash
 uv run pytest                            # tudo (integração inclusa, bate no Ollama de verdade)
-uv run pytest -m "not integration"       # 99 testes, ~0,5s, sem modelo nenhum
-uv run pytest -m integration             # só os 4 que exercitam o Ollama local
+uv run pytest -m "not integration"       # 522 testes, ~4s, sem modelo nenhum
+uv run pytest -m integration             # só os 9 que exercitam o Ollama local
 uv run pytest tests/test_turn.py::test_nome -x
 uv run ruff check . && uv run ruff format --check .
 ```
 
 `uv run pytest` sem filtro **não** é o caminho rápido: os testes de integração
 se pulam sozinhos sem Ollama, mas com o Ollama de pé eles carregam modelo e o
-tempo vai de 0,5s para ~5s. Durante o desenvolvimento use `-m "not integration"`.
+tempo vai de ~3s para minutos. Durante o desenvolvimento use
+`-m "not integration"`.
 
 Para trabalhar na interface sem modelo: `TC_PROVIDER=fake uv run teacher-charles`.
 Para usar um modelo que já está baixado: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles`.
@@ -49,7 +50,7 @@ o lugar certo não é código em `teaching/`.
 | | |
 |---|---|
 | `llm/` | Providers atrás de `base.ChatProvider`. Nada fora deste pacote sabe se o modelo está no Ollama, num llama.cpp ou na nuvem. Só `stream()` é abstrato; `complete()` deriva dele. |
-| `teaching/` | O produto. **Agnóstico quanto à origem do texto** — recebe string, devolve eventos `Chunk`/`Done`/`Failed`. É o que permite acoplar STT/TTS na Fase 1.5 sem reescrever o meio. |
+| `teaching/` | O produto. **Agnóstico quanto à origem do texto** — recebe string, devolve eventos `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed`. É o que permite acoplar STT/TTS na Fase 1.5 sem reescrever o meio. |
 | `store/` | SQLite pelo `sqlite3` da stdlib. Esquema em `.sql` numerado, sem ORM; as dataclasses de `models.py` só dão nome às linhas. |
 | `prompts.py` | Carrega `prompts/*.md` com cache por mtime: editar a persona vale no turno seguinte, sem reiniciar. |
 | `app.py` | FastAPI. Monta tudo no `lifespan` e guarda em `app.state`. |
@@ -73,16 +74,58 @@ e o `ROLLBACK` não protegeria o DDL parcial. Ver `store/db.py::migrate`.
 **A persona vem primeiro e inalterada.** O Ollama cacheia o prefixo do prompt;
 interpolar valor que muda no system prompt joga esse cache fora e o aluno paga a
 reavaliação a cada turno. Prompt que varia por nível vai em
-`prompts/partials/level/`, não dentro da persona.
+`prompts/partials/level/` e entra como **segunda mensagem de sistema**, não
+dentro da persona: assim ele só invalida o cache quando o nível de fato muda.
+Por isso o aquecimento também manda o partial do nível do perfil ativo.
 
-**O aquecimento manda a persona de verdade, não um "hi".** Medido: aquecer com
-"hi" carrega o modelo mas deixa os 427 tokens da persona fora do cache, e o
-primeiro turno paga 19s. Com o prefixo cacheado, 7s. `_warm_up` nunca propaga
-erro — o `/health` já reporta modelo inacessível, e derrubar a subida por causa
-do aquecimento seria pior.
+**O modo muda política, não só prosa.** `teaching/modes.py` decide o teto de
+correções por turno (5 em `correction`, 2 nos outros) e, no drill, **qual regra**
+é treinada — por consulta ao `correction` agregado, nunca pelo modelo. Uma regra
+por sessão (`session.drill_rule_id`), não por turno: drill que troca de regra a
+cada mensagem é questionário, e bloco estável no prompt é prefixo cacheado.
+
+**A ordem das mensagens de sistema é persona → nível → modo → dados do drill**,
+e depois, no fim do prompt, a dica curada e o pedido do drill. O começo é por
+estabilidade (o que muda menos vem antes, por causa do cache de prefixo); o fim
+é por eficácia — medido duas vezes, na E4 com a dica e na E6 com o drill:
+instrução longe do ponto de geração se dilui e o modelo pequeno a ignora.
+
+**O nível do aluno é decidido por código, não pelo modelo.** `teaching/level.py`
+tem uma rubrica determinística (comprimento de frase, palavra longa, conectivos,
+estruturas, menos erro com regra curada) calibrada em
+`tests/fixtures/level_samples.yaml`. Mexer nas constantes exige rodar
+`scripts/measure_level.py` — os números estão no plano §5.3, e um teste quebra se
+o acerto cair. Duas consequências que não são óbvias no arquivo: a rubrica
+**não estima C2** (tentar errava por dois degraus) e **nenhum turno sozinho move
+o nível** (4 turnos contados seguidos, um degrau por vez). A janela fecha em
+toda mudança de nível, via `level_change.at_signal_id` — sem isso os mesmos
+quatro turnos moveriam o nível de novo no turno seguinte.
+
+**O aquecimento manda o prefixo do turno, não um "hi" nem "só a persona".**
+Existe uma lista só, `TurnRunner.stable_prefix()`, e o aquecimento e o turno
+usam a mesma — porque já foram duas e divergiram: a E5 e a E6 acrescentaram
+nível e modo ao turno, o aquecimento ficou na persona, e o primeiro turno
+chegava com 53% do prompt em cache e 11,6s até a primeira palavra. Com a mesma
+lista: 0,9s (plano §5.5). `_warm_up` nunca propaga erro — o `/health` já
+reporta modelo inacessível, e derrubar a subida por causa do aquecimento seria
+pior.
+
+**Nada de mensagem de sistema depois do histórico.** O template de chat junta
+as mensagens de sistema no topo, então uma "dica no fim da lista" é colada
+logo após a persona e invalida o cache de todo o histórico — medido: o total
+cacheado ficava preso nos 674 tokens do prefixo e a primeira palavra ia de
+2,8s a 9,1s em seis turnos. A dica curada e o pedido do drill vão **dentro da
+última mensagem do aluno** (`TurnRunner._with_notes`). É contraintuitivo o
+bastante para alguém "consertar" sem querer; o teste
+`test_rule_hint_rides_with_the_student_message` existe para isso.
 
 **A fala do aluno é gravada antes de chamar o modelo**, e o histórico já a inclui
 — por isso `build_messages` não acrescenta a mensagem nova outra vez.
+
+**O perfil ativo é `student.seen_seq`, um contador — não uma marca de tempo.**
+Duas versões com relógio (segundo e milissegundo) quebraram o mesmo teste de
+troca-e-volta de perfil: as escritas caem no mesmo instante e o desempate
+devolve sempre o mesmo aluno.
 
 **Erros de provider são tipados de propósito** (`ProviderUnavailable`,
 `ModelNotFound`, `ProviderTimeout`, `ProviderBadResponse`). Reaja pelo tipo;
@@ -103,6 +146,10 @@ verde enganoso.
 em cada teste — um `.env` local já quebrou um teste aqui. Construa settings com
 `Settings(_env_file=None, **overrides)` (ou o `make_settings` do conftest); nunca
 conte com o ambiente da máquina.
+
+Em `tests/test_level.py` o portão sobre as amostras rotuladas é uma **fração**
+(70% de acerto exato, zero erro de dois degraus), não um valor fixo: a suíte pode
+crescer sem o teste virar frágil, mas uma regressão real quebra.
 
 Em teste de rota, passe `llm_warmup=False`: o aquecimento consumiria uma das
 respostas roteirizadas do `FakeProvider` e apareceria em `provider.calls`,
@@ -146,16 +193,22 @@ Três destinos, e confundi-los é erro de categoria:
 
 ## Estado e para onde o código cresce
 
-E0 (fundação), E1 (provider) e E2 (chat por texto) estão prontas — dá para
-conversar em inglês de ponta a ponta no navegador. A ordem e o critério de pronto
-de cada entrega estão em `docs/plano-fase-1.md` §5; `docs/analise-inicial.md` tem
-a análise de viabilidade que originou o projeto.
+Todas as entregas da Fase 1 estão prontas: E0 (fundação), E1 (provider), E2
+(chat por texto), E3 (base contrastiva), E4 (correção estruturada), E5 (perfil
+e nível), E6 (os três modos) e E7 (tela de progresso, README e latência). A ordem e o critério
+de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
+`docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
 
-A próxima é a **E3** (base contrastiva: schema, ~40 itens, loader validado,
-matcher, um teste por item), e depois a **E4**, que acrescenta a etapa de análise
-como segundo passo dentro de `teaching/` — sem mudar a interface de `TurnRunner`.
-Na E2 há um aluno só (`DEFAULT_STUDENT` em `app.py`); perfil e múltiplos alunos
-são da E5.
+A Fase 1 está completa. O que vem depois está em `docs/plano-fase-1.md` §7:
+voz (Fase 1.5), avaliação de pronúncia e repetição espaçada (Fase 2).
+
+Duas dívidas conhecidas, as duas medidas e registradas na §5.5: a análise custa
+~10s por turno com erro (o caminho é um modelo melhor só para ela, e a medição
+mostra que isso não atrapalha a conversa), e a primeira palavra está em 2,7s
+contra a meta de 1–2s da Fase 1.5.
+
+Há vários perfis de aluno numa máquina, e o ativo é o de maior `seen_seq`; login
+e multiusuário de verdade ficam fora da Fase 1 (plano §4).
 
 Consulta à base contrastiva na Fase 1 é **casamento por lema e padrão sobre YAML
 curado**, não busca vetorial: ~100 itens cabem na memória, o casamento é

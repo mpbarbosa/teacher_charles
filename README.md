@@ -7,12 +7,15 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entregas E0–E4.** Dá para conversar em inglês de ponta a
+> **Estado: Fase 1 completa, E0–E7.** Dá para conversar em inglês de ponta a
 > ponta no navegador, e cada turno produz correção estruturada — com a regra
 > curada citada, persistida em SQLite e visível ao lado do que o aluno escreveu.
-> O perfil por nível, os modos e a tela de error log ainda não existem. Veja
-> [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a ordem das
-> entregas.
+> O perfil tem nível CEFR: ele muda o registro das respostas e se ajusta sozinho
+> a partir dos sinais de cada turno. Há três modos — conversa, correção e drill
+> —, o drill treina um erro que o aluno de fato cometeu, e a tela
+> `/progress` mostra no que ele mais erra, com as frases dele. Veja
+> [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo, a ordem das
+> entregas e o que cada uma mediu.
 
 ## Decisões que moldam o projeto
 
@@ -64,13 +67,23 @@ uv run teacher-charles --reload
 ```
 
 Abra <http://localhost:8000> e comece a conversar. O endpoint
-<http://localhost:8000/health> diz, em JSON, se o banco migrou e se o modelo
-está ao alcance.
+<http://localhost:8000/health> diz, em JSON, se o banco migrou, se o modelo
+está ao alcance, se a base contrastiva carregou e se algum prompt de nível ou
+de modo está faltando.
 
-O modelo é aquecido em segundo plano na subida, com a persona, para o primeiro
-turno não pagar a carga do modelo nem a avaliação do prompt. Medido: sem isso o
-primeiro turno leva ~19s até a primeira palavra; com isso, ~7s, e os turnos
-seguintes ~0,7s. Desligue com `TC_LLM_WARMUP=false`.
+Para mexer na interface sem modelo nenhum — a tela responde na hora, com um
+professor de mentira:
+
+```bash
+TC_PROVIDER=fake uv run teacher-charles --reload
+```
+
+O modelo é aquecido em segundo plano na subida, mandando **exatamente** o
+prefixo que um turno real manda — persona, ajuste de nível e prompt do modo.
+Medido com o modelo descarregado (§5.5): sem aquecimento, a primeira palavra do
+primeiro turno leva 19,1s (4,1s carregando o modelo, 15,1s avaliando o prompt);
+com aquecimento, 0,9s. Desligue com `TC_LLM_WARMUP=false` se quiser ver a
+diferença.
 
 ### Já tem outro modelo baixado?
 
@@ -101,21 +114,31 @@ O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
 
 ## Testes
 
+O loop de desenvolvimento é este, e ele não precisa de modelo nenhum:
+
 ```bash
-uv run pytest
+uv run pytest -m "not integration"
 ```
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
 ```
 
-A suíte não precisa de modelo nenhum: o `health` é exercitado com transporte HTTP
-falso e o chat com um provider `fake`. Os testes marcados `integration` batem num
-Ollama de verdade e se pulam sozinhos quando não há um:
+São ~500 testes em poucos segundos: o `health` é exercitado com transporte HTTP
+falso e o chat com um provider `fake`, que devolve respostas roteirizadas e
+guarda o que lhe foi pedido.
+
+Os marcados `integration` batem num Ollama de verdade — eles verificam o
+contrato (o prompt chega, o JSON volta, o turno fecha), nunca a qualidade do
+modelo, que é assunto dos scripts de medição:
 
 ```bash
 uv run pytest -m integration
 ```
+
+Eles se pulam sozinhos quando não há Ollama, então `uv run pytest` sem filtro
+fica verde numa máquina sem nada instalado — só demora, porque com Ollama de pé
+carrega modelo.
 
 ## A base contrastiva
 
@@ -205,6 +228,158 @@ Duas variáveis mudam esse comportamento, e as duas têm número por trás:
 `TC_ANALYSIS_AFTER_REPLY=false` volta a disparar as duas etapas juntas (melhor
 num provider que atenda dois pedidos ao mesmo tempo).
 
+## Quanto demora
+
+Medido nesta máquina (Intel Core Ultra 5 135U, CPU pura) com
+`qwen2.5:3b-instruct-q4_K_M`, numa sessão de seis turnos alternando frase com
+erro e frase correta — `uv run python scripts/measure_latency.py`:
+
+| | |
+|---|---|
+| Primeira palavra | **2,7s** de mediana, e **não cresce** ao longo da sessão |
+| Turno completo, frase correta | ~4s |
+| Turno completo, frase com erro | 12–16s, porque inclui a análise |
+| Análise, isolada | ~10s, **depois** da resposta — o aluno lê enquanto ela corre |
+| Primeiro turno, com o modelo aquecido | 0,9s |
+
+Dois detalhes de implementação estão por trás desses números, e os dois saíram
+de medição, não de intuição (§5.5):
+
+- **O aquecimento manda o mesmo prefixo que o turno manda.** Há uma lista só
+  (`TurnRunner.stable_prefix`) justamente para as duas não divergirem — elas já
+  divergiram, e custaram 11,6s no primeiro turno.
+- **A dica curada vai dentro da fala do aluno, não como mensagem de sistema.**
+  O template de chat junta as mensagens de sistema no topo, então uma dica
+  "no fim da lista" era colada logo depois da persona e invalidava o cache de
+  todo o histórico: a primeira palavra ia de 2,8s para 9,1s em seis turnos. Na
+  fala do aluno, ela fica de fato no fim do prompt — e o modelo ainda passou a
+  usá-la melhor.
+
+## O nível do aluno
+
+O perfil tem um nível CEFR (A2 a C2) e ele **faz diferença**: entra no prompt
+como segunda mensagem de sistema, logo depois da persona, vindo de
+`prompts/partials/level/`. Trocar o nível muda o registro da resposta — medido
+no modelo real, a frase do professor vai de 6,5 para 10,0 palavras entre A2 e
+C1, e o erro que ele escolhe corrigir muda (plano §5.3).
+
+Segunda mensagem, nunca interpolado na persona: o Ollama cacheia o prefixo do
+prompt, e um ajuste dentro da persona jogaria esse cache fora a cada turno.
+
+O nível de partida é o que o aluno declara no cabeçalho da página. Dali em
+diante ele se ajusta sozinho a partir de uma **rubrica determinística** sobre o
+texto de cada turno — comprimento de frase, palavra longa, conectivos e
+estruturas avançadas, menos uma penalidade por erro com regra curada. Nada disso
+é perguntado ao modelo: a mesma frase dá sempre o mesmo número, e cada número é
+conferível à mão.
+
+```bash
+uv run python scripts/measure_level.py              # matriz de confusão, sem modelo nenhum
+uv run python scripts/measure_level.py --hysteresis # quantos turnos até o nível andar
+uv run python scripts/measure_level.py --reply      # a mesma fala em cada nível, no modelo real
+```
+
+Duas regras moldam o ajuste, e as duas vêm de medição:
+
+| | |
+|---|---|
+| **Um turno nunca move o nível** | Turno com menos de 12 palavras não é evidência de nada, e o nível só anda quando 4 turnos contados seguidos apontam para o mesmo lado — um degrau por vez. Sem isso o aluno veria o registro do professor oscilar a cada mensagem. |
+| **C2 é autodeclarado** | A rubrica acerta 78% dos níveis e nunca erra por dois degraus, mas não distingue C1 de C2 em texto de chat. Então ela não estima C2, e não move quem está nele. |
+
+O que o aluno declarou fica guardado separado do nível em vigor
+(`self_declared_level` vs `cefr_level`), e toda mudança vira linha em
+`level_change` com o motivo. É o que permite responder "por que o Charles mudou
+o jeito de falar comigo".
+
+O nome no cabeçalho troca de perfil: são vários alunos numa máquina, cada um com
+nível e histórico próprios. Não é multiusuário com login — isso fica fora da
+Fase 1.
+
+## Os três modos
+
+A barra acima da conversa troca o modo, e cada um muda **três** coisas — só a
+primeira é texto:
+
+| | conversation | correction | drill |
+|---|---|---|---|
+| Prompt de comportamento | `prompts/modes/conversation.md` | `…/correction.md` | `…/drill.md` |
+| Correções estruturadas por turno | até 2 | até **5** | até 2 |
+| Regra treinada | — | — | tirada do error log do aluno |
+
+O teto por modo não é configuração: no modo de correção o aluno abriu o modo
+para receber os erros, e devolver dois de cinco seria esconder dele o que ele
+veio buscar.
+
+**O drill treina um erro que o aluno cometeu.** A regra sai de uma consulta ao
+`correction` agregado por `rule_id` — a mais frequente que ainda existe na base,
+evitando as treinadas há pouco. Dali vêm a explicação revisada e as formas
+certas; do banco vêm as frases que o próprio aluno escreveu. O modelo recebe
+isso pronto; ele não escolhe a regra nem inventa o exemplo.
+
+Uma regra por sessão, não por turno: drill que troca de regra a cada mensagem é
+questionário, e bloco estável no prompt é prefixo cacheado. Trocar de modo abre
+uma sessão nova — a transcrição de um drill não é continuação da conversa
+livre — e "new conversation" mantém o modo.
+
+Se o aluno ainda não errou nada com regra curada, o drill **diz isso** e oferece
+conversar. Não existe exercício genérico de reserva.
+
+```bash
+uv run python scripts/measure_modes.py --turns 3
+```
+
+Medido com o modelo real: o pedido do exercício precisa ficar no **fim** do
+prompt. Com ele só no bloco do topo, o 3B corrigia a fala do aluno e ia embora
+conversar — nenhum exercício em três turnos (plano §5.4).
+
+## A tela do que você erra
+
+`/progress` responde a pergunta que a E4 passou a tornar possível: **no que
+este aluno mais erra?** Cada correção com regra curada virou linha em SQLite, e
+a tela agrega por regra, da mais frequente para a menos:
+
+- quantas vezes, e quando foi a última;
+- **as frases do próprio aluno** que caíram naquela regra — erro agregado em
+  abstrato não ensina ninguém;
+- a explicação e a forma certa, vindas da base curada (não do que o modelo
+  disse naquele turno);
+- o histórico de mudança de nível, com o motivo de cada uma.
+
+Correções sem regra curada aparecem só como contagem no rodapé. Elas não são
+agregáveis — o modelo escreve a explicação que quiser, diferente a cada vez — e
+pela política da §5.2 nem chegam ao aluno. O número existe para medir quanto a
+base ainda não cobre.
+
+É a mesma consulta que alimenta o drill (E6): o que o aluno vê na tela é o que
+o professor vai treinar com ele.
+
+## Medições
+
+Nenhum número deste README é estimativa. Cada um sai de um script que você pode
+rodar:
+
+| | |
+|---|---|
+| `scripts/measure_analysis.py` | Precisão da correção estruturada: recall, falso positivo, JSON degradado (§5.2) |
+| `scripts/measure_level.py` | Matriz de confusão da rubrica de nível, e o custo da histerese (§5.3) |
+| `scripts/measure_modes.py` | Os três modos contra o modelo real, com o drill andando (§5.4) |
+| `scripts/measure_latency.py` | Latência por turno, decomposta com as métricas do servidor (§5.5) |
+
+Os três primeiros precisam de Ollama com o modelo baixado; o
+`measure_level.py` sem argumento roda sem modelo nenhum.
+
+## Quando dá errado
+
+| Sintoma | O que é |
+|---|---|
+| `/health` responde 503 | Deliberado: o serviço subiu mas não está pronto para ensinar. O corpo diz qual das três coisas falhou — banco, modelo ou base contrastiva. |
+| "o Ollama não conhece o modelo" | Falta `ollama pull <modelo>`. O `/health` lista o que o servidor tem. |
+| "não deu para falar com o Ollama" | O serviço não está de pé. `ollama serve`, ou `python3 scripts/check_env.py` para confirmar. |
+| Primeira palavra demora ~3s, as seguintes também | É o esperado nesta classe de hardware com um 3B (§5.5). Se o primeiro turno demorar muito mais, o aquecimento não rodou: veja `TC_LLM_WARMUP`. |
+| Turno de 15s em frase com erro | A análise custa ~8-10s e roda **depois** da resposta. O aluno lê enquanto ela corre; a anotação aparece quando fica pronta. |
+| A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
+| Testes falham com modelo inesperado | Um `.env` na raiz vaza para a suíte. `tests/conftest.py` limpa `TC_*`, mas scripts de medição leem o `.env`. |
+
 ## Onde fica cada coisa
 
 ```
@@ -214,11 +389,13 @@ prompts/     persona e instruções em .md, versionados, recarregados sem reinic
 src/         o código
   llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)
   teaching/    a estrutura pedagógica — é esta pasta que é o produto
-    turn.py      orquestra o turno: resposta e análise em paralelo
+    turn.py      orquestra o turno: resposta, análise e sinais de nível
     analyzer.py  fala do aluno -> correção estruturada e verificada
     contrastive.py  carrega e consulta as regras curadas
+    level.py     fala do aluno -> nível CEFR estimado, com histerese
+    modes.py     os três modos; o drill escolhe a regra no error log do aluno
   store/       SQLite: esquema em .sql, migrações numeradas
-  web/         página única: template Jinja, JS e CSS sem build step
+  web/         página única (conversa) e a tela /progress; JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura
 scripts/     check_env.py (só stdlib, roda antes do uv sync) e as medições
 ```

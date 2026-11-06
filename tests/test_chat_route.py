@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from teacher_charles.app import create_app
 from teacher_charles.config import Settings
 from teacher_charles.llm import FakeProvider, ProviderUnavailable
+from teacher_charles.prompts import PromptLibrary
 
 
 def settings_for(tmp_path, **overrides) -> Settings:
@@ -176,15 +177,17 @@ def test_history_carries_the_corrections(client_and_provider):
 def test_the_reply_prompt_carries_the_curated_rule(client_and_provider):
     """A dica determinística é o que impede o 4B de inventar a regra.
 
-    Ela vai no fim do prompt de propósito: o cache do Ollama é de prefixo, e
-    uma dica logo após a persona empurraria o histórico todo para fora dele.
+    Ela chega no fim do prompt, dentro da fala do aluno — como mensagem de
+    sistema o template a levava para o topo, e com ela ia o cache do histórico
+    (plano §5.5).
     """
     client, provider = client_and_provider
     client.post("/api/chat", json={"message": "I have 30 years"})
 
     reply_call = provider.calls_matching("Charles")[-1]
     last = reply_call.messages[-1]
-    assert last.role == "system"
+    assert last.role == "user"
+    assert last.content.startswith("I have 30 years")
     assert "age is something you are" in last.content
     assert reply_call.messages[0].role == "system"
     assert "Charles" in reply_call.messages[0].content
@@ -369,6 +372,28 @@ def test_warmup_loads_the_model_on_startup(tmp_path):
         assert "Charles" in warm.messages[0].content
 
 
+def test_warmup_sends_exactly_the_prefix_the_turn_sends(tmp_path):
+    """O aquecimento não pode envelhecer em relação ao turno.
+
+    Já envelheceu: a E5 e a E6 acrescentaram nível e modo ao prompt, o
+    aquecimento continuou mandando só a persona, e o primeiro turno chegava com
+    53% do prompt em cache e 11,6s até a primeira palavra (plano §5.5). Agora
+    os dois saem de ``TurnRunner.stable_prefix``, e este teste é o que impede a
+    lista de voltar a ser duas.
+    """
+    provider = FakeProvider(replies="ok")
+    app = create_app(settings_for(tmp_path, llm_warmup=True), provider=provider)
+
+    with TestClient(app) as client:
+        client.get("/health")
+        warm = provider.calls[0]
+        expected = app.state.runner.stable_prefix()
+
+    assert [m.content for m in warm.messages[:-1]] == [m.content for m in expected]
+    assert len(expected) == 3, "persona, nível e modo — o prefixo estável de um turno real"
+    assert warm.messages[-1].role == "user"
+
+
 def test_warmup_can_be_disabled(tmp_path):
     provider = FakeProvider(replies="ok")
     with TestClient(create_app(settings_for(tmp_path), provider=provider)):
@@ -383,3 +408,325 @@ def test_warmup_failure_does_not_break_startup(tmp_path):
 
     with TestClient(create_app(settings, provider=provider)) as client:
         assert client.get("/api/history").status_code == 200
+
+
+# --- Perfil e nível (E5) -------------------------------------------------- #
+
+
+def test_profile_starts_at_the_entry_level(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/profile").json()
+
+    assert body["level"] == "B1"
+    assert body["self_declared_level"] == "B1"
+    assert body["level_source"] == "self"
+    assert body["levels"] == ["A2", "B1", "B2", "C1", "C2"]
+    assert body["history"] == []
+
+
+def test_student_can_declare_the_level(client_and_provider):
+    client, _ = client_and_provider
+    body = client.post("/api/profile", json={"level": "b2"}).json()
+
+    assert body["level"] == "B2"
+    assert body["self_declared_level"] == "B2", "o aluno redefine o ponto de partida"
+    assert body["level_source"] == "self"
+    assert body["history"][0] == {
+        **body["history"][0],
+        "from": "B1",
+        "to": "B2",
+        "source": "self",
+    }
+
+
+def test_invalid_level_is_refused(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/profile", json={"level": "Z9"})
+    assert response.status_code == 422
+    assert client.get("/api/profile").json()["level"] == "B1"
+
+
+def test_naming_a_new_student_switches_profile(client_and_provider):
+    """Vários alunos numa máquina, sem login (plano §4)."""
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "C1"})
+
+    other = client.post("/api/profile", json={"name": "ana"}).json()
+    assert other["name"] == "ana"
+    assert other["level"] == "B1", "perfil novo começa no nível de entrada"
+
+    # E o perfil ativo continua sendo o último escolhido.
+    assert client.get("/api/profile").json()["name"] == "ana"
+
+    back = client.post("/api/profile", json={"name": "student"}).json()
+    assert back["level"] == "C1", "o perfil antigo manteve o nível dele"
+
+
+def test_the_level_in_force_reaches_the_prompt(client_and_provider):
+    client, provider = client_and_provider
+    client.post("/api/profile", json={"level": "A2"})
+    client.post("/api/chat", json={"message": "I work with marketing"})
+
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "A2" in system
+
+
+def test_chat_reports_the_level_in_every_turn(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/chat", json={"message": "I have 30 years"})
+    frames = frames_from(response)
+
+    level = [f for f in frames if f["type"] == "level"]
+    assert len(level) == 1
+    assert level[0]["level"] == "B1"
+    assert level[0]["changed"] is False
+    assert level[0]["counted"] is False, "quatro palavras não são evidência de nível"
+    # O frame de nível vem antes do done, que fecha o turno.
+    assert frames[-1]["type"] == "done"
+
+
+def test_the_level_moves_after_enough_turns(client_and_provider):
+    client, _ = client_and_provider
+    text = (
+        "Although I have worked in logistics for almost ten years, I would rather "
+        "understand how the current process works, which nobody has documented, "
+        "before suggesting any change to the team."
+    )
+
+    moved = []
+    for _ in range(4):
+        frames = frames_from(client.post("/api/chat", json={"message": text}))
+        moved += [f for f in frames if f["type"] == "level" and f["changed"]]
+
+    assert [(f["previous"], f["level"]) for f in moved] == [("B1", "B2")]
+
+    profile = client.get("/api/profile").json()
+    assert profile["level"] == "B2"
+    assert profile["level_source"] == "auto"
+    assert profile["self_declared_level"] == "B1"
+    assert profile["history"][0]["to"] == "B2"
+
+
+def test_index_renders_the_profile(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "C1"})
+    page = client.get("/").text
+
+    assert 'id="level"' in page
+    assert '<option value="C1" selected>' in page
+    assert 'id="student-name"' in page
+
+
+def test_health_reports_missing_level_partials(tmp_path):
+    """Partial que falta tira metade da E5 em silêncio; o /health conta."""
+    empty = tmp_path / "prompts"
+    empty.mkdir()
+    (empty / "persona.md").write_text("You are Charles.", encoding="utf-8")
+    (empty / "analysis.md").write_text("You find mistakes.", encoding="utf-8")
+
+    app = create_app(settings_for(tmp_path), provider=FakeProvider())
+    with TestClient(app) as client:
+        # Troca a biblioteca de prompts por uma sem partial de nível, que é o
+        # estado que o teste descreve: o repo de verdade tem os cinco.
+        app.state.prompts = PromptLibrary(empty)
+        body = client.get("/health").json()
+
+    assert body["level_partials"] == {
+        "ok": False,
+        "missing": ["A2", "B1", "B2", "C1", "C2"],
+    }
+    # Mas o serviço não fica degradado por isso: o turno ainda funciona sem o
+    # ajuste de registro, como na E2.
+    assert body["database"]["ok"] is True
+
+
+def test_declaring_a_level_survives_the_next_turn(client_and_provider):
+    """O aluno tem a última palavra, e ela não pode ser desfeita no turno seguinte."""
+    client, _ = client_and_provider
+    text = (
+        "Although I have worked in logistics for almost ten years, I would rather "
+        "understand how the current process works, which nobody has documented, "
+        "before suggesting any change to the team."
+    )
+    for _ in range(3):
+        client.post("/api/chat", json={"message": text})
+
+    assert client.post("/api/profile", json={"level": "A2"}).json()["level"] == "A2"
+
+    frames = frames_from(client.post("/api/chat", json={"message": text}))
+    level = [f for f in frames if f["type"] == "level"][0]
+    assert level["changed"] is False
+    assert client.get("/api/profile").json()["level"] == "A2"
+
+
+# --- Os três modos (E6) --------------------------------------------------- #
+
+
+def test_mode_starts_as_conversation(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/mode").json()
+
+    assert body["mode"] == "conversation"
+    assert body["modes"] == ["conversation", "correction", "drill"]
+    assert body["drill"] is None
+    assert body["drillable"] == 0
+
+
+def test_switching_mode_opens_a_new_session(client_and_provider):
+    """Trocar de modo é trocar de atividade: a transcrição não continua."""
+    client, _ = client_and_provider
+    first = client.post("/api/chat", json={"message": "I have 30 years"})
+    assert first.status_code == 200
+    before = client.get("/api/history").json()
+    assert before["turns"]
+
+    switched = client.post("/api/mode", json={"mode": "correction"}).json()
+    assert switched["mode"] == "correction"
+    assert switched["session_id"] != before["session_id"]
+
+    after = client.get("/api/history").json()
+    assert after["turns"] == [], "a conversa anterior não é a transcrição do novo modo"
+
+
+def test_invalid_mode_is_refused(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/mode", json={"mode": "telepathy"})
+    assert response.status_code == 422
+    assert client.get("/api/mode").json()["mode"] == "conversation"
+
+
+def test_the_mode_prompt_reaches_the_model(client_and_provider):
+    client, provider = client_and_provider
+    client.post("/api/mode", json={"mode": "correction"})
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "Mode: correction" in system
+    assert "Mode: free conversation" not in system
+
+
+def test_drill_uses_a_mistake_the_student_really_made(client_and_provider):
+    """O critério de pronto da E6, de ponta a ponta pela rota.
+
+    O turno com *I have 30 years* produz correção com `calque.age-have`; o modo
+    drill, aberto depois, tem que treinar **essa** regra, com as palavras do
+    aluno no prompt.
+    """
+    client, provider = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    body = client.post("/api/mode", json={"mode": "drill"}).json()
+    assert body["drillable"] == 1
+    assert body["drill"]["rule_id"] == "calque.age-have"
+    assert body["drill"]["examples"] == ["I have 30 years"]
+
+    client.post("/api/chat", json={"message": "I am 30 years old"})
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "Mode: drill" in system
+    assert "calque.age-have" in system
+    assert "I have 30 years" in system
+
+
+def test_drill_without_an_error_log_is_honest(client_and_provider):
+    client, provider = client_and_provider
+    body = client.post("/api/mode", json={"mode": "drill"}).json()
+
+    assert body["drillable"] == 0
+    assert body["drill"] is None
+
+    client.post("/api/chat", json={"message": "hello there"})
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "no rule to drill" in system.lower()
+
+
+def test_new_conversation_keeps_the_mode(client_and_provider):
+    """Quem clica em "new conversation" quer outro assunto, não sair do drill."""
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/mode", json={"mode": "drill"})
+
+    body = client.post("/api/reset").json()
+    assert body["mode"] == "drill"
+    assert body["drill"]["rule_id"] == "calque.age-have"
+
+
+def test_index_renders_the_modes(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/mode", json={"mode": "drill"})
+    page = client.get("/").text
+
+    assert 'data-mode="drill"' in page
+    assert 'class="mode active"' in page
+    assert "calque.age-have" in page, "o aluno tem que ver qual erro dele virou exercício"
+
+
+# --- A tela do error log (E7) --------------------------------------------- #
+
+
+def test_progress_is_empty_for_a_new_student(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/progress").json()
+
+    assert body["rules"] == []
+    assert body["totals"] == {"corrections": 0, "rules": 0, "without_rule": 0}
+    assert "Nothing here yet" in client.get("/progress").text
+
+
+def test_progress_aggregates_by_rule(client_and_provider):
+    """O que a E4 prometeu: correção é linha contável, e aqui ela vira resposta."""
+    client, _ = client_and_provider
+    for _ in range(2):
+        client.post("/api/chat", json={"message": "I have 30 years"})
+
+    body = client.get("/api/progress").json()
+    assert body["totals"]["corrections"] == 2
+    assert body["totals"]["rules"] == 1
+
+    rule = body["rules"][0]
+    assert rule["rule_id"] == "calque.age-have"
+    assert rule["times"] == 2
+    assert rule["examples"] == ["I have 30 years"], "as frases são as do próprio aluno"
+    # A explicação vem da base curada, não do que o modelo disse no turno.
+    assert "age is something you are" in rule["explanation"]
+    assert rule["right"], "a tela mostra a forma certa, e ela vem da base"
+    assert rule["retired"] is False
+
+
+def test_progress_page_shows_the_students_own_words(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    page = client.get("/progress").text
+    assert "I have 30 years" in page
+    assert "calque.age-have" in page
+    assert "1×" in page
+
+
+def test_progress_is_per_student(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/profile", json={"name": "ana"})
+
+    assert client.get("/api/progress").json()["rules"] == []
+    client.post("/api/profile", json={"name": "student"})
+    assert client.get("/api/progress").json()["rules"][0]["times"] == 1
+
+
+def test_progress_shows_the_level_history(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "B2"})
+
+    body = client.get("/api/progress").json()
+    assert body["level"] == "B2"
+    assert body["level_history"][0]["to"] == "B2"
+    assert "B1 → B2" in client.get("/progress").text
+
+
+def test_the_conversation_links_to_the_error_log(client_and_provider):
+    client, _ = client_and_provider
+    assert 'href="/progress"' in client.get("/").text

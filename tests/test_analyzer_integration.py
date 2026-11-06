@@ -20,6 +20,7 @@ from __future__ import annotations
 import pytest
 
 from teacher_charles.config import REPO_ROOT
+from teacher_charles.llm.base import GenerationOptions
 from teacher_charles.prompts import PromptLibrary
 from teacher_charles.store import db
 from teacher_charles.store.repo import CorrectionRepo, SessionRepo, StudentRepo
@@ -140,5 +141,112 @@ async def test_real_double_turn_streams_and_persists(ollama_provider, prompts, b
         assert len(rows) == len(analyzed.analysis.findings)
         if rows:
             assert rows[0].span in AGE_SENTENCE
+    finally:
+        conn.close()
+
+
+# --- E5: o nível muda a resposta de verdade ------------------------------- #
+
+
+async def test_the_level_changes_the_real_reply(ollama_provider, prompts, base, tmp_path):
+    """O critério de aceite da E5 no caminho real.
+
+    A MESMA fala do aluno, mandada com o partial de A2 e com o de C1, tem que
+    voltar diferente. O que se afirma aqui é o contrato — o ajuste chega ao
+    modelo e muda a saída —, não a qualidade do ajuste: o quanto ele muda é
+    medido por ``scripts/measure_level.py --reply`` e registrado no plano §5.3.
+    """
+    from teacher_charles.store.repo import StudentRepo as Students
+    from teacher_charles.teaching import Chunk as Piece
+
+    conn = db.init_db(tmp_path / "level.db")
+    try:
+        students = Students(conn)
+        sessions = SessionRepo(conn)
+        runner = TurnRunner(
+            provider=ollama_provider,
+            prompts=prompts,
+            conn=conn,
+            options=GenerationOptions(temperature=0.0, think=False),
+        )
+
+        replies = {}
+        for level in ("A2", "C1"):
+            student = students.get_or_create(f"aluno-{level}", cefr_level=level)
+            session_id = sessions.start(student.id)
+            pieces = [
+                event.text
+                async for event in runner.run(session_id, AGE_SENTENCE, student)
+                if isinstance(event, Piece)
+            ]
+            replies[level] = "".join(pieces).strip()
+            print(f"\n  [{level}] {replies[level]}")
+
+        for level, reply in replies.items():
+            assert reply, f"o modelo não respondeu nada em {level}"
+        assert replies["A2"] != replies["C1"], (
+            "a mesma fala com níveis diferentes voltou idêntica: "
+            "o ajuste por nível não chegou ao modelo"
+        )
+    finally:
+        conn.close()
+
+
+# --- E6: os três modos, e o drill do erro real ---------------------------- #
+
+
+async def test_the_three_modes_answer_differently(ollama_provider, prompts, base, tmp_path):
+    """Os três modos têm que produzir respostas diferentes para a mesma fala.
+
+    Contrato, não qualidade: o prompt do modo chega ao modelo e muda a saída. O
+    quanto muda está medido em ``scripts/measure_modes.py`` e no plano §5.4.
+    """
+    from teacher_charles.store.repo import CorrectionRepo as Corrections
+    from teacher_charles.store.repo import StudentRepo as Students
+    from teacher_charles.store.repo import TurnRepo as Turns
+    from teacher_charles.teaching import Chunk as Piece
+    from teacher_charles.teaching.modes import DrillPlanner
+
+    conn = db.init_db(tmp_path / "modes.db")
+    try:
+        student = Students(conn).get_or_create("ana")
+        sessions = SessionRepo(conn)
+
+        # Um erro de verdade no histórico, para o drill ter o que treinar.
+        seed = sessions.start(student.id)
+        turn_id = Turns(conn).append(seed, "student", AGE_SENTENCE)
+        Corrections(conn).add(
+            turn_id,
+            span="I have 35 years",
+            corrected="I am 35 years old",
+            error_type="calque",
+            explanation="Age uses to be.",
+            rule_id="calque.age-have",
+        )
+
+        planner = DrillPlanner(conn, base)
+        runner = TurnRunner(
+            provider=ollama_provider,
+            prompts=prompts,
+            conn=conn,
+            options=GenerationOptions(temperature=0.0, think=False),
+            planner=planner,
+        )
+
+        replies = {}
+        for mode in ("conversation", "correction", "drill"):
+            target = planner.pick(student.id) if mode == "drill" else None
+            session_id = sessions.switch_mode(student.id, mode, target.rule_id if target else None)
+            pieces = [
+                event.text
+                async for event in runner.run(session_id, AGE_SENTENCE, student)
+                if isinstance(event, Piece)
+            ]
+            replies[mode] = "".join(pieces).strip()
+            print(f"\n  [{mode}] {replies[mode]}")
+
+        for mode, reply in replies.items():
+            assert reply, f"o modelo não respondeu nada em {mode}"
+        assert len(set(replies.values())) == 3, "dois modos devolveram a mesma resposta"
     finally:
         conn.close()

@@ -1,0 +1,62 @@
+# Amostras de escrita por nível CEFR, para calibrar e vigiar a rubrica da E5.
+#
+# Dois usos, deliberadamente diferentes:
+#
+# 1. `tests/test_level.py` usa isto como portão: a rubrica tem que acertar o
+#    nível exato numa fração mínima das amostras e nunca errar por mais de um
+#    degrau. Roda sem modelo nenhum, em milissegundos. Se uma mudança nos pesos
+#    degrada a classificação, a suíte quebra.
+#
+# 2. `scripts/measure_level.py` roda a mesma suíte e imprime a matriz de
+#    confusão com os números por amostra. É o que se usa para recalibrar as
+#    constantes de `teaching/level.py`. O resultado fica no plano §5.3.
+#
+# As amostras são escritas à mão imitando o que cada nível **de fato** manda num
+# chat: um A2 escreve frases curtas com decalque do português; um C1 escreve
+# período longo com subordinação e hedging. Não são textos de prova, são
+# mensagens — é o que o estimador vai ver na vida real.
+#
+# C2 não tem amostra de propósito: distinguir C1 de C2 por contagem de palavra
+# longa seria fingir precisão que a rubrica não tem. O nível existe no esquema
+# (o aluno pode se autodeclarar C2) e a rubrica pode chegar a ele, mas não é
+# medido aqui.
+
+A2:
+  - "I work in a store in my city. I like my job because the people is nice. I go to work by bus every day."
+  - "My family is big. I have two brothers and one sister. We live together with my mother in a house near the beach."
+  - "Yesterday I go to the supermarket and buy rice and beans. After I cook dinner for my children and we watch TV."
+  - "I study English two times in the week. It is difficult for me but I want to speak better with my boss."
+  - "In the weekend I like to stay home. I play with my dog and sometimes my friends come to my house."
+  - "My city is small and very hot. There is a river and many trees. I like to walk there in the morning."
+  - "I have 35 years and I work with marketing. My wife has 32 years, she is a nurse in a hospital."
+  - "I wake up at six hours every day. I take a bath, I eat bread with coffee and after I go to the office."
+
+B1:
+  - "I've been working at the same company for six years, mostly with suppliers. It's a good job, but I think I need a change because I'm not learning new things anymore."
+  - "Last month I travelled to São Paulo for a training. The city is huge and the traffic was terrible, but the course was useful and I met people from other offices."
+  - "I usually study English at night, after my daughter sleeps. It's hard to concentrate when I'm tired, so I prefer to watch series with subtitles instead of doing exercises."
+  - "My plan for this year is to change jobs. I'm applying for positions in other companies, and if I receive a good offer I will accept it even if I need to move."
+  - "The weather here changed a lot in the last years. When I was a child it rained every afternoon in summer, and now we can pass two months without rain."
+  - "I don't like to speak in meetings in English because I'm afraid of making mistakes. I understand almost everything, but when I need to answer quickly my mind becomes blank."
+  - "On Saturdays I play football with my friends, and after we usually have lunch together. It's the moment of the week that I like more, because during the week I only work."
+  - "My boss asked me to present the results to the client next week. I'm nervous about it, but I prepared the slides already and I will practise the presentation at home."
+
+B2:
+  - "Although I've worked in logistics for almost ten years, I've never managed a team that large, so I'd rather understand how the current process works before suggesting any change."
+  - "What bothers me about remote work is not the work itself but the fact that informal conversations disappeared, the ones where you find out what is really going on in the company."
+  - "I would have accepted the offer if they had been clearer about the career path. The salary was attractive, however it would have meant giving up the flexibility I have now."
+  - "The project was delayed because the requirements kept changing and nobody was willing to say no to the client. In the end we delivered something that works but nobody is proud of."
+  - "I've been reading about how companies measure productivity, and most of the methods seem to measure how busy people look rather than what they actually deliver."
+  - "My daughter is learning English at school, and it is interesting to see how she picks up expressions from videos. She doesn't translate in her head the way I still do."
+  - "To be honest, I think the training was useful even though the format was tiring. If they had split it into shorter sessions, people would have absorbed much more."
+  - "Despite the economic situation, our sales grew last quarter, mainly because we started selling to small businesses rather than depending on two or three large accounts."
+
+C1:
+  - "What strikes me about the way the industry talks about innovation is how little of it survives contact with a budget meeting, since whoever controls the spreadsheet decides which ideas are allowed to exist."
+  - "I would argue the problem isn't a lack of talent but the way responsibility is distributed: everyone owns a piece of the process and nobody owns the outcome, which is a reliable recipe for mediocrity."
+  - "Having lived abroad for a couple of years, I came back with the uncomfortable realisation that what I used to consider normal here is in fact a choice we keep making, and could unmake."
+  - "The report reads as if it had been written to avoid blame rather than to explain what happened, and no matter how many charts you add, that tone is impossible to disguise."
+  - "I tend to be sceptical about productivity frameworks, which are usually sold as neutral tools, whereas in practice they encode a particular idea of what work should look like."
+  - "She made the point rather elegantly: if we cannot explain a decision to the people who have to live with it, then we probably haven't understood it ourselves."
+  - "There is a version of this plan that would work, although it would require admitting that the previous strategy failed, and that admission is precisely what the leadership is unwilling to make."
+  - "Looking back, the turning point wasn't the new contract itself but the moment when we stopped treating the client as an adversary, which changed every conversation that followed."

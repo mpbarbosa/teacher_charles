@@ -10,6 +10,7 @@ from teacher_charles.app import create_app
 from teacher_charles.config import Settings
 from teacher_charles.health import _matches, probe_model
 from teacher_charles.llm import FakeProvider
+from teacher_charles.store.db import MIGRATIONS_DIR
 from teacher_charles.teaching.contrastive import ContrastiveError
 
 
@@ -134,7 +135,11 @@ def test_health_endpoint_degrades_when_model_absent(tmp_path, patched_client):
     body = response.json()
     assert body["status"] == "degraded"
     assert body["database"]["ok"] is True
-    assert body["database"]["migrations_applied"] == ["001_initial.sql"]
+    # Todas as migrações do pacote, não uma lista escrita à mão: a E5
+    # acrescentou a segunda, e a próxima entrega vai acrescentar outra.
+    assert body["database"]["migrations_applied"] == [
+        path.name for path in sorted(MIGRATIONS_DIR.glob("*.sql"))
+    ]
     assert body["model"]["ok"] is False
 
 

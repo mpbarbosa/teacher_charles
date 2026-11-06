@@ -13,7 +13,16 @@ from .contrastive import (
     get_base,
     load_base,
 )
-from .turn import Analyzed, Chunk, Done, Failed, TurnEvent, TurnRunner
+from .level import (
+    LevelDecision,
+    LevelEstimate,
+    LevelTracker,
+    Signals,
+    estimate_level,
+    partial_name,
+)
+from .modes import DrillPlanner, DrillTarget, drill_block
+from .turn import Analyzed, Chunk, Done, Failed, Leveled, TurnEvent, TurnRunner
 
 __all__ = [
     "Analysis",
@@ -24,11 +33,21 @@ __all__ = [
     "ContrastiveError",
     "ContrastiveItem",
     "Done",
+    "DrillPlanner",
+    "DrillTarget",
     "Failed",
     "Finding",
+    "LevelDecision",
+    "LevelEstimate",
+    "LevelTracker",
+    "Leveled",
     "Match",
+    "Signals",
     "TurnEvent",
     "TurnRunner",
+    "drill_block",
+    "estimate_level",
     "get_base",
     "load_base",
+    "partial_name",
 ]
