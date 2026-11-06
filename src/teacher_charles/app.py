@@ -33,8 +33,10 @@ from .store.models import CEFR_LEVELS, MODES, Student
 from .store.repo import CorrectionRepo, LevelRepo, SessionRepo, StudentRepo, TurnRepo
 from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, Leveled, TurnRunner
 from .teaching.contrastive import ContrastiveError, load_base
-from .teaching.level import LevelTracker, partial_name
+from .teaching.level import LevelTracker
+from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
+from .teaching.modes import partial_name as mode_partial_name
 from .teaching.turn import DEFAULT_LEVEL
 
 log = logging.getLogger(__name__)
@@ -47,28 +49,25 @@ WEB_DIR = PACKAGE_ROOT / "web"
 DEFAULT_STUDENT = "student"
 
 
-async def _warm_up(provider: ChatProvider, prompts: PromptLibrary, level: str) -> None:
-    """Carrega o modelo **e** põe a persona no cache de prefixo.
+async def _warm_up(provider: ChatProvider, prefix: list[Message]) -> None:
+    """Carrega o modelo **e** põe o prefixo estável do turno no cache.
 
-    O prompt tem que ser o mesmo de um turno real, com a persona como mensagem
-    de sistema. Medido: aquecer com um "hi" solto carrega o modelo mas deixa os
-    427 tokens da persona fora do cache, e o primeiro turno do aluno paga 19s
-    só de avaliação de prompt. Com o prefixo cacheado, os mesmos 427 tokens
-    custam 0,4-0,7s.
+    O prompt tem que ser o mesmo de um turno real. Medido na E2: aquecer com um
+    "hi" solto carrega o modelo mas deixa os 427 tokens da persona fora do
+    cache, e o primeiro turno do aluno paga 19s só de avaliação de prompt.
+
+    Medido de novo na E7, e dessa vez o errado era este arquivo: a E5 e a E6
+    acrescentaram ajuste de nível e prompt de modo ao turno, e o aquecimento
+    seguiu mandando a persona sozinha. Resultado — primeiro turno com 53% do
+    prompt em cache e 11,6s até a primeira palavra. Por isso o prefixo agora
+    vem de ``TurnRunner.stable_prefix``: há uma lista só, e ela não tem como
+    divergir do que o turno manda (plano §5.5).
 
     Nunca propaga erro: se o modelo não existe ou o Ollama está fora do ar, o
     /health já diz isso, e derrubar a subida por causa do aquecimento seria
     pior do que um primeiro turno lento.
     """
-    messages = [Message(role="system", content=prompts.get("persona"))]
-    # O prefixo cacheado tem que ser o do turno real, e desde a E5 o turno real
-    # manda persona **e** ajuste de nível como mensagens de sistema. Aquecer só
-    # com a persona deixaria o partial fora do cache, e o primeiro turno pagaria
-    # a avaliação dele.
-    name = partial_name(level)
-    if prompts.exists(name):
-        messages.append(Message(role="system", content=prompts.get(name)))
-    messages.append(Message(role="user", content="Hello."))
+    messages = [*prefix, Message(role="user", content="Hello.")]
 
     try:
         await provider.complete(
@@ -144,6 +143,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.provider = chat
         app.state.prompts = prompts
         app.state.analyzer = analyzer
+        app.state.base = base if analyzer is not None else None
         app.state.tracker = LevelTracker(conn)
         app.state.planner = planner
         app.state.runner = TurnRunner(
@@ -161,12 +161,16 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # essa espera caía inteira no primeiro turno do aluno (16,3s até a
         # primeira palavra, contra 1,1s nos turnos seguintes). Aquecer em
         # segundo plano move isso para enquanto a página ainda está sendo lida.
-        # Aquece com o nível do perfil ativo: é o prompt que o primeiro turno
-        # vai mandar de verdade.
+        # Aquece com o nível e o modo do perfil ativo: é o prefixo que o
+        # primeiro turno vai mandar de verdade.
         active = StudentRepo(conn).active()
         warm_level = active.cefr_level if active is not None else DEFAULT_LEVEL
+        warm_session = SessionRepo(conn).current(active.id) if active is not None else None
+        warm_mode = warm_session.mode if warm_session is not None else DEFAULT_MODE
         warmup = (
-            asyncio.create_task(_warm_up(chat, prompts, warm_level))
+            asyncio.create_task(
+                _warm_up(chat, app.state.runner.stable_prefix(warm_level, warm_mode))
+            )
             if settings.llm_warmup
             else None
         )
@@ -229,6 +233,62 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "drillable": len(planner.candidates(student.id)) if planner is not None else 0,
         }
 
+    def progress_payload(conn: sqlite3.Connection, limit: int = 20) -> dict[str, Any]:
+        """O error log do aluno, agregado por regra.
+
+        É a E7 pagando o que a E4 prometeu: a correção virou linha contável, e
+        aqui as linhas viram a resposta de "no que eu mais erro?". A explicação
+        de cada regra vem da base curada quando ela ainda existe — assim a tela
+        mostra a redação revisada, e não o que o modelo disse naquele turno.
+
+        Correções sem regra entram só na contagem do rodapé. Elas não são
+        agregáveis (o modelo escreve a explicação que quiser, cada vez
+        diferente) e, pela política da §5.2, nem chegam ao aluno — o número
+        existe para medir quanto a base ainda não cobre.
+        """
+        student = active_student(conn)
+        corrections = CorrectionRepo(conn)
+        base = app.state.base
+
+        rules = []
+        for count in corrections.top_rules(student.id, limit=limit):
+            item = base.get(count.rule_id) if base is not None and count.rule_id in base else None
+            rules.append(
+                {
+                    "rule_id": count.rule_id,
+                    "times": count.times,
+                    "last_at": count.last_at,
+                    "category": item.category if item is not None else "other",
+                    "explanation": item.explanation if item is not None else "",
+                    "right": list(item.right[:2]) if item is not None else [],
+                    "examples": corrections.spans_for_rule(student.id, count.rule_id, limit=3),
+                    # Regra que saiu da base continua no histórico do aluno; a
+                    # tela diz isso em vez de fingir que a regra ainda existe.
+                    "retired": item is None,
+                }
+            )
+
+        totals = corrections.progress(student.id)
+        levels = LevelRepo(conn).changes(student.id, limit=10)
+        return {
+            "student": student.name,
+            "level": student.cefr_level,
+            "level_source": student.level_source,
+            "self_declared_level": student.self_declared_level,
+            "totals": totals,
+            "rules": rules,
+            "level_history": [
+                {
+                    "from": change.from_level,
+                    "to": change.to_level,
+                    "source": change.source,
+                    "reason": change.reason,
+                    "at": change.created_at,
+                }
+                for change in levels
+            ],
+        }
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -283,7 +343,24 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             },
         )
 
+    @app.get("/progress", response_class=HTMLResponse)
+    async def progress(request: Request) -> HTMLResponse:
+        """A tela do error log: no que este aluno mais erra."""
+        return templates.TemplateResponse(
+            request=request,
+            name="progress.html",
+            context={
+                "version": __version__,
+                "model": settings.llm_model,
+                "progress": progress_payload(app.state.db),
+            },
+        )
+
     # --- API -------------------------------------------------------------- #
+
+    @app.get("/api/progress")
+    async def get_progress() -> JSONResponse:
+        return JSONResponse(progress_payload(app.state.db))
 
     @app.post("/api/chat")
     async def chat(payload: ChatRequest) -> StreamingResponse:
@@ -506,12 +583,15 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         except ContrastiveError as exc:
             contrastive_info = {"ok": False, "items": 0, "detail": str(exc)}
 
-        # Partial de nível que falta não derruba o turno — a resposta sai com a
-        # persona sozinha —, mas tira silenciosamente o ajuste por nível, que é
-        # metade da E5. Silencioso é exatamente o que o /health existe para
-        # evitar, então o que falta aparece aqui sem mudar o status.
+        # Prompt de nível ou de modo que falta não derruba o turno — a resposta
+        # sai com a persona sozinha —, mas tira em silêncio metade da E5 e da
+        # E6. Silencioso é exatamente o que o /health existe para evitar, então
+        # o que falta aparece aqui sem mudar o status.
         prompts: PromptLibrary = app.state.prompts
-        missing_levels = [level for level in CEFR_LEVELS if not prompts.exists(partial_name(level))]
+        missing_levels = [
+            level for level in CEFR_LEVELS if not prompts.exists(level_partial_name(level))
+        ]
+        missing_modes = [mode for mode in MODES if not prompts.exists(mode_partial_name(mode))]
 
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
@@ -527,6 +607,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "level_partials": {
                 "ok": not missing_levels,
                 "missing": missing_levels,
+            },
+            "mode_prompts": {
+                "ok": not missing_modes,
+                "missing": missing_modes,
             },
             "provider": type(app.state.provider).__name__,
         }

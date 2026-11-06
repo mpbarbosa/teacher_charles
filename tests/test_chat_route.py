@@ -177,15 +177,17 @@ def test_history_carries_the_corrections(client_and_provider):
 def test_the_reply_prompt_carries_the_curated_rule(client_and_provider):
     """A dica determinística é o que impede o 4B de inventar a regra.
 
-    Ela vai no fim do prompt de propósito: o cache do Ollama é de prefixo, e
-    uma dica logo após a persona empurraria o histórico todo para fora dele.
+    Ela chega no fim do prompt, dentro da fala do aluno — como mensagem de
+    sistema o template a levava para o topo, e com ela ia o cache do histórico
+    (plano §5.5).
     """
     client, provider = client_and_provider
     client.post("/api/chat", json={"message": "I have 30 years"})
 
     reply_call = provider.calls_matching("Charles")[-1]
     last = reply_call.messages[-1]
-    assert last.role == "system"
+    assert last.role == "user"
+    assert last.content.startswith("I have 30 years")
     assert "age is something you are" in last.content
     assert reply_call.messages[0].role == "system"
     assert "Charles" in reply_call.messages[0].content
@@ -368,6 +370,28 @@ def test_warmup_loads_the_model_on_startup(tmp_path):
         # paga a avaliação inteira da persona (medido: 19s).
         assert warm.messages[0].role == "system"
         assert "Charles" in warm.messages[0].content
+
+
+def test_warmup_sends_exactly_the_prefix_the_turn_sends(tmp_path):
+    """O aquecimento não pode envelhecer em relação ao turno.
+
+    Já envelheceu: a E5 e a E6 acrescentaram nível e modo ao prompt, o
+    aquecimento continuou mandando só a persona, e o primeiro turno chegava com
+    53% do prompt em cache e 11,6s até a primeira palavra (plano §5.5). Agora
+    os dois saem de ``TurnRunner.stable_prefix``, e este teste é o que impede a
+    lista de voltar a ser duas.
+    """
+    provider = FakeProvider(replies="ok")
+    app = create_app(settings_for(tmp_path, llm_warmup=True), provider=provider)
+
+    with TestClient(app) as client:
+        client.get("/health")
+        warm = provider.calls[0]
+        expected = app.state.runner.stable_prefix()
+
+    assert [m.content for m in warm.messages[:-1]] == [m.content for m in expected]
+    assert len(expected) == 3, "persona, nível e modo — o prefixo estável de um turno real"
+    assert warm.messages[-1].role == "user"
 
 
 def test_warmup_can_be_disabled(tmp_path):
@@ -639,3 +663,70 @@ def test_index_renders_the_modes(client_and_provider):
     assert 'data-mode="drill"' in page
     assert 'class="mode active"' in page
     assert "calque.age-have" in page, "o aluno tem que ver qual erro dele virou exercício"
+
+
+# --- A tela do error log (E7) --------------------------------------------- #
+
+
+def test_progress_is_empty_for_a_new_student(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/progress").json()
+
+    assert body["rules"] == []
+    assert body["totals"] == {"corrections": 0, "rules": 0, "without_rule": 0}
+    assert "Nothing here yet" in client.get("/progress").text
+
+
+def test_progress_aggregates_by_rule(client_and_provider):
+    """O que a E4 prometeu: correção é linha contável, e aqui ela vira resposta."""
+    client, _ = client_and_provider
+    for _ in range(2):
+        client.post("/api/chat", json={"message": "I have 30 years"})
+
+    body = client.get("/api/progress").json()
+    assert body["totals"]["corrections"] == 2
+    assert body["totals"]["rules"] == 1
+
+    rule = body["rules"][0]
+    assert rule["rule_id"] == "calque.age-have"
+    assert rule["times"] == 2
+    assert rule["examples"] == ["I have 30 years"], "as frases são as do próprio aluno"
+    # A explicação vem da base curada, não do que o modelo disse no turno.
+    assert "age is something you are" in rule["explanation"]
+    assert rule["right"], "a tela mostra a forma certa, e ela vem da base"
+    assert rule["retired"] is False
+
+
+def test_progress_page_shows_the_students_own_words(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    page = client.get("/progress").text
+    assert "I have 30 years" in page
+    assert "calque.age-have" in page
+    assert "1×" in page
+
+
+def test_progress_is_per_student(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/profile", json={"name": "ana"})
+
+    assert client.get("/api/progress").json()["rules"] == []
+    client.post("/api/profile", json={"name": "student"})
+    assert client.get("/api/progress").json()["rules"][0]["times"] == 1
+
+
+def test_progress_shows_the_level_history(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/profile", json={"level": "B2"})
+
+    body = client.get("/api/progress").json()
+    assert body["level"] == "B2"
+    assert body["level_history"][0]["to"] == "B2"
+    assert "B1 → B2" in client.get("/progress").text
+
+
+def test_the_conversation_links_to_the_error_log(client_and_provider):
+    client, _ = client_and_provider
+    assert 'href="/progress"' in client.get("/").text

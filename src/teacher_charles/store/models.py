@@ -85,12 +85,16 @@ class Session:
 
 @dataclass(frozen=True, slots=True)
 class RuleCount:
-    """Quantas vezes o aluno errou por uma regra. A matéria-prima do drill."""
+    """Quantas vezes o aluno errou por uma regra.
+
+    Matéria-prima do drill (E6) e linha do error log (E7).
+    """
 
     rule_id: str
     times: int
     last_span: str
     last_correction: str
+    last_at: str = ""
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> RuleCount:
@@ -99,6 +103,7 @@ class RuleCount:
             times=row["times"],
             last_span=row["last_span"],
             last_correction=row["last_correction"],
+            last_at=row["last_at"] if "last_at" in row.keys() else "",
         )
 
 

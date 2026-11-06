@@ -390,3 +390,67 @@ async def test_provider_leaves_injected_client_alone():
     await provider.aclose()
     assert not client.is_closed
     await client.aclose()
+
+
+# --- Métricas do servidor (E7) --------------------------------------------- #
+
+
+def test_ollama_records_the_metrics_of_the_done_line():
+    """Sem estas métricas a E7 não teria como explicar a latência.
+
+    A pergunta "o primeiro turno custou carga de modelo, avaliação de prompt ou
+    evicção de cache?" só o servidor responde, e ele responde na última linha
+    do NDJSON.
+    """
+    provider = OllamaProvider(model="m")
+    assert provider.last_metrics is None
+
+    provider._parse_line(
+        json.dumps(
+            {
+                "done": True,
+                "message": {"content": ""},
+                "load_duration": 4_100_000_000,
+                "prompt_eval_count": 800,
+                "prompt_cache_hit_count": 600,
+                "prompt_eval_duration": 2_000_000_000,
+                "eval_count": 20,
+                "eval_duration": 2_000_000_000,
+                "total_duration": 8_100_000_000,
+            }
+        )
+    )
+
+    metrics = provider.last_metrics
+    assert metrics is not None
+    assert metrics.load_ms == 4100
+    assert metrics.prompt_tokens == 800
+    assert metrics.cache_hit_ratio == 0.75
+    assert metrics.output_tokens_per_s == 10.0
+
+
+def test_ollama_accepts_the_older_name_for_the_cache_counter():
+    """O campo mudou de nome entre versões do Ollama; perder a métrica por
+    causa disso seria perder justamente o número que a E7 foi medir."""
+    provider = OllamaProvider(model="m")
+    provider._parse_line(
+        json.dumps(
+            {
+                "done": True,
+                "message": {"content": ""},
+                "prompt_eval_count": 100,
+                "prompt_eval_cached_count": 90,
+            }
+        )
+    )
+    assert provider.last_metrics.prompt_cached == 90
+
+
+def test_metrics_without_numbers_do_not_invent_any():
+    provider = OllamaProvider(model="m")
+    provider._parse_line(json.dumps({"done": True, "message": {"content": ""}}))
+
+    metrics = provider.last_metrics
+    assert metrics.prompt_tokens is None
+    assert metrics.cache_hit_ratio is None
+    assert metrics.output_tokens_per_s is None

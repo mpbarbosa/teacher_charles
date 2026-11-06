@@ -292,6 +292,31 @@ class CorrectionRepo:
         ).fetchall()
         return [Correction.from_row(row) for row in rows]
 
+    def progress(self, student_id: int) -> dict[str, int]:
+        """Os números de cabeçalho do error log (E7).
+
+        Uma consulta só, porque são três contagens sobre a mesma junção e
+        porque todo método de repositório aqui é uma instrução autônoma — a
+        conexão é compartilhada e não abre transação no caminho da requisição.
+        """
+        row = self._conn.execute(
+            """
+            SELECT count(*)                                        AS corrections,
+                   count(DISTINCT c.rule_id)                       AS rules,
+                   sum(CASE WHEN c.rule_id IS NULL THEN 1 ELSE 0 END) AS without_rule
+              FROM correction c
+              JOIN turn t ON t.id = c.turn_id
+              JOIN session s ON s.id = t.session_id
+             WHERE s.student_id = ?
+            """,
+            (student_id,),
+        ).fetchone()
+        return {
+            "corrections": row["corrections"] or 0,
+            "rules": row["rules"] or 0,
+            "without_rule": row["without_rule"] or 0,
+        }
+
     def count(self) -> int:
         return self._conn.execute("SELECT count(*) AS n FROM correction").fetchone()["n"]
 
@@ -321,7 +346,8 @@ class CorrectionRepo:
                      JOIN turn t2 ON t2.id = c2.turn_id
                      JOIN session s2 ON s2.id = t2.session_id
                     WHERE s2.student_id = ? AND c2.rule_id = c.rule_id
-                    ORDER BY c2.id DESC LIMIT 1) AS last_correction
+                    ORDER BY c2.id DESC LIMIT 1) AS last_correction,
+                   max(c.created_at)               AS last_at
               FROM correction c
               JOIN turn t ON t.id = c.turn_id
               JOIN session s ON s.id = t.session_id
@@ -333,6 +359,27 @@ class CorrectionRepo:
             (student_id, student_id, student_id, limit),
         ).fetchall()
         return [RuleCount.from_row(row) for row in rows]
+
+    def rule_history(self, student_id: int, rule_id: str, limit: int = 20) -> list[str]:
+        """Quando o aluno errou por esta regra, da mais recente para trás.
+
+        Datas, não contagem: é o que permite ao aluno ver se um erro é coisa
+        de ontem ou de três semanas atrás — a diferença entre "ainda erro
+        isso" e "já passou".
+        """
+        rows = self._conn.execute(
+            """
+            SELECT c.created_at AS at
+              FROM correction c
+              JOIN turn t ON t.id = c.turn_id
+              JOIN session s ON s.id = t.session_id
+             WHERE s.student_id = ? AND c.rule_id = ?
+             ORDER BY c.id DESC
+             LIMIT ?
+            """,
+            (student_id, rule_id, limit),
+        ).fetchall()
+        return [row["at"] for row in rows]
 
     def spans_for_rule(self, student_id: int, rule_id: str, limit: int = 3) -> list[str]:
         """As frases do próprio aluno que caíram nesta regra, da mais recente."""

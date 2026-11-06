@@ -47,6 +47,53 @@ class GenerationOptions:
 DEFAULT_OPTIONS = GenerationOptions()
 
 
+@dataclass(frozen=True, slots=True)
+class GenerationMetrics:
+    """O que o servidor contou sobre a chamada que acabou de terminar.
+
+    Existe por causa da E7: sem ``prompt_cached`` não dá para dizer se o
+    primeiro turno custou 7s por carga de modelo, por avaliação de prompt ou
+    por evicção de cache — e "não está explicado" era a dívida que a §1.4
+    deixou em aberto.
+
+    Tudo é opcional porque é informação de servidor: um provider que não
+    reporte métrica nenhuma devolve o objeto vazio em vez de inventar número.
+    Durações em milissegundos.
+    """
+
+    load_ms: float | None = None
+    prompt_tokens: int | None = None
+    prompt_cached: int | None = None
+    prompt_eval_ms: float | None = None
+    output_tokens: int | None = None
+    eval_ms: float | None = None
+    total_ms: float | None = None
+
+    @property
+    def cache_hit_ratio(self) -> float | None:
+        """Quanto do prompt veio do cache de prefixo. É o número da §5.5."""
+        if not self.prompt_tokens or self.prompt_cached is None:
+            return None
+        return self.prompt_cached / self.prompt_tokens
+
+    @property
+    def output_tokens_per_s(self) -> float | None:
+        if not self.output_tokens or not self.eval_ms:
+            return None
+        return self.output_tokens / (self.eval_ms / 1000)
+
+    def as_dict(self) -> dict[str, float | int | None]:
+        return {
+            "load_ms": self.load_ms,
+            "prompt_tokens": self.prompt_tokens,
+            "prompt_cached": self.prompt_cached,
+            "prompt_eval_ms": self.prompt_eval_ms,
+            "output_tokens": self.output_tokens,
+            "eval_ms": self.eval_ms,
+            "total_ms": self.total_ms,
+        }
+
+
 # --- Erros ----------------------------------------------------------------- #
 #
 # Tipados de propósito: a camada de cima reage de formas diferentes a "não
@@ -88,6 +135,12 @@ class ChatProvider(abc.ABC):
 
     def __init__(self, model: str) -> None:
         self.model = model
+        # Métricas da última chamada **concluída**, quando o servidor as
+        # reporta. É best-effort e deliberadamente não é por requisição: com
+        # duas chamadas ao mesmo tempo (conversa e análise), a última a
+        # terminar sobrescreve. Serve para medir em série, que é o que
+        # `scripts/measure_latency.py` faz; não serve para contabilidade.
+        self.last_metrics: GenerationMetrics | None = None
 
     @abc.abstractmethod
     def stream(

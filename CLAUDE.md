@@ -19,7 +19,7 @@ uv run teacher-charles --reload          # http://localhost:8000
 
 ```bash
 uv run pytest                            # tudo (integração inclusa, bate no Ollama de verdade)
-uv run pytest -m "not integration"       # 509 testes, ~4s, sem modelo nenhum
+uv run pytest -m "not integration"       # 522 testes, ~4s, sem modelo nenhum
 uv run pytest -m integration             # só os 9 que exercitam o Ollama local
 uv run pytest tests/test_turn.py::test_nome -x
 uv run ruff check . && uv run ruff format --check .
@@ -101,11 +101,23 @@ o nível** (4 turnos contados seguidos, um degrau por vez). A janela fecha em
 toda mudança de nível, via `level_change.at_signal_id` — sem isso os mesmos
 quatro turnos moveriam o nível de novo no turno seguinte.
 
-**O aquecimento manda a persona de verdade, não um "hi".** Medido: aquecer com
-"hi" carrega o modelo mas deixa os 427 tokens da persona fora do cache, e o
-primeiro turno paga 19s. Com o prefixo cacheado, 7s. `_warm_up` nunca propaga
-erro — o `/health` já reporta modelo inacessível, e derrubar a subida por causa
-do aquecimento seria pior.
+**O aquecimento manda o prefixo do turno, não um "hi" nem "só a persona".**
+Existe uma lista só, `TurnRunner.stable_prefix()`, e o aquecimento e o turno
+usam a mesma — porque já foram duas e divergiram: a E5 e a E6 acrescentaram
+nível e modo ao turno, o aquecimento ficou na persona, e o primeiro turno
+chegava com 53% do prompt em cache e 11,6s até a primeira palavra. Com a mesma
+lista: 0,9s (plano §5.5). `_warm_up` nunca propaga erro — o `/health` já
+reporta modelo inacessível, e derrubar a subida por causa do aquecimento seria
+pior.
+
+**Nada de mensagem de sistema depois do histórico.** O template de chat junta
+as mensagens de sistema no topo, então uma "dica no fim da lista" é colada
+logo após a persona e invalida o cache de todo o histórico — medido: o total
+cacheado ficava preso nos 674 tokens do prefixo e a primeira palavra ia de
+2,8s a 9,1s em seis turnos. A dica curada e o pedido do drill vão **dentro da
+última mensagem do aluno** (`TurnRunner._with_notes`). É contraintuitivo o
+bastante para alguém "consertar" sem querer; o teste
+`test_rule_hint_rides_with_the_student_message` existe para isso.
 
 **A fala do aluno é gravada antes de chamar o modelo**, e o histórico já a inclui
 — por isso `build_messages` não acrescenta a mensagem nova outra vez.
@@ -181,15 +193,19 @@ Três destinos, e confundi-los é erro de categoria:
 
 ## Estado e para onde o código cresce
 
-E0 (fundação), E1 (provider), E2 (chat por texto), E3 (base contrastiva), E4
-(correção estruturada), E5 (perfil e nível) e E6 (os três modos) estão prontas. A ordem e o critério
+Todas as entregas da Fase 1 estão prontas: E0 (fundação), E1 (provider), E2
+(chat por texto), E3 (base contrastiva), E4 (correção estruturada), E5 (perfil
+e nível), E6 (os três modos) e E7 (tela de progresso, README e latência). A ordem e o critério
 de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
 `docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
 
-A próxima é a **E7**: tela de error log agregado por regra, README de dev e
-latência medida e registrada. A agregação que ela precisa já existe —
-`CorrectionRepo.top_rules`, escrita para o drill da E6 —, o que falta é a tela e
-a medição.
+A Fase 1 está completa. O que vem depois está em `docs/plano-fase-1.md` §7:
+voz (Fase 1.5), avaliação de pronúncia e repetição espaçada (Fase 2).
+
+Duas dívidas conhecidas, as duas medidas e registradas na §5.5: a análise custa
+~10s por turno com erro (o caminho é um modelo melhor só para ela, e a medição
+mostra que isso não atrapalha a conversa), e a primeira palavra está em 2,7s
+contra a meta de 1–2s da Fase 1.5.
 
 Há vários perfis de aluno numa máquina, e o ativo é o de maior `seen_seq`; login
 e multiusuário de verdade ficam fora da Fase 1 (plano §4).

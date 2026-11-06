@@ -248,6 +248,36 @@ class TurnRunner:
     def _optional_prompt(self, name: str) -> str:
         return self._prompts.get(name) if self._prompts.exists(name) else ""
 
+    def stable_prefix(
+        self,
+        level: str = DEFAULT_LEVEL,
+        mode: str = DEFAULT_MODE,
+    ) -> list[Message]:
+        """As mensagens de sistema que não mudam de turno para turno.
+
+        Persona, ajuste de nível e comportamento do modo — nesta ordem, da que
+        muda menos para a que muda mais. É **este** prefixo que o Ollama
+        mantém em cache, e é por isso que ele existe como método: o
+        aquecimento aquece exatamente o que o turno manda.
+
+        Medido na E7 (plano §5.5): quando o aquecimento mandava só a persona e
+        o turno mandava persona + nível + modo, o primeiro turno chegava com
+        53% do prompt em cache e pagava 11,6s de avaliação. O aquecimento não
+        tinha envelhecido mal por descuido — ele duplicava uma lista que a E5 e
+        a E6 depois mudaram. Duplicata some; sobra uma lista só.
+        """
+        messages = [Message(role="system", content=self._prompts.get("persona"))]
+
+        adjustment = self.level_prompt(level)
+        if adjustment:
+            messages.append(Message(role="system", content=adjustment))
+
+        behaviour = self.mode_prompt(mode)
+        if behaviour:
+            messages.append(Message(role="system", content=behaviour))
+
+        return messages
+
     def build_messages(
         self,
         session_id: int,
@@ -279,19 +309,11 @@ class TurnRunner:
         todo o histórico para fora do prefixo comum com o turno anterior e faria
         o modelo reavaliar a conversa inteira a cada turno.
         """
-        messages = [Message(role="system", content=self._prompts.get("persona"))]
-
-        adjustment = self.level_prompt(level)
-        if adjustment:
-            messages.append(Message(role="system", content=adjustment))
-
-        # Nesta ordem — nível antes de modo — porque o cache é de prefixo e o
-        # nível muda menos: o aluno troca de modo quando quer, e o nível anda a
-        # cada muitos turnos. Trocar de modo não deveria invalidar o ajuste de
-        # nível que já estava no cache.
-        behaviour = self.mode_prompt(mode)
-        if behaviour:
-            messages.append(Message(role="system", content=behaviour))
+        # Persona, nível e modo: a parte estável, que o aquecimento já pôs no
+        # cache. Nível antes de modo porque o cache é de prefixo e o nível muda
+        # menos — trocar de modo não deveria invalidar o ajuste de nível que já
+        # estava lá.
+        messages = self.stable_prefix(level, mode)
 
         # O bloco do drill é dado apurado pela aplicação (qual regra, com que
         # palavras do aluno), não comportamento: o "como treinar" está no
@@ -305,18 +327,51 @@ class TurnRunner:
             role = "user" if turn.role == "student" else "assistant"
             messages.append(Message(role=role, content=turn.content))
 
-        hint = self.rule_hint(student_text)
-        if hint:
-            messages.append(Message(role="system", content=hint))
-
-        # O pedido do drill vai por último, pelo mesmo motivo da dica: no fim
-        # do prompt ele não se dilui, e acrescentar no fim não custa cache.
+        # A dica curada e o pedido do drill vão no fim, depois da fala do
+        # aluno: medido na E4 e na E6, instrução longe do ponto de geração se
+        # dilui. Mas vão **dentro da última mensagem do aluno**, e não como
+        # mensagem de sistema — ver ``_with_notes``.
+        notes = [self.rule_hint(student_text)]
         if mode == "drill":
-            reminder = drill_reminder(drill)
-            if reminder:
-                messages.append(Message(role="system", content=reminder))
+            notes.append(drill_reminder(drill))
 
-        return messages
+        return self._with_notes(messages, [note for note in notes if note])
+
+    @staticmethod
+    def _with_notes(messages: list[Message], notes: list[str]) -> list[Message]:
+        """Anexa as notas do turno à última mensagem do aluno.
+
+        Elas já estiveram como mensagem de sistema no fim da lista, e a E7
+        mediu o preço disso: **o histórico inteiro parava de ser cacheado**. O
+        total cacheado ficava preso no prefixo estável (674 tokens, turno após
+        turno) enquanto o prompt crescia para 950, e a primeira palavra ia de
+        2,8s para 9,1s em seis turnos.
+
+        A causa não é o cache do Ollama, é o template de chat: ele junta as
+        mensagens de sistema no topo. Uma mensagem de sistema no fim da lista é
+        **renderizada logo depois da persona**, então ela muda a cada turno
+        dentro do prefixo — e invalida tudo o que vem depois. Era isso que a
+        §5.2 tinha diagnosticado como evicção causada pela análise; a análise
+        não tinha nada a ver (plano §5.5).
+
+        Dentro da última mensagem do aluno, a nota fica onde se pretendia que
+        ficasse — no fim do prompt renderizado —, e o que muda a cada turno
+        passa a ficar depois de todo o histórico, que volta a ser cacheado.
+        """
+        if not notes or not messages:
+            return messages
+
+        last = messages[-1]
+        if last.role != "user":
+            # Sem fala do aluno no fim não há onde anexar sem bagunçar a
+            # ordem; cai no comportamento antigo, que é raro e inofensivo.
+            return [*messages, Message(role="system", content="\n\n".join(notes))]
+
+        joined = "\n\n".join(notes)
+        return [
+            *messages[:-1],
+            Message(role="user", content=f"{last.content}\n\n[Teacher's notes: {joined}]"),
+        ]
 
     # --- análise ---------------------------------------------------------- #
 

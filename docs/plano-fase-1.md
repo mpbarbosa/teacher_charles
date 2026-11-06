@@ -136,9 +136,11 @@ O que isto diz para o resto do plano:
 - Para a **voz da Fase 1.5**, a meta de 1–2 s deixou de ser implausível. 0,7 s
   até o primeiro token dá margem para TTS por sentença — desde que a Fase 1.5
   comece medindo, como a §1.3 já dizia.
-- Sobra um incômodo honesto: 7,4 s no primeiro turno mesmo com aquecimento,
-  contra 0,7 s nos seguintes. Não está explicado. Fica para a E7, que é onde a
-  latência é medida a sério.
+- Sobrava um incômodo honesto: 7,4 s no primeiro turno mesmo com aquecimento,
+  contra 0,7 s nos seguintes. **Resolvido na E7** (§5.5): o aquecimento mandava
+  um prompt parecido com o do turno, não o mesmo, então parte do prefixo ficava
+  fora do cache. Com a mesma lista nos dois lugares, o primeiro turno sai em
+  0,9 s.
 
 ---
 
@@ -325,7 +327,7 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 | **E4** ✅ | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | **Feito.** 31 frases com erro conhecido: 87% recebem correção, todas citando a regra esperada. 18 frases corretas: 0 corrigidas por engano. 0 de 49 turnos com JSON inválido. Ver §5.2 |
 | **E5** ✅ | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | **Feito.** A rubrica determinística acerta o nível exato em 78% de 32 amostras rotuladas e nunca erra por dois degraus; o nível entra como segunda mensagem de sistema e muda a resposta do modelo real (frase de 6,5 para 10,0 palavras entre A2 e C1, e o erro escolhido muda). Ver §5.3 |
 | **E6** ✅ | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | **Feito.** Os três trocam na UI e mudam três coisas cada um (prompt, teto de correções, regra treinada). O drill escolhe a regra por consulta ao `correction` agregado e põe as frases do próprio aluno no prompt — sem error log, ele diz que não há o que treinar. Ver §5.4 |
-| **E7** | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | Um aluno consegue ver no que erra mais; um dev clona e roda seguindo só o README |
+| **E7** ✅ | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | **Feito.** `/progress` mostra no que o aluno mais erra, com as frases dele e a explicação curada. A latência foi medida e as duas dívidas pagas: o primeiro turno caiu para 0,9s e a degradação turno a turno acabou — a causa não era a análise, era a dica de sistema sendo içada ao topo pelo template. Ver §5.5 |
 
 ### 5.1 O que a E3 estabeleceu
 
@@ -440,11 +442,13 @@ porque num provider de nuvem ou num servidor que atenda dois pedidos ao mesmo
 tempo ele volta a ser o melhor arranjo.
 
 Fica registrado o efeito colateral que a medição expôs: **a primeira palavra
-degrada turno a turno** (0,1s → 3,8s → 6,1s → 7,9s → 10,8s em 5 turnos). Cada
-chamada de análise joga o prompt da conversa fora do cache de prefixo do
-Ollama, e o turno seguinte paga a persona e o histórico de novo. Isso é dívida
-conhecida, não resolvida: a saída provável é a análise num segundo modelo, com
-cache próprio, e a medição vira item da E7.
+degrada turno a turno** (0,1s → 3,8s → 6,1s → 7,9s → 10,8s em 5 turnos).
+
+> **A E7 mediu e o diagnóstico acima estava errado.** A degradação é real, mas
+> não vem da chamada de análise: com a análise num segundo modelo, com cache
+> próprio — a "saída provável" que este parágrafo sugeria —, ela acontece
+> igual. O culpado era a dica curada como mensagem de sistema, que o template
+> de chat iça para o topo do prompt. Ver §5.5.
 
 #### 3. Frase sem candidato não vira pergunta ao modelo
 
@@ -741,8 +745,16 @@ depois da fala do aluno:
 > years old' or 'I'm 35.' Now, try this: 'She is 25 and she works in marketing…'"*
 > → depois: *"Yes, 'I am 35 years old' is correct! How about this: …"*
 
-Exercício em todos os turnos, sempre sobre a regra treinada. Acrescentar no fim
-não custa cache nenhum — tudo o que vem antes continua no prefixo.
+Exercício em todos os turnos, sempre sobre a regra treinada.
+
+> **Duas frases acima estão erradas, e a E7 as corrigiu.** O pedido virou uma
+> mensagem de sistema no fim da *lista*, que não é o fim do *prompt*: o
+> template iça as mensagens de sistema para o topo. Então ele nunca esteve
+> "depois da fala do aluno", e "não custa cache nenhum" era o oposto da
+> verdade — custava o cache do histórico inteiro. O que a medição desta seção
+> mostra, e continua valendo, é que **um pedido explícito por turno** faz o
+> drill acontecer. Desde a E7 ele vai dentro da fala do aluno, onde de fato
+> fica no fim do prompt. Ver §5.5.
 
 #### Os três modos, medidos
 
@@ -842,6 +854,159 @@ palavras certas, e que o modelo dá exercício. Se o aluno erra menos depois, n�
 sabemos — é pergunta que precisa de uso real e de mais de uma sessão por aluno.
 Fica anotada para a E7, onde o error log agregado passa a existir na tela.
 
+### 5.5 O que a E7 mediu, e as duas dívidas que ela pagou
+
+A E7 tinha duas dívidas nominais, as duas sobre latência e as duas sobre
+**por quê**:
+
+- §1.4: *"7,4s no primeiro turno mesmo com aquecimento, contra 0,7s nos
+  seguintes. Não está explicado."*
+- §5.2: *"a primeira palavra degrada turno a turno (0,1s → 3,8s → 6,1s → 7,9s →
+  10,8s em 5 turnos)"*, com a hipótese de que **a chamada de análise** joga o
+  prompt da conversa fora do cache de prefixo do Ollama.
+
+Cronômetro não responde nenhuma das duas. O que responde é o que o servidor
+conta de cada chamada — quanto do prompt estava em cache, quanto foi avaliado
+agora, quanto custou carregar o modelo. Daí `ChatProvider.last_metrics` e
+`scripts/measure_latency.py`.
+
+Modelo: `qwen2.5:3b-instruct-q4_K_M`, CPU pura, sessão de 6 turnos alternando
+frase com erro e frase correta.
+
+#### Resultado final
+
+| | |
+|---|---|
+| Primeira palavra | mediana **2,7s** · pior 3,4s |
+| Primeira palavra, 2 primeiros turnos vs 2 últimos | 2,8s → **2,7s** (não degrada mais) |
+| Turno completo, frase correta | **4,1s** |
+| Turno completo, frase com erro (inclui análise) | 12,5–16,2s |
+| Análise, isolada | mediana 10,1s, **depois** da resposta |
+| Prompt da conversa em cache | 88% → **95%**, subindo ao longo da sessão |
+| Primeiro turno, modelo já carregado e aquecido | **0,9s** |
+
+#### Dívida 1: o primeiro turno, explicado e resolvido
+
+Com o modelo descarregado da memória, medindo um turno cru:
+
+| | primeira palavra | decomposição |
+|---|---|---|
+| Sem aquecimento | **19,1s** | 4,1s de carga do modelo + 15,1s avaliando 436 tokens com 0% em cache |
+| Com aquecimento | **0,9s** | o aquecimento pagou os 4,1s + 13,6s; o turno chegou com 94% em cache |
+
+Os 7,4s que a §1.4 não explicava eram **aquecimento parcial**: ele mandava um
+prompt parecido com o do turno, não o mesmo. E a E5 e a E6 pioraram isso sem
+querer — acrescentaram ajuste de nível e prompt de modo ao turno, e o
+aquecimento continuou mandando só a persona. Medido antes da correção: primeiro
+turno com **53% do prompt em cache e 11,6s** até a primeira palavra.
+
+A correção não foi acrescentar as duas mensagens ao aquecimento; foi tirar a
+duplicata. `TurnRunner.stable_prefix()` é a única definição do prefixo estável,
+o turno a usa e o aquecimento a usa. Não há mais como as duas listas
+divergirem — e um teste falha se alguém tentar.
+
+#### Dívida 2: a hipótese da §5.2 estava errada
+
+A degradação era real. A causa, não. Três sessões iguais, mudando uma coisa de
+cada vez:
+
+| | cache da conversa | primeira palavra (1º → 6º turno) |
+|---|---|---|
+| Sem análise e sem dica curada | 97% estável | 1,0s → 1,0s |
+| Análise ligada, mesmo modelo | 88% → 72% | 2,8s → 8,7s |
+| Análise ligada, **outro modelo** (7B) | 88% → 72% | 2,8s → 9,3s |
+| Só a dica curada, **sem chamada** de análise | 88% → 71% | 2,8s → 9,1s |
+
+A terceira linha derruba a hipótese: com a análise num modelo separado — cache
+separado, slot separado — a conversa degrada exatamente igual. A quarta mostra
+o culpado: **a dica curada**, sem chamada de análise nenhuma, reproduz a
+degradação inteira.
+
+E o número que fecha o caso: em todas as sessões degradadas, o total cacheado
+ficava **preso em ~674 tokens** enquanto o prompt crescia de 767 para 950. 674
+é exatamente o prefixo estável. Ou seja: o histórico da conversa nunca entrava
+no cache.
+
+O que isso evitou, de passagem: a E7 **não** ganhou um `TC_ANALYSIS_MODEL`. Era
+a feature que a §5.2 encomendava, estava pronta para ser escrita — o `Analyzer`
+já aceita provider próprio — e teria custado configuração nova, um segundo
+modelo na memória e uma análise 2,5× mais lenta para resolver um problema que
+ela não causava. Duas horas de medição valeram mais que a feature.
+
+A explicação não é o cache do Ollama, é o **template de chat**: ele junta as
+mensagens de sistema no topo. A dica era a última mensagem da lista, mas não a
+última do prompt renderizado — ela era colada logo depois da persona. Como
+muda a cada turno, invalidava tudo o que vinha depois: o histórico inteiro.
+
+> A E4 pôs a dica no fim da lista *por causa do cache*, e mediu que isso
+> ajudava a prosa do professor a usar a redação curada. As duas conclusões
+> estavam certas pelos motivos errados: a dica nunca esteve no fim do prompt.
+
+**A correção**: a dica e o pedido do drill passam a ir **dentro da última
+mensagem do aluno**, entre colchetes. Ali ficam de fato no fim do prompt
+renderizado, e tudo o que vem antes volta a ser cacheado.
+
+| | cache | primeira palavra (1º → 6º) |
+|---|---|---|
+| Dica como mensagem de sistema | 88% → 71% | 2,8s → 9,1s |
+| Dica dentro da fala do aluno | 88% → **92%** | 3,0s → **2,9s** |
+
+E a prosa melhorou junto, que é o efeito colateral que ninguém esperava. Mesmas
+três frases, mesmo modelo:
+
+| O aluno escreveu | Com a dica como sistema | Com a dica na fala do aluno |
+|---|---|---|
+| *I lost the bus this morning* | não corrigiu | *"We usually say 'I missed the bus'"* ✅ |
+| *Can I make a question* | não corrigiu | não corrigiu |
+| *My manager is very comprehensive* | *"My manager is very **thorough**"* ❌ | *"Your manager is very **understanding**"* ✅ |
+
+Faz sentido: a instrução que o template empurrava para junto da persona ficava
+a 900 tokens do ponto de geração. Dentro da fala do aluno, ela está na última
+linha do prompt.
+
+Com isso, o produto inteiro ligado — análise incluída — a primeira palavra sai
+em 2,7s e **não degrada**: 2,8s no começo da sessão, 2,7s no fim, com o cache
+subindo de 88% para 95%.
+
+#### O outro critério: um dev clona e roda seguindo só o README
+
+Verificado como se verifica isto: uma cópia limpa do projeto — sem `.venv`, sem
+`.env`, sem caches — e os comandos do README, na ordem em que ele os dá.
+
+| | |
+|---|---|
+| `python3 scripts/check_env.py` | roda com o Python do sistema; avisou que o modelo default não estava baixado e **listou os que havia na máquina, com tamanho** |
+| `uv sync --extra dev` | resolveu o Python 3.12 e as dependências |
+| `uv run pytest -m "not integration"` | 508 testes verdes em 4,5s, sem modelo nenhum |
+| `uv run ruff check .` | limpo |
+
+O README ganhou o que faltava para isso ser verdade sem ajuda: como trabalhar
+sem modelo (`TC_PROVIDER=fake`), o loop rápido de teste em vez do `pytest`
+puro, uma tabela de medições apontando cada número a um script, e uma seção
+"quando dá errado" com os sintomas que o produto de fato produz — 503 no
+`/health`, correção que não aparece porque não há regra curada, turno de 15s
+em frase com erro.
+
+#### O que ficou ruim, dito por inteiro
+
+**Frase com erro ainda custa um turno de 12 a 16 segundos.** A análise leva
+~10s e roda depois da resposta, então o aluno lê enquanto ela corre — mas a
+anotação demora. O caminho é a análise num modelo melhor e mais rápido, e a
+medição da §5.5 mostra que isso **não** piora a conversa (o cache dela é
+independente). Fica para a Fase 2.
+
+**A nota entre colchetes está na fala do aluno.** Funciona e não vaza para a
+tela — verificado —, mas é um lugar estranho para instrução de professor, e um
+modelo diferente pode reagir diferente. Se vazar algum dia, o sintoma será
+visível na hora.
+
+**2,7s ainda não é conversa.** A Fase 1.5 quer 1–2s com voz, e a medida sem
+dica (1,0s) mostra que o teto desta máquina dá para isso — o que falta é a
+dica custar menos, ou um modelo mais rápido.
+
+**Um 3B, não o 4B default.** Os números acima são do modelo que está baixado
+nesta máquina. Um 4B deve ficar ~30% mais lento, pela §1.3; não foi medido.
+
 ### Rodar em dev
 
 ```bash
@@ -862,7 +1027,7 @@ Variáveis de ambiente em `.env` (modelo, provider, caminho do banco), com
 |---|---|
 | O 4B devolve JSON malformado na etapa de análise | Validação pydantic + retry com instrução mais estrita + fallback que degrada para "sem correção" em vez de quebrar o turno. **Medido na E4: 0 de 49 turnos precisaram de retentativa.** O risco não se materializou neste modelo; o anteparo fica, porque é barato e o modelo pode mudar. |
 | O 4B explica gramática pior que o esperado | **Materializou-se, e o anteparo funcionou.** A E4 mediu um 3B inventando 12 correções em 18 frases corretas, várias ensinando erro (*There have been* → *has been*), e nenhuma citando regra — enquanto 100% dos acertos citavam a regra esperada. Daí a política: sem regra curada, a correção não chega ao aluno (§5.2). Medido antes, na E1: um 3B "corrigiu" *I have 30 years* para *I have thirty years* — trocou o dígito e manteve o decalque. É o problema nº 1 da análise em uma linha, e a razão de a E3/E4 existirem. Subir para 8B **não** é mais a saída nesta máquina (3,5 tok/s); a saída é a regra curada. |
-| Latência do turno duplo (análise + resposta) | **Materializou-se, e pior do que o previsto.** A E4 mediu: em paralelo, a primeira palavra sai em 15,3s porque o Ollama atende um pedido por vez — o paralelismo era ficção. Default virou conversa primeiro, análise depois (6,1s), e turno sem candidato na base não chama o modelo. Resta a evicção do cache de prefixo, que faz a primeira palavra degradar turno a turno; ver §5.2. |
+| Latência do turno duplo (análise + resposta) | **Materializou-se, e foi resolvido em duas etapas.** A E4 mediu: em paralelo, a primeira palavra sai em 15,3s porque o Ollama atende um pedido por vez — o paralelismo era ficção. Default virou conversa primeiro, análise depois, e turno sem candidato na base não chama o modelo. A degradação turno a turno que sobrou foi diagnosticada errado ali e corrigida na E7: era a dica de sistema sendo içada ao topo pelo template, não a análise. Hoje a primeira palavra fica em 2,7s e não cresce ao longo da sessão (§5.5). |
 | Curar ~100 itens contrastivos dá trabalho | E3 entrega 40 e segue crescendo. O schema e os testes garantem que crescer não degrada. |
 
 ---

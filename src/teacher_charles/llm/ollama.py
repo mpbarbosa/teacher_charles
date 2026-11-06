@@ -17,6 +17,7 @@ import httpx
 from .base import (
     DEFAULT_OPTIONS,
     ChatProvider,
+    GenerationMetrics,
     GenerationOptions,
     Message,
     ModelNotFound,
@@ -154,6 +155,36 @@ class OllamaProvider(ChatProvider):
             )
         return ProviderError(f"Ollama devolveu HTTP {status_code}: {detail}")
 
+    @staticmethod
+    def _ms(value: object) -> float | None:
+        """Nanossegundos do Ollama em milissegundos."""
+        if isinstance(value, (int, float)):
+            return value / 1_000_000
+        return None
+
+    def _record_metrics(self, data: dict[str, Any]) -> None:
+        """Guarda o que a linha final do Ollama contou sobre a chamada.
+
+        `prompt_eval_count` é o que foi avaliado agora; o que estava em cache
+        o Ollama reporta em `prompt_cache_hit_count` nas versões que o têm, e
+        em `prompt_eval_cached_count` nas que não. Lemos os dois nomes porque
+        o campo mudou entre versões e perder a métrica por causa disso seria
+        perder justamente o número que a E7 foi medir.
+        """
+        cached = data.get("prompt_cache_hit_count")
+        if cached is None:
+            cached = data.get("prompt_eval_cached_count")
+
+        self.last_metrics = GenerationMetrics(
+            load_ms=self._ms(data.get("load_duration")),
+            prompt_tokens=data.get("prompt_eval_count"),
+            prompt_cached=cached if isinstance(cached, int) else None,
+            prompt_eval_ms=self._ms(data.get("prompt_eval_duration")),
+            output_tokens=data.get("eval_count"),
+            eval_ms=self._ms(data.get("eval_duration")),
+            total_ms=self._ms(data.get("total_duration")),
+        )
+
     def _parse_line(self, line: str) -> tuple[str, bool]:
         """Devolve ``(texto, terminou)`` para uma linha do NDJSON."""
         try:
@@ -170,7 +201,10 @@ class OllamaProvider(ChatProvider):
 
         message = data.get("message") or {}
         content = message.get("content", "") if isinstance(message, dict) else ""
-        return content, bool(data.get("done"))
+        done = bool(data.get("done"))
+        if done:
+            self._record_metrics(data)
+        return content, done
 
     async def aclose(self) -> None:
         if self._owns_client and not self._client.is_closed:

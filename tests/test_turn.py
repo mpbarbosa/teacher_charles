@@ -398,12 +398,15 @@ async def test_failed_reply_leaves_no_pending_analysis(prompts, conn, session_id
 # --- A dica curada no prompt da resposta ---------------------------------- #
 
 
-async def test_rule_hint_goes_last_in_the_prompt(prompts, conn, session_id):
-    """No fim, e não logo após a persona, por causa do cache de prefixo.
+async def test_rule_hint_rides_with_the_student_message(prompts, conn, session_id):
+    """A dica vai no fim do prompt, **dentro** da fala do aluno.
 
-    O Ollama cacheia o prefixo comum com a chamada anterior. Uma dica posta
-    depois da persona empurraria o histórico inteiro para fora desse prefixo e
-    faria o modelo reavaliar a conversa toda a cada turno.
+    Como mensagem de sistema no fim da lista ela não ficava no fim do prompt:
+    o template de chat junta as mensagens de sistema no topo. Medido na E7
+    (plano §5.5) — o histórico inteiro parava de ser cacheado, o total
+    cacheado ficava preso nos 674 tokens do prefixo estável e a primeira
+    palavra ia de 2,8s para 9,1s em seis turnos. Dentro da fala do aluno, a
+    dica fica onde se queria e o histórico volta ao cache.
     """
     provider = FakeProvider(replies="ok")
     runner = runner_for(provider, prompts, conn, analyzer=analyzer_for(AGE_ERROR))
@@ -411,11 +414,13 @@ async def test_rule_hint_goes_last_in_the_prompt(prompts, conn, session_id):
 
     messages = provider.calls_matching("You are Charles")[-1].messages
     assert messages[0].content == "You are Charles."
-    assert messages[-1].role == "system"
-    assert "age is something you are" in messages[-1].content
-    assert '"I have 30 years"' in messages[-1].content
-    # A fala do aluno continua sendo a última mensagem de usuário.
-    assert [m.role for m in messages] == ["system", "user", "system"]
+    # Nada de sistema depois da persona: é isso que o template moveria.
+    assert [m.role for m in messages] == ["system", "user"]
+
+    last = messages[-1]
+    assert last.content.startswith("I have 30 years")
+    assert "age is something you are" in last.content
+    assert '"I have 30 years"' in last.content
 
 
 async def test_no_hint_when_the_base_matches_nothing(prompts, conn, session_id):
@@ -754,8 +759,9 @@ async def test_the_drill_asks_for_an_exercise_at_the_end_of_the_prompt(
     await collect(runner, drill_session, "I am 35 years old?", student)
 
     messages = provider.last_call.messages
-    assert messages[-1].role == "system"
-    assert "one short exercise" in messages[-1].content.lower()
-    assert "calque.age-have" in messages[-1].content
+    last = messages[-1]
+    assert last.role == "user", "o pedido vai junto com a fala do aluno (plano §5.5)"
+    assert "one short exercise" in last.content.lower()
+    assert "calque.age-have" in last.content
     # E o bloco de dados continua lá em cima, onde o prefixo é cacheado.
     assert "Correct forms:" in messages[3].content

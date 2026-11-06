@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Charles — your mistakes</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>What you get wrong</h1>
+    <div class="meta">
+      <span class="model" title="Nível em vigor">{{ progress.level }}</span>
+      <a class="button" href="/">Back to the conversation</a>
+    </div>
+  </header>
+
+  <main class="progress">
+    {% if progress.rules %}
+    <p class="lead">
+      {{ progress.totals.corrections }} corrections so far, across
+      {{ progress.rules|length }} rule{{ '' if progress.rules|length == 1 else 's' }}.
+      Most frequent first — these are your own sentences.
+    </p>
+
+    <ol class="rules">
+      {% for rule in progress.rules %}
+      <li class="rule-card">
+        <div class="headline">
+          <span class="times">{{ rule.times }}×</span>
+          <span class="explanation">
+            {{ rule.explanation or "This rule is no longer in the curated base." }}
+          </span>
+        </div>
+
+        {% if rule.examples %}
+        <ul class="examples">
+          {% for example in rule.examples %}
+          <li><s>{{ example }}</s></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if rule.right %}
+        <div class="right">Say instead: {% for form in rule.right %}<strong>{{ form }}</strong>{{ "" if loop.last else " · " }}{% endfor %}</div>
+        {% endif %}
+
+        <div class="footnote">
+          <span class="rule">{{ rule.rule_id }}</span>
+          <span class="category">{{ rule.category }}</span>
+          {% if rule.last_at %}<span class="when">last: {{ rule.last_at }}</span>{% endif %}
+          {% if rule.retired %}<span class="retired">rule retired from the base</span>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="lead empty">
+      Nothing here yet. Talk to Charles for a while: every mistake he corrects
+      with a curated rule shows up on this page, with your own words.
+    </p>
+    {% endif %}
+
+    {% if progress.level_history %}
+    <section class="levels">
+      <h2>Your level</h2>
+      <p class="lead">
+        Now {{ progress.level }}{% if progress.level_source == 'auto' %}, adjusted from how you
+        write{% else %}, as you set it{% endif %}.
+      </p>
+      <ul class="level-history">
+        {% for change in progress.level_history %}
+        <li>
+          <strong>{{ change.from }} → {{ change.to }}</strong>
+          <span class="why">{{ change.reason or ('you set it' if change.source == 'self' else '') }}</span>
+          <span class="when">{{ change.at }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </main>
+
+  <footer>
+    <span>
+      {% if progress.totals.without_rule %}
+      {{ progress.totals.without_rule }} correction{{ '' if progress.totals.without_rule == 1 else 's' }}
+      without a curated rule — not counted above.
+      {% endif %}
+    </span>
+    <span class="version">v{{ version }}</span>
+  </footer>
+</body>
+</html>

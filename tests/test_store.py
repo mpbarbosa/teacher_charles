@@ -367,3 +367,70 @@ def test_spans_for_rule_are_the_students_own_words(conn):
 
     spans = corrections.spans_for_rule(student.id, "calque.age-have")
     assert spans == ["my wife has 32 years", "I have 35 years"]
+
+
+# --- Agregação do error log (E7) ------------------------------------------ #
+
+
+def test_progress_counts_rules_and_loose_corrections(conn):
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana")
+    session_id = SessionRepo(conn).start(student.id)
+    turns = TurnRepo(conn)
+    corrections = CorrectionRepo(conn)
+
+    for rule in ("calque.age-have", "calque.age-have", "calque.make-question"):
+        turn_id = turns.append(session_id, "student", "algo")
+        corrections.add(
+            turn_id,
+            span="x",
+            corrected="y",
+            error_type="calque",
+            explanation="curada",
+            rule_id=rule,
+        )
+    loose = turns.append(session_id, "student", "algo")
+    corrections.add(
+        loose, span="x", corrected="y", error_type="grammar", explanation="solta", rule_id=None
+    )
+
+    assert corrections.progress(student.id) == {
+        "corrections": 4,
+        "rules": 2,
+        "without_rule": 1,
+    }
+
+
+def test_progress_of_a_student_without_corrections(conn):
+    student = StudentRepo(conn).get_or_create("ana")
+    assert CorrectionRepo(conn).progress(student.id) == {
+        "corrections": 0,
+        "rules": 0,
+        "without_rule": 0,
+    }
+
+
+def test_rule_history_is_most_recent_first(conn):
+    student = StudentRepo(conn).get_or_create("ana")
+    session_id = SessionRepo(conn).start(student.id)
+    turns = TurnRepo(conn)
+    corrections = CorrectionRepo(conn)
+
+    ids = []
+    for _ in range(3):
+        turn_id = turns.append(session_id, "student", "I have 30 years")
+        ids.append(
+            corrections.add(
+                turn_id,
+                span="I have 30 years",
+                corrected="I am 30",
+                error_type="calque",
+                explanation="curada",
+                rule_id="calque.age-have",
+            )
+        )
+
+    history = corrections.rule_history(student.id, "calque.age-have")
+    assert len(history) == 3
+    assert all(isinstance(when, str) and when for when in history)
+    assert corrections.rule_history(student.id, "calque.inexistente") == []
