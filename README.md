@@ -18,6 +18,13 @@ português — mas explica em inglês.
 > `/progress` mostra no que ele mais erra, com as frases dele. Veja
 > [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo, a ordem das
 > entregas e o que cada uma mediu.
+>
+> **Fase 1.5 (voz) também completa.** O aluno segura um botão e fala; o Charles
+> ouve, responde e fala de volta, sentença por sentença — tudo local, sem
+> nuvem. A meta de latência **não** foi atingida: são 5,4–7,4 s até a primeira
+> palavra falada, contra 1–2 s projetados, e a maior fatia é o modelo de
+> linguagem, não o áudio. Os números e o que eles mudaram no desenho estão em
+> [docs/plano-fase-1-5.md](docs/plano-fase-1-5.md).
 
 ## Decisões que moldam o projeto
 
@@ -41,6 +48,8 @@ não prosa que o modelo improvisa.
 - [uv](https://docs.astral.sh/uv/)
 - [Ollama](https://ollama.com) rodando localmente
 - ~8 GB de RAM e ~3 GB de disco para o modelo
+- Para a voz (opcional): mais ~400 MB de wheels e ~120 MB de pesos, e um
+  microfone
 
 ## Rodar em desenvolvimento
 
@@ -113,6 +122,10 @@ cp .env.example .env
 
 Os defaults estão em [`src/teacher_charles/config.py`](src/teacher_charles/config.py).
 O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
+
+Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_MODEL`,
+`TC_STT_CPU_THREADS`. Cada default tem uma medição atrás dele — ver a seção
+"Falar com o Charles".
 
 ## Testes
 
@@ -341,6 +354,80 @@ Medido com o modelo real: o pedido do exercício precisa ficar no **fim** do
 prompt. Com ele só no bloco do topo, o 3B corrigia a fala do aluno e ia embora
 conversar — nenhum exercício em três turnos (plano §5.4).
 
+## Falar com o Charles
+
+A voz é opcional e vem desligada: o chat por texto funciona inteiro sem ela, e
+ligá-la custa ~400 MB de wheels (`ctranslate2`, `onnxruntime`) mais ~120 MB de
+pesos. Para ligar:
+
+```bash
+uv sync --extra dev --extra voice
+```
+
+```bash
+uv run python scripts/fetch_voice_models.py
+```
+
+```bash
+TC_VOICE_ENABLED=true uv run teacher-charles
+```
+
+O Whisper se baixa sozinho na primeira transcrição; só o Kokoro precisa do
+script, porque vem de um release do GitHub e não de um hub com cache próprio.
+
+Na página aparecem duas coisas: um botão **Hold to talk** e um interruptor
+**Charles speaks**. Segure o botão, fale, solte — e a transcrição cai **no
+campo de texto**, não na conversa. Se o clique for curto, o microfone fica
+travado ligado até o clique seguinte.
+
+### Por que a transcrição não vira turno direto
+
+Porque o STT erra. Um erro de reconhecimento que vira turno faz o Charles
+corrigir um erro que o aluno **não cometeu** — o pior defeito possível neste
+produto, e exatamente a classe de falha que a base curada existe para evitar do
+lado do modelo. Com a transcrição no campo, o erro vira um ajuste de uma
+palavra antes de mandar.
+
+Custa um pressionar de tecla. Compra a única salvaguarda que não depende de
+qual modelo de reconhecimento está carregado.
+
+### Quanto custa, medido
+
+`uv run python scripts/measure_voice.py` — mesma máquina das outras medições:
+
+| | |
+|---|---|
+| Transcrever uma fala de 2,6s (`base.en`, int8, 8 threads) | **0,91s** |
+| Sintetizar uma sentença (Kokoro int8) | **RTF 0,54** — meio segundo de máquina por segundo de fala |
+| Até o aluno **ouvir** a primeira palavra | **5,4–7,4s** |
+| Depois disso | Fala contínua: a síntese da sentença seguinte cabe dentro da reprodução da atual |
+
+Os 5,4–7,4s são contra uma meta de 1–2s, e isso está registrado como dívida,
+não escondido. **A maior fatia é o modelo de linguagem** — 3,0–4,2s até a
+primeira sentença fechar —, não o áudio: o reconhecimento e a síntese somados
+custam menos que ele sozinho. A alavanca é a iGPU Intel, que está ociosa desde
+a Fase 1.
+
+Dois defaults saíram dessa medição e contrariam o que o plano previa:
+
+- **`base.en`, não `small.en`.** O `small.en` leva 2,4s numa fala curta e fura
+  sozinho o orçamento; o `base.en` leva 0,91s.
+- **`TC_STT_CPU_THREADS=8`**, porque o default do `ctranslate2` deixa 30% na
+  mesa — e `TC_TTS_CPU_THREADS=0`, porque no `onnxruntime` limitar **piora**.
+
+### O que não foi medido
+
+O áudio das tabelas é **sintético**, gerado pelo próprio Kokoro: fala limpa,
+sem sotaque, sem ruído. Isso mede latência honestamente, mas mede exatidão no
+caso mais fácil que existe. **A taxa de erro com um brasileiro falando num
+microfone de notebook é maior, e nenhum número deste repositório a conhece.**
+
+Medir isso precisa da sua voz:
+
+```bash
+uv run python scripts/measure_voice.py --record 6 --say "what you just said"
+```
+
 ## A tela do que você erra
 
 `/progress` responde a pergunta que a E4 passou a tornar possível: **no que
@@ -373,9 +460,11 @@ rodar:
 | `scripts/measure_level.py` | Matriz de confusão da rubrica de nível, e o custo da histerese (§5.3) |
 | `scripts/measure_modes.py` | Os três modos contra o modelo real, com o drill andando (§5.4) |
 | `scripts/measure_latency.py` | Latência por turno, decomposta com as métricas do servidor (§5.5) |
+| `scripts/measure_voice.py` | STT, TTS e o orçamento do turno de voz (plano 1.5 §2 e §3.1) |
 
 Os três primeiros precisam de Ollama com o modelo baixado; o
-`measure_level.py` sem argumento roda sem modelo nenhum.
+`measure_level.py` sem argumento roda sem modelo nenhum. O `measure_voice.py`
+precisa dos pesos de voz, e só o `--budget` precisa também do Ollama.
 
 ## Quando dá errado
 
@@ -387,6 +476,10 @@ Os três primeiros precisam de Ollama com o modelo baixado; o
 | Primeira palavra demora ~3s, as seguintes também | É o esperado nesta classe de hardware com um 3B (§5.5). Se o primeiro turno demorar muito mais, o aquecimento não rodou: veja `TC_LLM_WARMUP`. |
 | Turno de 15s em frase com erro | A análise custa ~8-10s e roda **depois** da resposta. O aluno lê enquanto ela corre; a anotação aparece quando fica pronta. |
 | A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
+| O microfone não aparece na página | A voz vem desligada. `uv sync --extra voice`, baixe os pesos e suba com `TC_VOICE_ENABLED=true`. |
+| A voz está ligada mas o Charles não fala | Veja `/health`: o bloco `voice` diz qual motor não carregou e por quê. Peso ausente é o caso comum. |
+| O Charles escreve mas o navegador não toca som | O navegador bloqueia áudio sem gesto do usuário. Clique em qualquer lugar da página e mande outro turno. |
+| `TypeError: open() got an unexpected keyword argument 'metadata_errors'` | PyAV 19 no ambiente. O `pyproject.toml` fixa `av<19`; rode `uv sync --extra voice` de novo. |
 | Testes falham com modelo inesperado | Um `.env` na raiz vaza para a suíte. `tests/conftest.py` limpa `TC_*`, mas scripts de medição leem o `.env`. |
 
 ## Onde fica cada coisa
@@ -397,6 +490,8 @@ data/        base de erros típicos de brasileiros — VERSIONADA, é conteúdo 
 prompts/     persona e instruções em .md, versionados, recarregados sem reiniciar
 src/         o código
   llm/         providers: Ollama (local), OpenAI-compat (nuvem), fake (testes)
+  voice/       as duas pontas da Fase 1.5: Whisper (ouvir), Kokoro (falar), fake
+    segment.py   fluxo de pedacos -> sentencas falaveis, e a limpeza de markdown
   teaching/    a estrutura pedagógica — é esta pasta que é o produto
     turn.py      orquestra o turno: resposta, análise e sinais de nível
     analyzer.py  fala do aluno -> correção estruturada e verificada
@@ -413,7 +508,9 @@ Editar um arquivo de `prompts/` vale no turno seguinte, sem reiniciar o servidor
 
 Duas coisas **nunca** entram no repo:
 
-- **Pesos de modelo.** Ficam onde o Ollama os guarda (`~/.ollama`).
+- **Pesos de modelo.** Ficam onde o Ollama os guarda (`~/.ollama`); os de voz,
+  em `$XDG_CACHE_HOME/teacher-charles/voice` e no cache do `huggingface_hub`.
+  São cache, não dado pessoal — e por isso não ficam junto do banco do aluno.
 - **Progresso do aluno.** Fica em `$XDG_DATA_HOME/teacher-charles/charles.db`.
   É dado pessoal. `data/` guarda conhecimento curado, nunca dados de aluno.
 

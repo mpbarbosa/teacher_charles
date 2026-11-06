@@ -4,8 +4,22 @@
     {
       "name": "teacher-charles",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "teacher-charles", "--port", "8000"],
+      "runtimeArgs": [
+        "run",
+        "teacher-charles",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "teacher-charles-voice",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "TC_VOICE_ENABLED=true uv run teacher-charles --port 8010"
+      ],
+      "port": 8010
     }
   ]
 }

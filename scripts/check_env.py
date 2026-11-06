@@ -208,6 +208,57 @@ def check_db_writable() -> None:
     report(OK, "Banco do aluno gravável", f"{db_path} ({state})")
 
 
+def check_voice() -> None:
+    """A voz da Fase 1.5: pesos no disco e microfone na máquina.
+
+    Tudo aqui é aviso, nunca bloqueio: a voz é opcional e vem desligada. O que
+    este bloco evita é o dev ligar ``TC_VOICE_ENABLED=true``, ver a rota
+    responder 422 e não saber que o que falta é um arquivo.
+    """
+    xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
+    voice_dir = base / "teacher-charles" / "voice"
+
+    # Os nomes vêm do release do Kokoro; ver scripts/fetch_voice_models.py.
+    models = sorted(voice_dir.glob("kokoro-*.onnx")) if voice_dir.is_dir() else []
+    voices = voice_dir / "voices-v1.0.bin"
+
+    if models and voices.is_file():
+        names = ", ".join(path.name for path in models)
+        report(OK, "Pesos de voz (TTS)", f"{names} em {voice_dir}")
+    else:
+        report(
+            WARN,
+            "Pesos de voz (TTS) ausentes",
+            "A voz fica indisponível até baixá-los (~120 MB):\n"
+            "      uv run python scripts/fetch_voice_models.py",
+        )
+
+    # O Whisper se baixa sozinho no primeiro uso; o cache é o do huggingface_hub.
+    hf = os.environ.get("HF_HOME", "").strip()
+    hf_cache = Path(hf).expanduser() if hf else Path.home() / ".cache" / "huggingface"
+    whisper = (
+        list(hf_cache.glob("hub/models--Systran--faster-whisper-*")) if hf_cache.is_dir() else []
+    )
+    if whisper:
+        names = ", ".join(path.name.rsplit("-", 1)[-1] for path in sorted(whisper))
+        report(OK, "Modelos de voz (STT)", f"{names} em cache")
+    else:
+        report(
+            WARN,
+            "Nenhum modelo de STT em cache",
+            "O faster-whisper baixa na primeira transcrição (~150 MB para base.en).",
+        )
+
+    # Microfone: o push-to-talk grava pelo navegador, então o que importa é a
+    # máquina ter entrada de áudio — não este script conseguir abri-la.
+    capture = Path("/proc/asound/cards")
+    if capture.is_file():
+        report(OK, "Entrada de áudio", "o navegador pede permissão do microfone na primeira vez")
+    else:
+        report(WARN, "Entrada de áudio", "não deu para conferir nesta plataforma")
+
+
 # --------------------------------------------------------------------------- #
 
 
@@ -231,6 +282,9 @@ def main() -> int:
 
     print("\n Dados")
     check_db_writable()
+
+    print("\n Voz (Fase 1.5, opcional)")
+    check_voice()
 
     fails = sum(1 for status, _, _ in _results if status == FAIL)
     warns = sum(1 for status, _, _ in _results if status == WARN)

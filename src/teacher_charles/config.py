@@ -19,6 +19,10 @@ REPO_ROOT = PACKAGE_ROOT.parent.parent
 
 APP_DIR_NAME = "teacher-charles"
 
+# As vozes do Kokoro vêm num arquivo só, e o nome dele é parte do release
+# — não é escolha de configuração como o modelo é.
+TTS_VOICES_FILE = "voices-v1.0.bin"
+
 
 def xdg_data_home() -> Path:
     """``$XDG_DATA_HOME``, com o fallback que a spec manda."""
@@ -26,6 +30,14 @@ def xdg_data_home() -> Path:
     if raw:
         return Path(raw).expanduser()
     return Path.home() / ".local" / "share"
+
+
+def xdg_cache_home() -> Path:
+    """``$XDG_CACHE_HOME``, com o fallback que a spec manda."""
+    raw = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".cache"
 
 
 class Settings(BaseSettings):
@@ -80,6 +92,62 @@ class Settings(BaseSettings):
     # pedidos ao mesmo tempo, `false` volta a ser melhor.
     analysis_after_reply: bool = True
 
+    # --- Voz (Fase 1.5) --------------------------------------------------
+    # Desligada por default. Ligar baixa dois modelos e carrega dois runtimes
+    # (ctranslate2 e onnxruntime) na memória do processo; quem só quer o chat
+    # por texto da Fase 1 não deveria pagar por isso sem pedir.
+    voice_enabled: bool = False
+
+    # `base.en`, e **não** o `small.en` que o plano §4 nomeou. Medido nesta
+    # máquina em int8, numa fala de 2,6s (plano §5.6):
+    #
+    #     tiny.en  0,56s    base.en  0,91s    small.en  2,40s
+    #
+    # O STT roda com o aluno parado esperando — não há streaming para esconder
+    # nada. 2,4s do `small.en` furam sozinhos a meta de 1-2s do turno inteiro;
+    # 0,9s do `base.en` cabem. O sufixo `.en` segue sendo consequência da
+    # decisão 1.1: produto monolíngue permite o modelo menor e mais exato na
+    # única língua que interessa.
+    stt_model: str = "base.en"
+    stt_compute_type: str = "int8"
+
+    # Feixe 1 é busca gulosa. Numa frase curta de aluno o ganho de qualidade
+    # do feixe 5 não paga o tempo nesta CPU — medido em §5.6.
+    stt_beam_size: int = 1
+
+    # O Whisper alucina em silêncio ("Thank you.", "Thanks for watching!"). O
+    # limiar descarta o segmento cuja probabilidade média é baixa demais para
+    # ser fala de verdade.
+    stt_no_speech_threshold: float = 0.6
+
+    # Kokoro-82M exportado para ONNX, e o int8 ganhou nas duas pontas: RTF
+    # mediano 0,54 contra 0,62 do fp32, em 92 MB contra 325 MB. Não houve
+    # troca a fazer — ele é mais rápido E menor (plano §5.6).
+    tts_model: str = "kokoro-v1.0.int8.onnx"
+
+    # Charles é um professor, e um professor tem uma voz. `bm_george` é a voz
+    # masculina britânica do Kokoro — escolha de coerência com a persona, não
+    # de qualidade medida, e reversível numa variável de ambiente. As 54 vozes
+    # do arquivo aparecem em `/health`.
+    tts_voice: str = "bm_george"
+    tts_speed: float = 1.0
+
+    # Quantas threads cada motor usa, e os dois defaults saíram de medição
+    # oposta um ao outro (plano §5.6).
+    #
+    # STT: o default do ctranslate2 deixa dinheiro na mesa. Numa fala de 2,6s
+    # no `small.en`, 3,37s com o default contra 2,40s com 8 threads; 14 piora
+    # (2,52s), porque metade são hyperthreads que disputam a mesma unidade.
+    #
+    # TTS: o onnxruntime já acerta sozinho, e limitar **piora** — RTF 0,54 com
+    # o default contra 0,72 com 4 threads. Daí 0 aqui, que é "não mexa".
+    stt_cpu_threads: int = 8
+    tts_cpu_threads: int = 0
+
+    # Onde os pesos de voz ficam. É cache, não dado do aluno: são
+    # redownloadáveis e não têm nada de pessoal dentro.
+    voice_dir: Path | None = Field(default=None)
+
     # --- Nuvem opcional (recomendação §6 da análise inicial) -------------
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
@@ -102,6 +170,27 @@ class Settings(BaseSettings):
         if self.db_path is not None:
             return self.db_path.expanduser()
         return xdg_data_home() / APP_DIR_NAME / "charles.db"
+
+    @property
+    def resolved_voice_dir(self) -> Path:
+        """Onde moram os pesos de voz.
+
+        Terceiro destino, e não um quarto: peso de modelo nunca entra no repo
+        nem no diretório de dados do aluno. O Whisper usa o cache do
+        ``huggingface_hub``; só o Kokoro precisa de um lugar nosso, porque ele
+        vem de um release do GitHub e não de um hub com cache próprio.
+        """
+        if self.voice_dir is not None:
+            return self.voice_dir.expanduser()
+        return xdg_cache_home() / APP_DIR_NAME / "voice"
+
+    @property
+    def tts_model_path(self) -> Path:
+        return self.resolved_voice_dir / self.tts_model
+
+    @property
+    def tts_voices_path(self) -> Path:
+        return self.resolved_voice_dir / TTS_VOICES_FILE
 
     @property
     def prompts_dir(self) -> Path:
