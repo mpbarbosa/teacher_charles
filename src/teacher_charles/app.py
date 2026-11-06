@@ -29,11 +29,12 @@ from .llm import ChatProvider, build_provider, default_options
 from .llm.base import GenerationOptions, Message
 from .prompts import PromptLibrary
 from .store.db import init_db
-from .store.models import CEFR_LEVELS, Student
+from .store.models import CEFR_LEVELS, MODES, Student
 from .store.repo import CorrectionRepo, LevelRepo, SessionRepo, StudentRepo, TurnRepo
 from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, Leveled, TurnRunner
 from .teaching.contrastive import ContrastiveError, load_base
 from .teaching.level import LevelTracker, partial_name
+from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.turn import DEFAULT_LEVEL
 
 log = logging.getLogger(__name__)
@@ -96,6 +97,10 @@ class ProfileRequest(BaseModel):
     level: str | None = None
 
 
+class ModeRequest(BaseModel):
+    mode: str
+
+
 def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -126,9 +131,13 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 base=base,
                 require_curated_rule=settings.require_curated_rule,
             )
+            # O drill treina regra da base: sem base não há o que treinar, e o
+            # modo diz isso ao aluno em vez de inventar exercício.
+            planner = DrillPlanner(conn, base)
         except ContrastiveError as exc:
             log.error("base contrastiva não carregou, turno segue sem análise: %s", exc)
             analyzer = None
+            planner = None
 
         app.state.settings = settings
         app.state.db = conn
@@ -136,6 +145,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.tracker = LevelTracker(conn)
+        app.state.planner = planner
         app.state.runner = TurnRunner(
             provider=chat,
             prompts=prompts,
@@ -144,6 +154,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             analyzer=analyzer,
             analysis_after_reply=settings.analysis_after_reply,
             tracker=app.state.tracker,
+            planner=planner,
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
@@ -191,6 +202,33 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
     def active_session(conn: sqlite3.Connection) -> int:
         return SessionRepo(conn).current_or_start(active_student(conn).id)
 
+    def session_payload(conn: sqlite3.Connection) -> dict[str, Any]:
+        """Em que modo o aluno está, e o que o drill está treinando.
+
+        O alvo do drill vai junto porque o aluno tem direito de saber **qual**
+        erro dele virou exercício: "drilling: age with to be, you did it 3
+        times" é uma afirmação verificável; "vamos praticar gramática" não é.
+        """
+        student = active_student(conn)
+        session = SessionRepo(conn).current(student.id)
+        mode = session.mode if session is not None else DEFAULT_MODE
+        planner: DrillPlanner | None = app.state.planner
+
+        drill: dict[str, Any] | None = None
+        if session is not None and session.drill_rule_id and planner is not None:
+            target = planner.target_for(student.id, session.drill_rule_id)
+            drill = target.as_dict() if target is not None else None
+
+        return {
+            "session_id": session.id if session is not None else None,
+            "mode": mode,
+            "modes": list(MODES),
+            "drill": drill,
+            # Quantas regras do error log dariam drill agora. Zero é resposta
+            # honesta: o aluno ainda não errou nada com regra curada.
+            "drillable": len(planner.candidates(student.id)) if planner is not None else 0,
+        }
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -233,6 +271,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "version": __version__,
                 "model": settings.llm_model,
                 "profile": profile_payload(conn),
+                "session": session_payload(conn),
                 "history": [
                     {
                         "role": t.role,
@@ -380,6 +419,42 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
 
         return JSONResponse(profile_payload(conn))
 
+    @app.get("/api/mode")
+    async def get_mode() -> JSONResponse:
+        return JSONResponse(session_payload(app.state.db))
+
+    @app.post("/api/mode")
+    async def set_mode(payload: ModeRequest) -> JSONResponse:
+        """Troca de modo, o que é trocar de atividade.
+
+        Modo é propriedade da sessão desde a E0, então trocar abre uma sessão
+        nova: a transcrição de um drill não é continuação da conversa livre. O
+        histórico antigo fica no banco — é o material do error log.
+
+        É aqui que a regra do drill é escolhida, uma vez por sessão: por
+        consulta ao error log do aluno, não pelo modelo, e não a cada turno.
+        """
+        conn: sqlite3.Connection = app.state.db
+        mode = payload.mode.strip().lower()
+        if mode not in MODES:
+            return JSONResponse(
+                {"detail": f"modo inválido: {payload.mode!r}", "modes": list(MODES)},
+                status_code=422,
+            )
+
+        student = active_student(conn)
+        planner: DrillPlanner | None = app.state.planner
+
+        rule_id = None
+        if mode == "drill" and planner is not None:
+            target = planner.pick(student.id)
+            # None é estado legítimo: aluno sem erro registrado ainda não tem o
+            # que treinar, e o modo diz isso em vez de inventar exercício.
+            rule_id = target.rule_id if target is not None else None
+
+        SessionRepo(conn).switch_mode(student.id, mode, rule_id)
+        return JSONResponse(session_payload(conn))
+
     @app.post("/api/reset")
     async def reset() -> JSONResponse:
         """Encerra a sessão atual e começa outra.
@@ -389,8 +464,15 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         conn: sqlite3.Connection = app.state.db
         student = active_student(conn)
         sessions = SessionRepo(conn)
-        sessions.end(sessions.current_or_start(student.id))
-        return JSONResponse({"session_id": sessions.current_or_start(student.id)})
+        current = sessions.current(student.id)
+        # Conversa nova continua no mesmo modo: quem clica em "new conversation"
+        # quer recomeçar o assunto, não sair do drill.
+        mode = current.mode if current is not None else DEFAULT_MODE
+        rule_id = current.drill_rule_id if current is not None else None
+        if current is not None:
+            sessions.end(current.id)
+        sessions.start(student.id, mode, rule_id)
+        return JSONResponse(session_payload(conn))
 
     @app.get("/health")
     async def health() -> JSONResponse:

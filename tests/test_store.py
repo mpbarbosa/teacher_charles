@@ -7,7 +7,13 @@ import sqlite3
 import pytest
 
 from teacher_charles.store import db
-from teacher_charles.store.repo import LevelRepo, SessionRepo, StudentRepo, TurnRepo
+from teacher_charles.store.repo import (
+    CorrectionRepo,
+    LevelRepo,
+    SessionRepo,
+    StudentRepo,
+    TurnRepo,
+)
 
 
 @pytest.fixture
@@ -272,3 +278,92 @@ def test_level_signals_die_with_the_turn(conn):
 
     conn.execute("DELETE FROM turn WHERE id = ?", (turn_id,))
     assert LevelRepo(conn).signals_for_turn(turn_id) is None
+
+
+# --- Modos e drill (E6) --------------------------------------------------- #
+
+
+def test_switching_mode_ends_the_session_and_opens_another(conn):
+    students = StudentRepo(conn)
+    sessions = SessionRepo(conn)
+    student = students.get_or_create("ana")
+
+    first = sessions.current_or_start(student.id)
+    second = sessions.switch_mode(student.id, "drill", "calque.age-have")
+
+    assert second != first
+    assert sessions.get(first).ended_at is not None
+    assert sessions.get(second).mode == "drill"
+    assert sessions.get(second).drill_rule_id == "calque.age-have"
+    assert sessions.current(student.id).id == second
+
+
+def test_drilled_rules_are_the_most_recent_first(conn):
+    students = StudentRepo(conn)
+    sessions = SessionRepo(conn)
+    student = students.get_or_create("ana")
+
+    sessions.switch_mode(student.id, "drill", "calque.age-have")
+    sessions.switch_mode(student.id, "conversation")
+    sessions.switch_mode(student.id, "drill", "calque.make-question")
+
+    assert sessions.drilled_rules(student.id) == [
+        "calque.make-question",
+        "calque.age-have",
+    ]
+
+
+def test_top_rules_counts_only_curated_corrections(conn):
+    """Correção sem regra veio do modelo sozinho e não entra no error log agregado."""
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana")
+    session_id = SessionRepo(conn).start(student.id)
+    turns = TurnRepo(conn)
+    corrections = CorrectionRepo(conn)
+
+    for span in ("I have 35 years", "she has 32 years"):
+        turn_id = turns.append(session_id, "student", span)
+        corrections.add(
+            turn_id,
+            span=span,
+            corrected="is",
+            error_type="calque",
+            explanation="curada",
+            rule_id="calque.age-have",
+        )
+    loose = turns.append(session_id, "student", "There have been changes")
+    corrections.add(
+        loose,
+        span="There have been",
+        corrected="There has been",
+        error_type="grammar",
+        explanation="inventada",
+        rule_id=None,
+    )
+
+    top = CorrectionRepo(conn).top_rules(student.id)
+    assert [(r.rule_id, r.times) for r in top] == [("calque.age-have", 2)]
+    assert top[0].last_span == "she has 32 years", "o exemplo mais recente é o que o drill mostra"
+
+
+def test_spans_for_rule_are_the_students_own_words(conn):
+    students = StudentRepo(conn)
+    student = students.get_or_create("ana")
+    turns = TurnRepo(conn)
+    corrections = CorrectionRepo(conn)
+
+    # Duas sessões: o error log é do aluno, não da conversa de hoje.
+    for index, span in enumerate(("I have 35 years", "my wife has 32 years")):
+        session_id = SessionRepo(conn).start(student.id)
+        turn_id = turns.append(session_id, "student", span)
+        corrections.add(
+            turn_id,
+            span=span,
+            corrected=f"fix {index}",
+            error_type="calque",
+            explanation="curada",
+            rule_id="calque.age-have",
+        )
+
+    spans = corrections.spans_for_rule(student.id, "calque.age-have")
+    assert spans == ["my wife has 32 years", "I have 35 years"]

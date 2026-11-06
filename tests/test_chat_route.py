@@ -534,3 +534,108 @@ def test_declaring_a_level_survives_the_next_turn(client_and_provider):
     level = [f for f in frames if f["type"] == "level"][0]
     assert level["changed"] is False
     assert client.get("/api/profile").json()["level"] == "A2"
+
+
+# --- Os três modos (E6) --------------------------------------------------- #
+
+
+def test_mode_starts_as_conversation(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/api/mode").json()
+
+    assert body["mode"] == "conversation"
+    assert body["modes"] == ["conversation", "correction", "drill"]
+    assert body["drill"] is None
+    assert body["drillable"] == 0
+
+
+def test_switching_mode_opens_a_new_session(client_and_provider):
+    """Trocar de modo é trocar de atividade: a transcrição não continua."""
+    client, _ = client_and_provider
+    first = client.post("/api/chat", json={"message": "I have 30 years"})
+    assert first.status_code == 200
+    before = client.get("/api/history").json()
+    assert before["turns"]
+
+    switched = client.post("/api/mode", json={"mode": "correction"}).json()
+    assert switched["mode"] == "correction"
+    assert switched["session_id"] != before["session_id"]
+
+    after = client.get("/api/history").json()
+    assert after["turns"] == [], "a conversa anterior não é a transcrição do novo modo"
+
+
+def test_invalid_mode_is_refused(client_and_provider):
+    client, _ = client_and_provider
+    response = client.post("/api/mode", json={"mode": "telepathy"})
+    assert response.status_code == 422
+    assert client.get("/api/mode").json()["mode"] == "conversation"
+
+
+def test_the_mode_prompt_reaches_the_model(client_and_provider):
+    client, provider = client_and_provider
+    client.post("/api/mode", json={"mode": "correction"})
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "Mode: correction" in system
+    assert "Mode: free conversation" not in system
+
+
+def test_drill_uses_a_mistake_the_student_really_made(client_and_provider):
+    """O critério de pronto da E6, de ponta a ponta pela rota.
+
+    O turno com *I have 30 years* produz correção com `calque.age-have`; o modo
+    drill, aberto depois, tem que treinar **essa** regra, com as palavras do
+    aluno no prompt.
+    """
+    client, provider = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    body = client.post("/api/mode", json={"mode": "drill"}).json()
+    assert body["drillable"] == 1
+    assert body["drill"]["rule_id"] == "calque.age-have"
+    assert body["drill"]["examples"] == ["I have 30 years"]
+
+    client.post("/api/chat", json={"message": "I am 30 years old"})
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "Mode: drill" in system
+    assert "calque.age-have" in system
+    assert "I have 30 years" in system
+
+
+def test_drill_without_an_error_log_is_honest(client_and_provider):
+    client, provider = client_and_provider
+    body = client.post("/api/mode", json={"mode": "drill"}).json()
+
+    assert body["drillable"] == 0
+    assert body["drill"] is None
+
+    client.post("/api/chat", json={"message": "hello there"})
+    conversation = [c for c in provider.calls if "You find mistakes" not in c.messages[0].content]
+    system = "\n".join(m.content for m in conversation[-1].messages if m.role == "system")
+    assert "no rule to drill" in system.lower()
+
+
+def test_new_conversation_keeps_the_mode(client_and_provider):
+    """Quem clica em "new conversation" quer outro assunto, não sair do drill."""
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/mode", json={"mode": "drill"})
+
+    body = client.post("/api/reset").json()
+    assert body["mode"] == "drill"
+    assert body["drill"]["rule_id"] == "calque.age-have"
+
+
+def test_index_renders_the_modes(client_and_provider):
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+    client.post("/api/mode", json={"mode": "drill"})
+    page = client.get("/").text
+
+    assert 'data-mode="drill"' in page
+    assert 'class="mode active"' in page
+    assert "calque.age-have" in page, "o aluno tem que ver qual erro dele virou exercício"

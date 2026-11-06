@@ -21,6 +21,7 @@ from .level import (
     estimate_level,
     partial_name,
 )
+from .modes import DrillPlanner, DrillTarget, drill_block
 from .turn import Analyzed, Chunk, Done, Failed, Leveled, TurnEvent, TurnRunner
 
 __all__ = [
@@ -32,6 +33,8 @@ __all__ = [
     "ContrastiveError",
     "ContrastiveItem",
     "Done",
+    "DrillPlanner",
+    "DrillTarget",
     "Failed",
     "Finding",
     "LevelDecision",
@@ -42,6 +45,7 @@ __all__ = [
     "Signals",
     "TurnEvent",
     "TurnRunner",
+    "drill_block",
     "estimate_level",
     "get_base",
     "load_base",

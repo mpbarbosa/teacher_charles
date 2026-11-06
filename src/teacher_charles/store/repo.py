@@ -16,6 +16,8 @@ from .models import (
     Correction,
     LevelChange,
     LevelSignal,
+    RuleCount,
+    Session,
     Student,
     Turn,
 )
@@ -129,14 +131,52 @@ class SessionRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def start(self, student_id: int, mode: str = "conversation") -> int:
+    def start(
+        self,
+        student_id: int,
+        mode: str = "conversation",
+        drill_rule_id: str | None = None,
+    ) -> int:
         if mode not in MODES:
             raise ValueError(f"modo inválido: {mode!r} (use um de {MODES})")
         cur = self._conn.execute(
-            "INSERT INTO session (student_id, mode) VALUES (?, ?)",
-            (student_id, mode),
+            "INSERT INTO session (student_id, mode, drill_rule_id) VALUES (?, ?, ?)",
+            (student_id, mode, drill_rule_id),
         )
         return int(cur.lastrowid)
+
+    def get(self, session_id: int) -> Session:
+        row = self._conn.execute("SELECT * FROM session WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            raise LookupError(f"sessão {session_id} não existe")
+        return Session.from_row(row)
+
+    def current(self, student_id: int) -> Session | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM session
+            WHERE student_id = ? AND ended_at IS NULL
+            ORDER BY id DESC LIMIT 1
+            """,
+            (student_id,),
+        ).fetchone()
+        return Session.from_row(row) if row is not None else None
+
+    def drilled_rules(self, student_id: int, limit: int = 3) -> list[str]:
+        """As regras das últimas sessões de drill, da mais recente para trás.
+
+        É o que impede o aluno de receber a mesma regra três vezes seguidas:
+        quem escolhe a próxima evita estas.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT drill_rule_id AS rule_id FROM session
+            WHERE student_id = ? AND drill_rule_id IS NOT NULL
+            ORDER BY id DESC LIMIT ?
+            """,
+            (student_id, limit),
+        ).fetchall()
+        return [row["rule_id"] for row in rows]
 
     def current_or_start(self, student_id: int, mode: str = "conversation") -> int:
         """A sessão aberta do aluno, ou uma nova.
@@ -155,6 +195,23 @@ class SessionRepo:
         if row is not None:
             return int(row["id"])
         return self.start(student_id, mode)
+
+    def switch_mode(
+        self,
+        student_id: int,
+        mode: str,
+        drill_rule_id: str | None = None,
+    ) -> int:
+        """Encerra a sessão aberta e começa outra no modo pedido.
+
+        Modo é propriedade da sessão desde a E0, e trocar de modo é trocar de
+        atividade: a transcrição de um drill não é continuação da conversa
+        livre. O histórico antigo fica no banco — é o material do error log.
+        """
+        current = self.current(student_id)
+        if current is not None:
+            self.end(current.id)
+        return self.start(student_id, mode, drill_rule_id)
 
     def end(self, session_id: int) -> None:
         self._conn.execute(
@@ -237,6 +294,62 @@ class CorrectionRepo:
 
     def count(self) -> int:
         return self._conn.execute("SELECT count(*) AS n FROM correction").fetchone()["n"]
+
+    def top_rules(self, student_id: int, limit: int = 5) -> list[RuleCount]:
+        """As regras que mais corrigiram este aluno, da mais frequente para baixo.
+
+        Só correção com regra curada entra — ``rule_id IS NULL`` é correção que
+        veio só do modelo, e treinar o aluno em cima de gramática improvisada
+        seria pior que não treinar (plano §5.2). É esta consulta que torna o
+        drill da E6 um drill do erro **dele**: sem ela, só restaria exercício
+        genérico.
+
+        A agregação é do aluno, não da sessão: o erro de ontem conta.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT c.rule_id                       AS rule_id,
+                   count(*)                        AS times,
+                   -- O exemplo mais recente, para o drill mostrar ao aluno as
+                   -- palavras dele e não um exemplo de livro.
+                   (SELECT c2.span FROM correction c2
+                     JOIN turn t2 ON t2.id = c2.turn_id
+                     JOIN session s2 ON s2.id = t2.session_id
+                    WHERE s2.student_id = ? AND c2.rule_id = c.rule_id
+                    ORDER BY c2.id DESC LIMIT 1) AS last_span,
+                   (SELECT c2.corrected FROM correction c2
+                     JOIN turn t2 ON t2.id = c2.turn_id
+                     JOIN session s2 ON s2.id = t2.session_id
+                    WHERE s2.student_id = ? AND c2.rule_id = c.rule_id
+                    ORDER BY c2.id DESC LIMIT 1) AS last_correction
+              FROM correction c
+              JOIN turn t ON t.id = c.turn_id
+              JOIN session s ON s.id = t.session_id
+             WHERE s.student_id = ? AND c.rule_id IS NOT NULL
+             GROUP BY c.rule_id
+             ORDER BY times DESC, max(c.id) DESC
+             LIMIT ?
+            """,
+            (student_id, student_id, student_id, limit),
+        ).fetchall()
+        return [RuleCount.from_row(row) for row in rows]
+
+    def spans_for_rule(self, student_id: int, rule_id: str, limit: int = 3) -> list[str]:
+        """As frases do próprio aluno que caíram nesta regra, da mais recente."""
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT c.span AS span, max(c.id) AS last_id
+              FROM correction c
+              JOIN turn t ON t.id = c.turn_id
+              JOIN session s ON s.id = t.session_id
+             WHERE s.student_id = ? AND c.rule_id = ?
+             GROUP BY c.span
+             ORDER BY last_id DESC
+             LIMIT ?
+            """,
+            (student_id, rule_id, limit),
+        ).fetchall()
+        return [row["span"] for row in rows]
 
     def count_with_rule(self) -> int:
         """Quantas correções têm regra curada por trás.

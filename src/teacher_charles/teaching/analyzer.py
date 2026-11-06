@@ -64,6 +64,10 @@ ERROR_TYPES: tuple[str, ...] = (
 
 # A persona pede uma correção por turno, duas no máximo. O corte vale também
 # aqui: o que não cabe na conversa não deveria virar linha no banco.
+#
+# É o default. A partir da E6 o modo manda: no modo de correção o aluno pediu
+# os erros, e capar em dois ali seria esconder dele o que ele veio buscar (ver
+# ``teaching/modes.py::MAX_FINDINGS_BY_MODE``).
 MAX_FINDINGS = 2
 
 # Correção sem regra curada por trás não chega ao aluno.
@@ -302,6 +306,7 @@ class _Verifier:
     student_text: str
     matches: Sequence[Match] = field(default_factory=tuple)
     require_curated_rule: bool = REQUIRE_CURATED_RULE
+    max_findings: int = MAX_FINDINGS
     unverified: int = 0
 
     def verify(self, raw_entries: Sequence[object]) -> list[Finding]:
@@ -340,7 +345,7 @@ class _Verifier:
         # Regra curada primeiro: se só uma correção couber, que seja a que tem
         # regra por trás.
         findings.sort(key=lambda f: not f.from_curated_rule)
-        return findings[:MAX_FINDINGS]
+        return findings[: self.max_findings]
 
     def _verify_one(self, raw: _RawFinding) -> Finding | None:
         located = _locate_span(raw.span, self.student_text)
@@ -471,7 +476,12 @@ class Analyzer:
 
     # --- execução ---
 
-    async def analyze(self, student_text: str, cefr_level: str = "B1") -> Analysis:
+    async def analyze(
+        self,
+        student_text: str,
+        cefr_level: str = "B1",
+        max_findings: int | None = None,
+    ) -> Analysis:
         """Analisa um turno. Nunca levanta exceção por causa do modelo."""
         text = student_text.strip()
         matches = self._base.match(text)
@@ -503,6 +513,7 @@ class Analyzer:
             student_text=text,
             matches=matches,
             require_curated_rule=self._require_curated_rule,
+            max_findings=max_findings or MAX_FINDINGS,
         )
 
         attempts = 0

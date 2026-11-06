@@ -55,6 +55,54 @@ class Student:
 
 
 @dataclass(frozen=True, slots=True)
+class Session:
+    """Uma conversa, do primeiro "hi" ao fim.
+
+    ``mode`` escolhe o prompt (``prompts/modes/``) e, no drill,
+    ``drill_rule_id`` diz qual regra do error log do aluno está sendo treinada.
+    A regra mora aqui, e não no turno, porque drill que troca de regra a cada
+    mensagem não é drill — e porque bloco estável no prompt é prefixo cacheado.
+    """
+
+    id: int
+    student_id: int
+    mode: str
+    started_at: str
+    ended_at: str | None = None
+    drill_rule_id: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Session:
+        return cls(
+            id=row["id"],
+            student_id=row["student_id"],
+            mode=row["mode"],
+            started_at=row["started_at"],
+            ended_at=row["ended_at"],
+            drill_rule_id=row["drill_rule_id"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuleCount:
+    """Quantas vezes o aluno errou por uma regra. A matéria-prima do drill."""
+
+    rule_id: str
+    times: int
+    last_span: str
+    last_correction: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> RuleCount:
+        return cls(
+            rule_id=row["rule_id"],
+            times=row["times"],
+            last_span=row["last_span"],
+            last_correction=row["last_correction"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Turn:
     id: int
     session_id: int

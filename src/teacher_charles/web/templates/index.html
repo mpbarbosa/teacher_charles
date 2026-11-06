@@ -29,6 +29,26 @@
     </div>
   </header>
 
+  <nav class="modes" aria-label="Teaching mode">
+    {% for option in session.modes %}
+    <button type="button" class="mode{{ ' active' if option == session.mode }}"
+            data-mode="{{ option }}"
+            aria-pressed="{{ 'true' if option == session.mode else 'false' }}">
+      {{ option|capitalize }}
+    </button>
+    {% endfor %}
+    {% if session.mode == 'drill' %}
+    <span class="drill" id="drill-target">
+      {% if session.drill %}
+      Drilling: {{ session.drill.explanation }}
+      <span class="rule">{{ session.drill.rule_id }} · {{ session.drill.times }}×</span>
+      {% else %}
+      Nothing to drill yet — talk for a while, and Charles will know what to practise.
+      {% endif %}
+    </span>
+    {% endif %}
+  </nav>
+
   <main id="transcript" aria-live="polite" aria-label="Conversation">
     {% for turn in history %}
     <article class="turn {{ turn.role }}">

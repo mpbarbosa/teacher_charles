@@ -324,7 +324,7 @@ Cada entrega termina em algo verificável. A E2 é o primeiro ponto em que exist
 | **E3** ✅ | **Base contrastiva** — schema, ~40 itens iniciais (falsos cognatos + decalques), loader validado, matcher, um teste por item | **Feito.** 43 itens (17 falsos cognatos, 17 decalques, 9 de interferência estrutural) e 205 testes, dos quais 172 são quatro por item; 0 falso positivo em 16 frases corretas, 9 de 10 frases com erro típico pegas. Ver §5.1 |
 | **E4** ✅ | **Correção estruturada** — `analyzer.py` com saída JSON validada por pydantic, regra citada quando há match, fallback para JSON inválido, persistência das correções | **Feito.** 31 frases com erro conhecido: 87% recebem correção, todas citando a regra esperada. 18 frases corretas: 0 corrigidas por engano. 0 de 49 turnos com JSON inválido. Ver §5.2 |
 | **E5** ✅ | **Perfil e nível** — CEFR inicial, sinais por turno, prompt ajustado por nível via `prompts/partials/level/` | **Feito.** A rubrica determinística acerta o nível exato em 78% de 32 amostras rotuladas e nunca erra por dois degraus; o nível entra como segunda mensagem de sistema e muda a resposta do modelo real (frase de 6,5 para 10,0 palavras entre A2 e C1, e o erro escolhido muda). Ver §5.3 |
-| **E6** | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | Os três modos funcionam na UI e o drill usa erros de fato cometidos, não genéricos |
+| **E6** ✅ | **Modos** — os três com prompt próprio; *drill* gera exercício a partir do error log real do aluno | **Feito.** Os três trocam na UI e mudam três coisas cada um (prompt, teto de correções, regra treinada). O drill escolhe a regra por consulta ao `correction` agregado e põe as frases do próprio aluno no prompt — sem error log, ele diz que não há o que treinar. Ver §5.4 |
 | **E7** | **Progresso e acabamento** — tela de error log agregado por regra, README de dev, latência medida e registrada | Um aluno consegue ver no que erra mais; um dev clona e roda seguindo só o README |
 
 ### 5.1 O que a E3 estabeleceu
@@ -669,6 +669,165 @@ medido. É o primeiro número a revisar quando houver turno real no banco.
 **O nível novo só vale no turno seguinte.** O turno que move o nível já foi
 gerado com o registro antigo. Refazer a resposta custaria o turno inteiro para
 ganhar um ajuste que o aluno não pediu.
+
+### 5.4 O que a E6 mediu, e o que a medição mudou no desenho
+
+Modo não é um adjetivo no prompt. Cada um dos três muda **três** coisas, e só a
+primeira é texto:
+
+| | conversation | correction | drill |
+|---|---|---|---|
+| Prompt de comportamento | `prompts/modes/conversation.md` | `…/correction.md` | `…/drill.md` |
+| Teto de correções estruturadas por turno | 2 | **5** | 2 |
+| Regra treinada | — | — | escolhida do error log **do aluno** |
+
+O teto por modo não é detalhe de configuração: no modo de correção o aluno
+abriu o modo justamente para receber os erros, e devolver dois de cinco seria
+esconder dele o que ele veio buscar. É a mesma ideia da E4 — política no
+código, não no prompt.
+
+Reproduzir:
+
+```bash
+uv run python scripts/measure_modes.py            # a mesma fala nos três modos
+uv run python scripts/measure_modes.py --turns 3  # um drill andando
+```
+
+#### A regra do drill é consulta ao banco, não pedido ao modelo
+
+O critério de pronto da E6 é *"o drill usa erros de fato cometidos, não
+genéricos"*. "Crie um exercício a partir dos erros do aluno" devolveria
+exercício plausível sobre erro inventado — o problema nº 1 da análise inicial
+outra vez, agora em forma de exercício.
+
+Então o caminho é o da E4: `correction` agregada por `rule_id` (só correção com
+regra curada, pelo motivo da §5.2), a regra mais frequente que ainda existe na
+base, o item curado dali — explicação revisada e formas certas — e as frases que
+o **aluno** escreveu, tiradas do banco. O modelo recebe tudo pronto e faz o que
+faz bem: conversar.
+
+Uma regra por **sessão**, não por turno. Pedagogia: drill que troca de regra a
+cada mensagem é questionário. Técnica: bloco estável dentro da sessão é prefixo
+cacheado — uma regra por turno pagaria a reavaliação inteira a cada turno
+(§1.4). Trocar de modo abre sessão nova, porque modo é propriedade da sessão
+desde a E0 e a transcrição de um drill não é continuação da conversa livre.
+
+Quando o aluno não tem erro registrado, o drill **diz isso**. Não há exercício
+genérico de reserva: seria exatamente o que o critério proíbe, e o aluno nem
+saberia que o "erro dele" não era dele.
+
+#### O que a medição mudou: o pedido tem que ficar no fim do prompt
+
+Primeira versão, com o drill inteiro descrito no bloco de dados do topo. Mesmo
+aluno, mesmo erro plantado, `qwen2.5:3b-instruct-q4_K_M`, três turnos:
+
+> **drill, antes** — *"I have 35 years and I work with marketing. Can I ask a
+> question about the report?"* → depois: *"Yes, this is correct. How was your
+> weekend?"*
+
+O modelo corrigia a fala do aluno e ia embora conversar. **Nenhum exercício em
+três turnos.** O dado estava certo — regra certa, palavras do aluno no prompt —
+e o comportamento não acontecia.
+
+A correção é a mesma lição que a E4 já tinha dado com a dica curada:
+**instrução longe do ponto de geração se dilui**. O bloco de dados continua no
+topo, onde é estável e cacheado; o pedido virou uma linha no fim do prompt,
+depois da fala do aluno:
+
+> `Now: react in one line to what the student just wrote, then give them ONE
+> short exercise on calque.age-have and stop. Wait for their answer.`
+
+> **drill, depois** — *"Good start! Now let's practice the rule on age: 'I am 35
+> years old' or 'I'm 35.' Now, try this: 'She is 25 and she works in marketing…'"*
+> → depois: *"Yes, 'I am 35 years old' is correct! How about this: …"*
+
+Exercício em todos os turnos, sempre sobre a regra treinada. Acrescentar no fim
+não custa cache nenhum — tudo o que vem antes continua no prefixo.
+
+#### Os três modos, medidos
+
+Mesma fala — *"I have 35 years and I work with marketing. Can I make a question
+about the report?"* —, mesmo modelo, mesmo error log plantado:
+
+| Modo | Palavras | Trechos citados | O que fez |
+|---|---|---|---|
+| conversation | 20 | 1 | Corrigiu a idade e devolveu uma pergunta sobre o assunto |
+| correction | 33 | 4 | Corrigiu **os dois** erros, cada um com a forma certa |
+| drill | 36 | 3 | Ignorou o assunto, treinou a regra do error log, pediu exercício |
+
+Os três são distintos no que importa: quantos erros a prosa traz, e se a
+mensagem termina em conversa ou em tarefa. O teste de integração afirma o
+contrato (três respostas diferentes para a mesma fala); esta tabela é o que o
+contrato significa na prática.
+
+Verificado no navegador com o modelo real, nos três modos. Em conversa, *"I
+have 35 years and I work with marketing"* recebeu a anotação estruturada
+`calque.age-have`. O botão **Drill**, clicado em seguida, abriu sessão nova com
+a faixa *"Drilling: In English, age is something you are, not something you
+have… calque.age-have · 1×"* — o aluno vê qual erro **dele** virou exercício — e
+o turno seguinte veio com exercício sobre essa regra. Em correção, *"Yesterday I
+go to a meeting and I make a question for my boss"* recebeu as duas correções na
+prosa (tempo verbal e decalque) mais a anotação estruturada da regra curada.
+
+#### O que a medição mudou outra vez: "translate" não podia estar no prompt
+
+Rodando a mesma suíte num 7B, o drill obedeceu bem demais a uma palavra do
+`drill.md`: *"ask them to translate a situation"*. Ele escreveu:
+
+> *"Now, can you translate this situation: 'Ela tem 28 anos.' (She has 28
+> years) to the correct English form?"*
+
+Português na tela do aluno, que é a decisão 1.1 do plano. O prompt pedia, o
+modelo entregou — e a culpa é de quem escreveu o prompt. A palavra saiu, e
+entrou no lugar uma proibição explícita: *"Write the exercise in English,
+always. Never give the student a Portuguese sentence to translate."*
+
+Fica o padrão, que já apareceu na E4 e agora de novo: **todo verbo no prompt é
+uma permissão.** Modelo maior não erra menos; erra com mais convicção.
+
+#### O 7B é mais fluente e mais errado
+
+A mesma suíte no 7B dá a melhor ilustração que este projeto tem do seu próprio
+princípio. No modo de correção, sobre *"I have 35 years"*, ele escreveu:
+
+> *"You could say 'I'm 35' or 'I have 35 years old' if you prefer to be more
+> formal."*
+
+Inventou uma regra de registro inexistente e ensinou o decalque como
+alternativa formal. É o problema nº 1 da análise inicial num modelo duas vezes
+maior — e é exatamente por isso que a correção que **conta como dado** exige
+regra curada (§5.2) e que o drill tira a regra do banco em vez de pedir ao
+modelo. A prosa é do modelo; a estrutura não pode ser.
+
+#### O que ficou ruim, dito por inteiro
+
+**O modo de correção herda a formatação da persona, e ela atrapalha.** O 3B
+copia o `>` do exemplo de correção da persona e às vezes solta um bloco de
+citação no meio da resposta. A persona foi escrita para conversa livre, onde há
+uma correção por turno; com cinco, o formato dela não escala. É prompt a
+ajustar, e não foi ajustado nesta entrega.
+
+**Os exercícios do drill são simples demais.** O 3B varia pouco: repete o mesmo
+item com palavras trocadas. O `drill.md` pede variedade (corrigir, traduzir,
+completar, responder) e o modelo entrega sobretudo "corrija esta frase". Limite
+do modelo, e o lugar natural de medir de novo é com um modelo melhor só para
+esta etapa — o mesmo argumento da §5.2 sobre a análise.
+
+**O rodízio é por sessão, então é fácil de furar.** Quem trocar de modo
+repetidamente recebe regras diferentes a cada vez, o que é o desejado, mas
+quem ficar na mesma sessão treina a mesma regra para sempre. Sessão longa de
+drill com várias regras é item da Fase 2, junto com a repetição espaçada.
+
+**O 3B prefere o exemplo curado ao do aluno.** O bloco leva as frases que o
+aluno escreveu (*"I have 35 years"*), e na verificação no navegador o modelo
+montou o exercício com o exemplo da base (*"I have 30 years"*). A intenção do
+`drill.md` — fazer o aluno reconhecer as próprias palavras — não se cumpre
+sempre. O dado chega; o uso dele é do modelo.
+
+**Nada mede se o drill ensina.** Medimos que ele treina a regra certa, com as
+palavras certas, e que o modelo dá exercício. Se o aluno erra menos depois, não
+sabemos — é pergunta que precisa de uso real e de mais de uma sessão por aluno.
+Fica anotada para a E7, onde o error log agregado passa a existir na tela.
 
 ### Rodar em dev
 

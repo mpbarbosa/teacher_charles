@@ -19,8 +19,8 @@ uv run teacher-charles --reload          # http://localhost:8000
 
 ```bash
 uv run pytest                            # tudo (integração inclusa, bate no Ollama de verdade)
-uv run pytest -m "not integration"       # 474 testes, ~3s, sem modelo nenhum
-uv run pytest -m integration             # só os 8 que exercitam o Ollama local
+uv run pytest -m "not integration"       # 509 testes, ~4s, sem modelo nenhum
+uv run pytest -m integration             # só os 9 que exercitam o Ollama local
 uv run pytest tests/test_turn.py::test_nome -x
 uv run ruff check . && uv run ruff format --check .
 ```
@@ -77,6 +77,18 @@ reavaliação a cada turno. Prompt que varia por nível vai em
 `prompts/partials/level/` e entra como **segunda mensagem de sistema**, não
 dentro da persona: assim ele só invalida o cache quando o nível de fato muda.
 Por isso o aquecimento também manda o partial do nível do perfil ativo.
+
+**O modo muda política, não só prosa.** `teaching/modes.py` decide o teto de
+correções por turno (5 em `correction`, 2 nos outros) e, no drill, **qual regra**
+é treinada — por consulta ao `correction` agregado, nunca pelo modelo. Uma regra
+por sessão (`session.drill_rule_id`), não por turno: drill que troca de regra a
+cada mensagem é questionário, e bloco estável no prompt é prefixo cacheado.
+
+**A ordem das mensagens de sistema é persona → nível → modo → dados do drill**,
+e depois, no fim do prompt, a dica curada e o pedido do drill. O começo é por
+estabilidade (o que muda menos vem antes, por causa do cache de prefixo); o fim
+é por eficácia — medido duas vezes, na E4 com a dica e na E6 com o drill:
+instrução longe do ponto de geração se dilui e o modelo pequeno a ignora.
 
 **O nível do aluno é decidido por código, não pelo modelo.** `teaching/level.py`
 tem uma rubrica determinística (comprimento de frase, palavra longa, conectivos,
@@ -170,14 +182,14 @@ Três destinos, e confundi-los é erro de categoria:
 ## Estado e para onde o código cresce
 
 E0 (fundação), E1 (provider), E2 (chat por texto), E3 (base contrastiva), E4
-(correção estruturada) e E5 (perfil e nível) estão prontas. A ordem e o critério
+(correção estruturada), E5 (perfil e nível) e E6 (os três modos) estão prontas. A ordem e o critério
 de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
 `docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
 
-A próxima é a **E6** (os três modos com prompt próprio, em `prompts/modes/`, e o
-*drill* gerando exercício a partir do error log real do aluno — não de erro
-genérico), e depois a **E7** (tela de error log agregado por regra, README de dev
-e latência medida).
+A próxima é a **E7**: tela de error log agregado por regra, README de dev e
+latência medida e registrada. A agregação que ela precisa já existe —
+`CorrectionRepo.top_rules`, escrita para o drill da E6 —, o que falta é a tela e
+a medição.
 
 Há vários perfis de aluno numa máquina, e o ativo é o de maior `seen_seq`; login
 e multiusuário de verdade ficam fora da Fase 1 (plano §4).

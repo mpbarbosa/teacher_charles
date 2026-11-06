@@ -7,12 +7,13 @@ O aluno conversa em inglês; o professor corrige, explica e acompanha o nível. 
 persona sabe que o aluno é brasileiro e antecipa os erros típicos de quem vem do
 português — mas explica em inglês.
 
-> **Estado: Fase 1, entregas E0–E5.** Dá para conversar em inglês de ponta a
+> **Estado: Fase 1, entregas E0–E6.** Dá para conversar em inglês de ponta a
 > ponta no navegador, e cada turno produz correção estruturada — com a regra
 > curada citada, persistida em SQLite e visível ao lado do que o aluno escreveu.
 > O perfil tem nível CEFR: ele muda o registro das respostas e se ajusta sozinho
-> a partir dos sinais de cada turno. Os modos e a tela de error log ainda não
-> existem. Veja [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a
+> a partir dos sinais de cada turno. Há três modos — conversa, correção e drill
+> —, e o drill treina um erro que o aluno de fato cometeu. Falta a tela de error
+> log (E7). Veja [docs/plano-fase-1.md](docs/plano-fase-1.md) para o escopo e a
 > ordem das entregas.
 
 ## Decisões que moldam o projeto
@@ -246,6 +247,43 @@ O nome no cabeçalho troca de perfil: são vários alunos numa máquina, cada um
 nível e histórico próprios. Não é multiusuário com login — isso fica fora da
 Fase 1.
 
+## Os três modos
+
+A barra acima da conversa troca o modo, e cada um muda **três** coisas — só a
+primeira é texto:
+
+| | conversation | correction | drill |
+|---|---|---|---|
+| Prompt de comportamento | `prompts/modes/conversation.md` | `…/correction.md` | `…/drill.md` |
+| Correções estruturadas por turno | até 2 | até **5** | até 2 |
+| Regra treinada | — | — | tirada do error log do aluno |
+
+O teto por modo não é configuração: no modo de correção o aluno abriu o modo
+para receber os erros, e devolver dois de cinco seria esconder dele o que ele
+veio buscar.
+
+**O drill treina um erro que o aluno cometeu.** A regra sai de uma consulta ao
+`correction` agregado por `rule_id` — a mais frequente que ainda existe na base,
+evitando as treinadas há pouco. Dali vêm a explicação revisada e as formas
+certas; do banco vêm as frases que o próprio aluno escreveu. O modelo recebe
+isso pronto; ele não escolhe a regra nem inventa o exemplo.
+
+Uma regra por sessão, não por turno: drill que troca de regra a cada mensagem é
+questionário, e bloco estável no prompt é prefixo cacheado. Trocar de modo abre
+uma sessão nova — a transcrição de um drill não é continuação da conversa
+livre — e "new conversation" mantém o modo.
+
+Se o aluno ainda não errou nada com regra curada, o drill **diz isso** e oferece
+conversar. Não existe exercício genérico de reserva.
+
+```bash
+uv run python scripts/measure_modes.py --turns 3
+```
+
+Medido com o modelo real: o pedido do exercício precisa ficar no **fim** do
+prompt. Com ele só no bloco do topo, o 3B corrigia a fala do aluno e ia embora
+conversar — nenhum exercício em três turnos (plano §5.4).
+
 ## Onde fica cada coisa
 
 ```
@@ -259,6 +297,7 @@ src/         o código
     analyzer.py  fala do aluno -> correção estruturada e verificada
     contrastive.py  carrega e consulta as regras curadas
     level.py     fala do aluno -> nível CEFR estimado, com histerese
+    modes.py     os três modos; o drill escolhe a regra no error log do aluno
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única: template Jinja, JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

@@ -241,3 +241,45 @@ footer {
 #level-note { margin-right: auto; }
 
 #level-note.changed { color: var(--curated); }
+
+/* --- Modos --------------------------------------------------------------- */
+/*
+ * Os tres modos a vista, e no drill o alvo junto: o aluno tem direito de saber
+ * QUAL erro dele virou exercicio. "Drilling: age uses to be" e afirmacao
+ * verificavel; "vamos praticar gramatica" nao e.
+ */
+
+.modes {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+
+button.mode {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+button.mode.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--student);
+}
+
+.modes .drill {
+  margin-left: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.modes .drill .rule {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  color: var(--curated);
+  margin-left: 0.3rem;
+}

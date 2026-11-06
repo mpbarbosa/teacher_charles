@@ -12,6 +12,7 @@ from teacher_charles.llm import FakeProvider, ProviderTimeout
 from teacher_charles.llm.base import GenerationOptions
 from teacher_charles.prompts import PromptLibrary
 from teacher_charles.store import db
+from teacher_charles.store.models import MODES
 from teacher_charles.store.repo import CorrectionRepo, SessionRepo, StudentRepo, TurnRepo
 from teacher_charles.teaching import (
     Analyzed,
@@ -23,7 +24,9 @@ from teacher_charles.teaching import (
     TurnRunner,
 )
 from teacher_charles.teaching.contrastive import load_base
-from teacher_charles.teaching.level import AGREEING_TURNS, LevelTracker, partial_name
+from teacher_charles.teaching.level import AGREEING_TURNS, LevelTracker
+from teacher_charles.teaching.level import partial_name as level_partial_name
+from teacher_charles.teaching.modes import DrillPlanner
 from teacher_charles.teaching.turn import MAX_HINT_RULES
 
 
@@ -360,7 +363,9 @@ async def test_degraded_analysis_still_closes_the_turn(prompts, conn, session_id
 
 async def test_unexpected_analyzer_crash_does_not_break_the_turn(prompts, conn, session_id):
     class Exploding(Analyzer):
-        async def analyze(self, student_text, cefr_level="B1"):  # type: ignore[override]
+        async def analyze(  # type: ignore[override]
+            self, student_text, cefr_level="B1", max_findings=None
+        ):
             raise RuntimeError("bug no analisador")
 
     analyzer = Exploding(
@@ -474,7 +479,7 @@ def test_level_prompt_is_the_second_system_message(real_prompts, conn, session_i
 
     assert messages[0].content == real_prompts.get("persona")
     assert messages[1].role == "system"
-    assert messages[1].content == real_prompts.get(partial_name("B2"))
+    assert messages[1].content == real_prompts.get(level_partial_name("B2"))
 
 
 def test_changing_the_level_changes_the_prompt(real_prompts, conn, session_id):
@@ -502,15 +507,15 @@ async def test_the_student_level_reaches_the_model(real_prompts, conn, session_i
     await collect(runner, session_id, "I work with marketing here", student)
 
     system = provider.system_prompt_of_last_call()
-    assert real_prompts.get(partial_name("B1")) in system
-    assert real_prompts.get(partial_name("C1")) not in system
+    assert real_prompts.get(level_partial_name("B1")) in system
+    assert real_prompts.get(level_partial_name("C1")) not in system
 
 
 async def test_turn_without_student_falls_back_to_the_entry_level(real_prompts, conn, session_id):
     """Sem perfil, o turno é o da E2 com o registro de entrada do produto."""
     provider = FakeProvider()
     await collect(runner_for(provider, real_prompts, conn), session_id, "hello there")
-    assert real_prompts.get(partial_name("B1")) in provider.system_prompt_of_last_call()
+    assert real_prompts.get(level_partial_name("B1")) in provider.system_prompt_of_last_call()
 
 
 async def test_missing_level_partial_does_not_break_the_turn(prompts, conn, session_id, student):
@@ -565,10 +570,10 @@ async def test_the_level_in_force_only_changes_the_next_turn(
 
     assert changed is not None and changed.level == "B2"
     # O turno que mudou o nível ainda foi gerado com o prompt de B1...
-    assert real_prompts.get(partial_name("B1")) in provider.system_prompt_of_last_call()
+    assert real_prompts.get(level_partial_name("B1")) in provider.system_prompt_of_last_call()
     # ...e o próximo já sai com o de B2.
     await collect(runner, session_id, "and what about you", StudentRepo(conn).get(student.id))
-    assert real_prompts.get(partial_name("B2")) in provider.system_prompt_of_last_call()
+    assert real_prompts.get(level_partial_name("B2")) in provider.system_prompt_of_last_call()
 
 
 async def test_level_tracking_failure_does_not_kill_the_turn(
@@ -585,3 +590,172 @@ async def test_level_tracking_failure_does_not_kill_the_turn(
 
     assert not [e for e in events if isinstance(e, Leveled)]
     assert isinstance(events[-1], Done)
+
+
+# --- Os modos (E6) --------------------------------------------------------- #
+
+
+@pytest.fixture
+def base():
+    return load_base(REPO_ROOT / "data" / "contrastive")
+
+
+def test_mode_prompt_comes_after_the_level(real_prompts, conn, session_id):
+    """Nível antes de modo, por causa do cache de prefixo.
+
+    O nível muda a cada muitos turnos; o modo muda quando o aluno quer. Pôr o
+    modo antes faria trocar de modo invalidar também o ajuste de nível que já
+    estava no cache.
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn)
+    messages = runner.build_messages(session_id, "hello there", "B1", "correction")
+
+    assert [m.role for m in messages[:3]] == ["system", "system", "system"]
+    assert messages[1].content == real_prompts.get(level_partial_name("B1"))
+    assert messages[2].content == real_prompts.get("modes/correction")
+
+
+def test_each_mode_sends_its_own_prompt(real_prompts, conn, session_id):
+    runner = runner_for(FakeProvider(), real_prompts, conn)
+    prompts_by_mode = {
+        mode: "\n".join(
+            m.content
+            for m in runner.build_messages(session_id, "hello there", "B1", mode)
+            if m.role == "system"
+        )
+        for mode in MODES
+    }
+
+    assert len(set(prompts_by_mode.values())) == len(MODES)
+    for mode, text in prompts_by_mode.items():
+        assert real_prompts.get(f"modes/{mode}") in text
+
+
+async def test_the_session_mode_reaches_the_model(real_prompts, conn, student):
+    """O modo vem da sessão, não de um parâmetro que a rota precise lembrar."""
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn)
+    session_id = SessionRepo(conn).switch_mode(student.id, "correction")
+
+    await collect(runner, session_id, "I have 30 years", student)
+
+    system = provider.system_prompt_of_last_call()
+    assert real_prompts.get("modes/correction") in system
+    assert real_prompts.get("modes/drill") not in system
+
+
+async def test_drill_block_carries_the_students_real_error(real_prompts, conn, student, base):
+    """O critério de pronto da E6: o exercício é sobre erro de fato cometido."""
+    session_id = SessionRepo(conn).current_or_start(student.id)
+    turn_id = TurnRepo(conn).append(session_id, "student", "I have 35 years")
+    CorrectionRepo(conn).add(
+        turn_id,
+        span="I have 35 years",
+        corrected="I am 35 years old",
+        error_type="calque",
+        explanation="Age uses to be.",
+        rule_id="calque.age-have",
+    )
+
+    planner = DrillPlanner(conn, base)
+    target = planner.pick(student.id)
+    drill_session = SessionRepo(conn).switch_mode(student.id, "drill", target.rule_id)
+
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn, planner=planner)
+    await collect(runner, drill_session, "I am 35 years old?", student)
+
+    system = provider.system_prompt_of_last_call()
+    assert "calque.age-have" in system
+    assert "I have 35 years" in system, "o drill tem que usar as palavras do aluno"
+
+
+async def test_drill_without_an_error_log_says_so(real_prompts, conn, student, base):
+    planner = DrillPlanner(conn, base)
+    assert planner.pick(student.id) is None
+
+    session_id = SessionRepo(conn).switch_mode(student.id, "drill", None)
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn, planner=planner)
+    await collect(runner, session_id, "what are we doing today", student)
+
+    assert "no rule to drill" in provider.system_prompt_of_last_call().lower()
+
+
+async def test_correction_mode_keeps_more_findings(real_prompts, conn, student, base):
+    """O teto de correções é do modo, e chega ao analisador."""
+    errors = {
+        "errors": [
+            {
+                "span": span,
+                "type": "calque",
+                "correction": correction,
+                "rule_id": rule_id,
+                "explanation": "ignorada: a curada vence",
+            }
+            for span, correction, rule_id in (
+                ("I have 35 years", "I am 35 years old", "calque.age-have"),
+                ("make a question", "ask a question", "calque.make-question"),
+                ("depends of", "depends on", "calque.depend-of"),
+            )
+        ]
+    }
+    text = "I have 35 years, can I make a question? It depends of my boss."
+
+    def run_in(mode):
+        provider = FakeProvider(
+            replies="Sure!",
+            replies_by_system={"You find mistakes": json.dumps(errors)},
+        )
+        analyzer = Analyzer(provider=provider, prompts=real_prompts, base=base)
+        runner = runner_for(provider, real_prompts, conn, analyzer=analyzer)
+        session_id = SessionRepo(conn).switch_mode(student.id, mode)
+        return runner, session_id
+
+    runner, session_id = run_in("conversation")
+    events = await collect(runner, session_id, text, student)
+    in_conversation = [e for e in events if isinstance(e, Analyzed)][0]
+
+    runner, session_id = run_in("correction")
+    events = await collect(runner, session_id, text, student)
+    in_correction = [e for e in events if isinstance(e, Analyzed)][0]
+
+    assert len(in_conversation.analysis.findings) == 2
+    assert len(in_correction.analysis.findings) == 3
+
+
+async def test_the_drill_asks_for_an_exercise_at_the_end_of_the_prompt(
+    real_prompts, conn, student, base
+):
+    """O pedido do drill fica no fim, depois da fala do aluno.
+
+    Não é estética de prompt: medido num 3B (plano §5.4), com o pedido só no
+    bloco do topo o modelo respondia à fala do aluno e esquecia de treinar.
+    Com a linha no fim, ele dá exercício. O bloco de dados continua no topo,
+    onde é estável e cacheável.
+    """
+    session_id = SessionRepo(conn).current_or_start(student.id)
+    turn_id = TurnRepo(conn).append(session_id, "student", "I have 35 years")
+    CorrectionRepo(conn).add(
+        turn_id,
+        span="I have 35 years",
+        corrected="I am 35 years old",
+        error_type="calque",
+        explanation="Age uses to be.",
+        rule_id="calque.age-have",
+    )
+
+    planner = DrillPlanner(conn, base)
+    target = planner.pick(student.id)
+    drill_session = SessionRepo(conn).switch_mode(student.id, "drill", target.rule_id)
+
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn, planner=planner)
+    await collect(runner, drill_session, "I am 35 years old?", student)
+
+    messages = provider.last_call.messages
+    assert messages[-1].role == "system"
+    assert "one short exercise" in messages[-1].content.lower()
+    assert "calque.age-have" in messages[-1].content
+    # E o bloco de dados continua lá em cima, onde o prefixo é cacheado.
+    assert "Correct forms:" in messages[3].content

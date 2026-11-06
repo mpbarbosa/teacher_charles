@@ -16,6 +16,7 @@ const resetButton = document.getElementById("reset");
 const levelSelect = document.getElementById("level");
 const levelNote = document.getElementById("level-note");
 const nameInput = document.getElementById("student-name");
+const modeButtons = document.querySelectorAll("button.mode");
 
 let busy = false;
 
@@ -264,6 +265,28 @@ if (nameInput) {
     if (event.key === "Enter") {
       event.preventDefault();
       switchProfile();
+    }
+  });
+}
+
+// Trocar de modo e trocar de atividade: a sessao muda, e com ela a
+// transcricao. Recarregar e mais honesto que manter na tela a conversa de
+// outro modo.
+for (const button of modeButtons) {
+  button.addEventListener("click", async () => {
+    if (busy || button.classList.contains("active")) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: button.dataset.mode }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      window.location.reload();
+    } catch (error) {
+      setBusy(false);
+      setStatus(`Could not switch mode: ${error.message}`, true);
     }
   });
 }
