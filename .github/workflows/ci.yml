@@ -1,0 +1,58 @@
+# CI: o portão que roda sem modelo nenhum.
+#
+# A suíte foi desenhada para isto desde a E1 — `FakeProvider` no lugar do
+# modelo, transporte HTTP falso no `/health` —, e é o que torna o CI possível
+# numa máquina sem Ollama e sem 2 GB de pesos. Os testes marcados `integration`
+# ficam de fora por `-m "not integration"`: eles se pulariam sozinhos aqui, mas
+# excluí-los é dizer a intenção em vez de depender do skip.
+#
+# O que este workflow NÃO faz, e é deliberado: medir qualidade do modelo. Isso
+# é trabalho dos `scripts/measure_*.py`, que precisam de Ollama e de minutos, e
+# cujos números vão para o plano revisados por gente — não para um check verde.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Push seguido de push no mesmo branch: o run antigo não interessa mais.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Versão exata, e não um major móvel: a `astral-sh/setup-uv` não publica
+      # mais tag `v10` — só `v10.3.3` e companhia. Apontar para um major que
+      # não existe falha o run inteiro antes de rodar um teste.
+      - name: Instala o uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # O Python vem do .python-version (3.12, pinado de propósito: os wheels
+      # de ctranslate2 e onnxruntime, que a voz da Fase 1.5 vai precisar,
+      # ficam atrás das versões novas).
+      - name: Prepara o ambiente
+        run: uv sync --extra dev --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Formatação
+        run: uv run ruff format --check .
+
+      - name: Testes
+        run: uv run pytest -m "not integration" -q
