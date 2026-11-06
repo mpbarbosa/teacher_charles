@@ -19,3 +19,7 @@ models/
 *.db
 *.db-wal
 *.db-shm
+
+# Gravacoes de voz nunca entram no repo. Mesma razao do *.db: e dado pessoal,
+# e o `--out` do measure_phonemes escreve `fala.wav` aqui por default.
+*.wav

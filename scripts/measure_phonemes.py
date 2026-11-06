@@ -34,8 +34,13 @@ Modos:
         brasileiro injetada no nível do fonema. Compara com o piso e diz se as
         duas distribuições se separam.
 
+    uv run python scripts/measure_phonemes.py --record 5 --say "the red car is ready"
+        Grava 5 segundos do microfone desta máquina, deixa o WAV no disco e
+        mede em cima dele. É a E9 do plano da Fase 2 — o portão que decide se
+        o avaliador de pronúncia é viável.
+
     uv run python scripts/measure_phonemes.py --audio fala.wav --say "what I said"
-        O mesmo, com áudio de verdade. É assim que se mede o que importa.
+        O mesmo, sobre um WAV que já existe. É assim que se mede o que importa.
 
 ## O que esta medição NÃO diz
 
@@ -59,6 +64,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import subprocess
 import sys
 import time
 import wave
@@ -473,6 +479,56 @@ class Synth:
         return np.interp(target_x, source_x, samples).astype(np.float32)
 
 
+DEFAULT_RECORDING = Path("fala.wav")
+
+
+def record(seconds: int, out: Path) -> Path:
+    """Grava do microfone desta máquina com o ``arecord`` do alsa-utils.
+
+    Mesmo caminho do ``measure_voice.py --record``, com uma diferença que é a
+    razão de esta versão existir: **o arquivo fica no disco.** Lá a gravação é
+    uma amostra descartável para medir latência; aqui ela é o corpus da E9, e
+    um corpus precisa poder ser remedido quando o portão da §3.3 mudar de
+    valor ou o modelo mudar de variante.
+
+    Escreve WAV num caminho em vez de PCM cru no stdout porque o ``arecord``
+    canalizado deixa os campos de tamanho do cabeçalho em aberto, e o
+    ``wave`` da stdlib tropeça neles.
+    """
+    print(f"\n  Gravando {seconds}s em {out} — fale agora.", flush=True)
+    try:
+        subprocess.run(
+            [
+                "arecord",
+                "-q",
+                "-t",
+                "wav",
+                "-f",
+                "S16_LE",
+                "-r",
+                str(SAMPLE_RATE),
+                "-c",
+                "1",
+                "-d",
+                str(seconds),
+                str(out),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=seconds + 15,
+        )
+    except FileNotFoundError:
+        raise SystemExit(
+            "  `arecord` não existe. Instale alsa-utils, ou grave por fora e use --audio."
+        ) from None
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            f"  a gravação falhou: {exc.stderr.decode(errors='replace')[:200]}"
+        ) from exc
+    print(f"  pronto, {out.stat().st_size / 1024:.0f} KB")
+    return out
+
+
 def read_wav(path: Path, np) -> Any:
     """Um WAV mono 16-bit do disco, em float32.
 
@@ -669,24 +725,50 @@ def main() -> int:
     parser.add_argument("--discriminate", action="store_true", help="piso contra sinal")
     parser.add_argument("--accent", action="store_true", help="proxy de sotaque brasileiro")
     parser.add_argument("--audio", type=Path, help="WAV mono 16-bit de verdade")
-    parser.add_argument("--say", help="o que foi dito no --audio")
+    parser.add_argument(
+        "--record",
+        type=int,
+        default=0,
+        help=f"grava N segundos em --out (default {DEFAULT_RECORDING})",
+    )
+    parser.add_argument("--out", type=Path, default=DEFAULT_RECORDING, help="onde a gravação fica")
+    parser.add_argument("--say", help="o que foi dito no --audio ou no --record")
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--threads", type=int, default=0)
     args = parser.parse_args()
 
-    if not any([args.rtf, args.floor, args.discriminate, args.accent, args.audio]):
+    if not any([args.rtf, args.floor, args.discriminate, args.accent, args.audio, args.record]):
         args.rtf = args.discriminate = True
+
+    # Tudo o que pode ser recusado é recusado **antes** de carregar o modelo.
+    # São 318 MB e ~1,8 s de carga, e a primeira vez que alguém rodou o modo
+    # `--audio` com o nome de arquivo de exemplo do README pagou os dois para
+    # receber um traceback de arquivo inexistente.
+    if (args.audio or args.record) and not args.say:
+        raise SystemExit("--audio/--record precisam de --say para ter o que comparar")
+    if args.audio and not args.audio.is_file():
+        raise SystemExit(
+            f'{args.audio}: não existe. Grave com `--record 5 --say "..."`, '
+            "ou aponte --audio para um WAV mono 16-bit."
+        )
+    if args.record and args.record < 1:
+        raise SystemExit("--record precisa de pelo menos 1 segundo")
 
     from teacher_charles.config import Settings
 
     settings = Settings(_env_file=None)
+
+    # A gravação também vem antes da carga: ninguém deve esperar o modelo para
+    # o microfone abrir.
+    audio_path = args.audio
+    if args.record:
+        audio_path = record(args.record, args.out)
+
     recognizer = PhonemeRecognizer(threads=args.threads)
     g2p = _build_g2p()
 
-    if args.audio:
-        if not args.say:
-            raise SystemExit("--audio precisa de --say para ter o que comparar")
-        run_audio(recognizer, g2p, args.audio, args.say)
+    if audio_path:
+        run_audio(recognizer, g2p, audio_path, args.say)
         return 0
 
     synth = Synth(settings)
