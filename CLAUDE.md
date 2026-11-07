@@ -2,283 +2,356 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Idioma
+## Language
 
-Código, comentários, docstrings, commits e docs em **português**. Tudo que o
-aluno vê — persona, strings da UI, resposta do modelo — em **inglês**, sem
-exceção: o produto é "100% em inglês" por decisão de público (`docs/plano-fase-1.md`
-§1.1).
+Code, comments, docstrings, commits and docs in **Portuguese**. Everything the
+student sees — persona, UI strings, model response — in **English**, no
+exception: the product is "100% in English" by an audience decision
+(`docs/plano-fase-1.md` §1.1).
 
-## Comandos
+## Commands
 
 ```bash
-uv sync --extra dev                      # ambiente (Python 3.12, pinado)
-python3 scripts/check_env.py             # RAM, disco, uv, Ollama, modelo, pesos de voz
+uv sync --extra dev                      # environment (Python 3.12, pinned)
+python3 scripts/check_env.py             # RAM, disk, uv, Ollama, model, voice weights
 uv run teacher-charles --reload          # http://localhost:8000
 ```
 
-Voz (Fase 1.5) é **extra e desligada por default** — o chat por texto funciona
-inteiro sem ela, e são ~400 MB de wheels mais ~120 MB de pesos:
+Voice (Phase 1.5) is an **extra and off by default** — text chat works in full
+without it, and it is ~400 MB of wheels plus ~120 MB of weights:
 
 ```bash
 uv sync --extra dev --extra voice
-uv run python scripts/fetch_voice_models.py      # Kokoro; o Whisper se baixa sozinho
+uv run python scripts/fetch_voice_models.py      # Kokoro; Whisper downloads itself
 TC_VOICE_ENABLED=true uv run teacher-charles
 ```
 
 ```bash
-uv run pytest                            # tudo (integração inclusa, bate no Ollama de verdade)
-uv run pytest -m "not integration"       # 522 testes, ~4s, sem modelo nenhum
-uv run pytest -m integration             # só os 9 que exercitam o Ollama local
-uv run pytest tests/test_turn.py::test_nome -x
+uv run pytest                            # everything (integration included, hits the real Ollama)
+uv run pytest -m "not integration"       # 620 tests, ~16s, no model at all
+uv run pytest -m integration             # only the 9 that exercise the local Ollama
+uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .
 ```
 
-Os testes de voz seguem a mesma regra: os de dublê rodam sem peso nenhum
-(`test_voice*.py`), e os 8 que carregam Whisper e Kokoro de verdade estão em
-`-m integration` e se pulam sozinhos quando os pesos não estão no disco.
+The voice tests follow the same rule: the stub ones run with no weights at all
+(`test_voice*.py`), and the 8 that really load Whisper and Kokoro live under
+`-m integration` and skip themselves when the weights are not on disk.
 
-`uv run pytest` sem filtro **não** é o caminho rápido: os testes de integração
-se pulam sozinhos sem Ollama, mas com o Ollama de pé eles carregam modelo e o
-tempo vai de ~3s para minutos. Durante o desenvolvimento use
-`-m "not integration"`.
+`uv run pytest` with no filter is **not** the fast path: the integration tests
+skip themselves without Ollama, but with Ollama up they load a model and the
+time goes from ~3s to minutes. During development use `-m "not integration"`.
 
-Para trabalhar na interface sem modelo: `TC_PROVIDER=fake uv run teacher-charles`.
-Para usar um modelo que já está baixado: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles`.
+To work on the interface without a model: `TC_PROVIDER=fake uv run teacher-charles`.
+To use a model that is already downloaded: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles`.
 
-## O princípio que organiza o código
+## The principle that organizes the code
 
-> **A estrutura pedagógica mora na aplicação, não no prompt. Correção é dado
-> estruturado, não prosa.**
+> **The pedagogical structure lives in the application, not in the prompt.
+> A correction is structured data, not prose.**
 
-Consequência prática: quando houver uma regra curada para o erro, a correção
-**cita o `rule_id`** de `data/contrastive/` em vez de deixar o modelo inventar
-gramática. Por isso a tabela `correction` existe desde a primeira migração, com
-`rule_id` anulável — `NULL` marca "veio só do modelo", distinção que a E4 mede e
-a E7 mostra. Antes de resolver algo acrescentando frase ao prompt, verifique se
-o lugar certo não é código em `teaching/`.
+D13 added the second half of that: **what the application knows about the
+student is structured data too, not a ranking.** The drill queue stopped being
+an error count and became a review schedule, because a count only knows how to
+add up — it never records that the student learned.
 
-## Camadas
+Practical consequence: when there is a curated rule for the error, the
+correction **cites the `rule_id`** from `data/contrastive/` instead of letting
+the model invent grammar. That is why the `correction` table has existed since
+the first migration, with a nullable `rule_id` — `NULL` marks "came from the
+model alone", a distinction D4 measures and D7 shows. Before solving something
+by adding a sentence to the prompt, check whether the right place isn't code in
+`teaching/`.
+
+## Layers
 
 | | |
 |---|---|
-| `llm/` | Providers atrás de `base.ChatProvider`. Nada fora deste pacote sabe se o modelo está no Ollama, num llama.cpp ou na nuvem. Só `stream()` é abstrato; `complete()` deriva dele. |
-| `teaching/` | O produto. **Agnóstico quanto à origem do texto** — recebe string, devolve eventos `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed`. É o que permite acoplar STT/TTS na Fase 1.5 sem reescrever o meio. |
-| `voice/` | As duas pontas da Fase 1.5 — STT e TTS — atrás de `base.SpeechToText` / `base.TextToSpeech`, no mesmo arranjo de `llm/`. **Não importa `teaching/`**: recebe bytes, devolve texto; recebe texto, devolve PCM. |
-| `store/` | SQLite pelo `sqlite3` da stdlib. Esquema em `.sql` numerado, sem ORM; as dataclasses de `models.py` só dão nome às linhas. |
-| `prompts.py` | Carrega `prompts/*.md` com cache por mtime: editar a persona vale no turno seguinte, sem reiniciar. |
-| `app.py` | FastAPI. Monta tudo no `lifespan` e guarda em `app.state`. |
-| `web/` | Página única: template Jinja + JS/CSS sem build step. |
+| `llm/` | Providers behind `base.ChatProvider`. Nothing outside this package knows whether the model is in Ollama, in a llama.cpp or in the cloud. Only `stream()` is abstract; `complete()` derives from it. |
+| `teaching/` | The product. **Agnostic about where the text came from** — it takes a string and returns `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed` events. That is what allows STT/TTS to be attached in Phase 1.5 without rewriting the middle. |
+| `voice/` | The two ends of Phase 1.5 — STT and TTS — behind `base.SpeechToText` / `base.TextToSpeech`, in the same arrangement as `llm/`. **It does not import `teaching/`**: it takes bytes and returns text; it takes text and returns PCM. |
+| `store/` | SQLite through the stdlib's `sqlite3`. Schema in numbered `.sql` files, no ORM; the dataclasses in `models.py` only give the rows names. |
+| `teaching/schedule.py` | The review schedule (D13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
+| `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
+| `web/` | Single page: Jinja template + JS/CSS with no build step. |
 
-`config.py` nunca importa `llm` **nem `voice`** — a dependência corre num sentido
-só. É por isso que `default_options(settings)` vive em `llm/__init__.py` e não em
-`Settings`.
+`config.py` never imports `llm` **nor `voice`** — the dependency runs one way
+only. That is why `default_options(settings)` lives in `llm/__init__.py` and not
+in `Settings`.
 
-## Invariantes que não são óbvias no arquivo que você está editando
+## Invariants that are not obvious in the file you are editing
 
-**Uma conexão SQLite, compartilhada.** `app.state.db` guarda **uma** conexão com
-`check_same_thread=False` e `isolation_level=None`. Daí a regra: **nada no caminho
-de uma requisição abre transação de várias instruções** — duas requisições podem
-se intercalar. Todo método de repositório é uma instrução autônoma. As migrações
-são a exceção e rodam na subida, antes de o servidor aceitar conexão.
+**One SQLite connection, shared.** `app.state.db` holds **one** connection with
+`check_same_thread=False` and `isolation_level=None`. Hence the rule: **nothing
+on a request's path opens a multi-statement transaction** — two requests can
+interleave. Every repository method is a self-contained statement. The
+migrations are the exception and run at startup, before the server accepts a
+connection.
 
-**O `BEGIN` vai dentro do script da migração.** `executescript` encerra qualquer
-transação já aberta, então `conn.execute("BEGIN")` do lado de fora seria desfeito
-e o `ROLLBACK` não protegeria o DDL parcial. Ver `store/db.py::migrate`.
+**The `BEGIN` goes inside the migration script.** `executescript` ends any
+transaction already open, so a `conn.execute("BEGIN")` from outside would be
+undone and the `ROLLBACK` would not protect partial DDL. See
+`store/db.py::migrate`.
 
-**A persona vem primeiro e inalterada.** O Ollama cacheia o prefixo do prompt;
-interpolar valor que muda no system prompt joga esse cache fora e o aluno paga a
-reavaliação a cada turno. Prompt que varia por nível vai em
-`prompts/partials/level/` e entra como **segunda mensagem de sistema**, não
-dentro da persona: assim ele só invalida o cache quando o nível de fato muda.
-Por isso o aquecimento também manda o partial do nível do perfil ativo.
+**The persona comes first and unaltered.** Ollama caches the prompt prefix;
+interpolating a changing value into the system prompt throws that cache away and
+the student pays for the re-evaluation every turn. A prompt that varies by level
+goes in `prompts/partials/level/` and enters as a **second system message**, not
+inside the persona: that way it only invalidates the cache when the level
+actually changes. That is why the warm-up also sends the level partial of the
+active profile.
 
-**O modo muda política, não só prosa.** `teaching/modes.py` decide o teto de
-correções por turno (5 em `correction`, 2 nos outros) e, no drill, **qual regra**
-é treinada — por consulta ao `correction` agregado, nunca pelo modelo. Uma regra
-por sessão (`session.drill_rule_id`), não por turno: drill que troca de regra a
-cada mensagem é questionário, e bloco estável no prompt é prefixo cacheado.
+**The mode changes policy, not just prose.** `teaching/modes.py` decides the cap
+on corrections per turn (5 in `correction`, 2 in the others) and, in the drill,
+**which rule** is trained — by querying the database, never by
+the model. One rule per session (`session.drill_rule_id`), not per turn: a drill
+that swaps rules on every message is a quiz, and a stable block in the prompt is
+a cached prefix.
 
-**A ordem das mensagens de sistema é persona → nível → modo → dados do drill**,
-e depois, no fim do prompt, a dica curada e o pedido do drill. O começo é por
-estabilidade (o que muda menos vem antes, por causa do cache de prefixo); o fim
-é por eficácia — medido duas vezes, na E4 com a dica e na E6 com o drill:
-instrução longe do ponto de geração se dilui e o modelo pequeno a ignora.
+**The drill queue is a schedule, not a ranking.** What orders it is
+`Scheduler.queue` (D13): overdue first, with the frequency in `correction` left
+as the *last* tiebreak between equally urgent rules. The swap was not cosmetic —
+frequency is a number that only goes up, so the most-missed rule in the history
+went on being the most-missed one after the student had got it right ten times,
+and the drill never let it go. Reverting the sort key to `-times` leaves four
+tests red, one of them from D6.
 
-**O nível do aluno é decidido por código, não pelo modelo.** `teaching/level.py`
-tem uma rubrica determinística (comprimento de frase, palavra longa, conectivos,
-estruturas, menos erro com regra curada) calibrada em
-`tests/fixtures/level_samples.yaml`. Mexer nas constantes exige rodar
-`scripts/measure_level.py` — os números estão no plano §5.3, e um teste quebra se
-o acerto cair. Duas consequências que não são óbvias no arquivo: a rubrica
-**não estima C2** (tentar errava por dois degraus) e **nenhum turno sozinho move
-o nível** (4 turnos contados seguidos, um degrau por vez). A janela fecha em
-toda mudança de nível, via `level_change.at_signal_id` — sem isso os mesmos
-quatro turnos moveriam o nível de novo no turno seguinte.
+**Getting it right is the absence of an error where the error would have shown
+up, and that is asymmetric.** The analyzer returns errors, not successes, so a
+success can only be inferred — and it only counts inside the drill, over the
+rule being trained, because there the exercise built the opportunity. A
+correction by the rule is an error in any mode; a clean turn in free
+conversation **is nothing at all**, and counting it would graduate rules by
+silence. The guard that matters most: **an analysis that did not run graduates
+nobody** — without it, an analyzer that is down would turn into a success,
+because it produces the same absence of corrections. A known blind spot, noted
+in §6 of the plan: inside the drill, "did not err" and "did not try" are the
+same observation.
 
-**O aquecimento manda o prefixo do turno, não um "hi" nem "só a persona".**
-Existe uma lista só, `TurnRunner.stable_prefix()`, e o aquecimento e o turno
-usam a mesma — porque já foram duas e divergiram: a E5 e a E6 acrescentaram
-nível e modo ao turno, o aquecimento ficou na persona, e o primeiro turno
-chegava com 53% do prompt em cache e 11,6s até a primeira palavra. Com a mesma
-lista: 0,9s (plano §5.5). `_warm_up` nunca propaga erro — o `/health` já
-reporta modelo inacessível, e derrubar a subida por causa do aquecimento seria
-pior.
+**The first rung of the interval ladder is worth half a day, not zero**, and
+that is what replaces D6's rotation. With zero, a rule just missed falls due at
+once and goes back to being the most overdue one in the next session, forever —
+the student would never see the second rule. `DRILL_ROTATION` survived only for
+the case the schedule cannot see (a rule picked in a session that ended with no
+answer), and as a sort term instead of a filter.
 
-**Nada de mensagem de sistema depois do histórico.** O template de chat junta
-as mensagens de sistema no topo, então uma "dica no fim da lista" é colada
-logo após a persona e invalida o cache de todo o histórico — medido: o total
-cacheado ficava preso nos 674 tokens do prefixo e a primeira palavra ia de
-2,8s a 9,1s em seis turnos. A dica curada e o pedido do drill vão **dentro da
-última mensagem do aluno** (`TurnRunner._with_notes`). É contraintuitivo o
-bastante para alguém "consertar" sem querer; o teste
-`test_rule_hint_rides_with_the_student_message` existe para isso.
+**The two writes of a review are not one transaction.** That is the
+shared-connection rule, and the order is chosen because of it: `rule_review`
+(the event) before `rule_schedule` (the state), because the state can be
+rebuilt from the event and not the other way round.
 
-**A fala do aluno é gravada antes de chamar o modelo**, e o histórico já a inclui
-— por isso `build_messages` não acrescenta a mensagem nova outra vez.
+**The order of the system messages is persona → level → mode → drill data**,
+and then, at the end of the prompt, the curated hint and the drill request. The
+beginning is ordered by stability (what changes least comes first, because of the
+prefix cache); the end is ordered by effectiveness — measured twice, in D4 with
+the hint and in D6 with the drill: an instruction far from the point of
+generation gets diluted and the small model ignores it.
 
-**A transcrição do microfone vai para o campo de texto, não para o turno.** O
-STT erra; um erro de STT que vira turno faz o Charles corrigir um erro que o
-aluno não cometeu — a mesma classe de falha que a E3/E4 existem para evitar do
-lado do modelo. `POST /api/stt` devolve só o texto e **não grava turno nenhum**
-(`test_nao_grava_turno_nenhum`). É a única salvaguarda que não depende de qual
-modelo de STT está carregado, e ela existe porque a exatidão com sotaque
-brasileiro é a dívida aberta da Fase 1.5 (plano 1.5 §2.3).
+**The student's level is decided by code, not by the model.** `teaching/level.py`
+has a deterministic rubric (sentence length, long words, connectives,
+structures, fewer errors with a curated rule) calibrated in
+`tests/fixtures/level_samples.yaml`. Touching the constants requires running
+`scripts/measure_level.py` — the numbers are in §5.3 of the plan, and a test
+breaks if accuracy drops. Two consequences that are not obvious in the file: the
+rubric **does not estimate C2** (trying was off by two steps) and **no single
+turn moves the level** (4 counted turns in a row, one step at a time). The
+window closes on every level change, via `level_change.at_signal_id` — without
+that the same four turns would move the level again on the next turn.
 
-**O áudio não viaja no SSE.** Os quadros `sentence` do `/api/chat` carregam
-índice e texto; a página pede cada sentença ao `/api/tts` num pedido próprio.
-Base64 seria 33% a mais de bytes no caminho crítico do texto — mas a razão real
-é outra: sintetizar dentro do gerador que repassa os pedaços atrasaria a letra
-para adiantar o som. Separado, a síntese da sentença 1 corre enquanto o modelo
-escreve a 2, que é a única razão de o TTS por sentença existir.
+**The warm-up sends the turn's prefix, not a "hi" nor "just the persona".**
+There is a single list, `TurnRunner.stable_prefix()`, and the warm-up and the
+turn use the same one — because there were once two and they diverged: D5 and D6
+added level and mode to the turn, the warm-up stayed on the persona, and the
+first turn arrived with 53% of the prompt cached and 11.6s to the first word.
+With the same list: 0.9s (plan §5.5). `_warm_up` never propagates an error —
+`/health` already reports an unreachable model, and bringing startup down
+because of the warm-up would be worse.
 
-**O índice do quadro `sentence` não é decoração.** Os pedidos ao `/api/tts`
-resolvem fora de ordem; a fila do `voice.js` toca por índice. Tocar por ordem
-de chegada embaralharia a fala do professor na primeira vez que a rede
-hesitasse.
+**No system message after the history.** The chat template joins the system
+messages at the top, so a "hint at the end of the list" is pasted right after
+the persona and invalidates the cache of the whole history — measured: the total
+cached stayed stuck at the prefix's 674 tokens and the first word went from
+2.8s to 9.1s over six turns. The curated hint and the drill request go **inside
+the student's last message** (`TurnRunner._with_notes`). It is counterintuitive
+enough for someone to "fix" it by accident; the test
+`test_rule_hint_rides_with_the_student_message` exists for that.
 
-**Fronteira de sentença vale também no fim do pedaço**, e isso é escolha de
-latência, não descuido (`voice/segment.py`). Esperar o espaço custaria um token
-de atraso em toda sentença — ~130 ms a 7-8 tok/s — pagos no único ponto do
-turno em que o aluno espera calado. O único caso indecidível, dígito antes do
-ponto (`3.` que pode virar `3.5`), espera; abreviação e inicial são decididas
-pelo que está antes do ponto.
+**The student's utterance is recorded before calling the model**, and the
+history already includes it — which is why `build_messages` does not add the new
+message a second time.
 
-**Os motores de voz carregam preguiçosamente e o aquecimento engole o erro.**
-Derrubar a subida por causa de um peso ausente seria pior que um `/health`
-degradado. Daí `ready` e `last_error` em `voice/base.Loadable`: é o `/health`
-que denuncia, e `ready` nunca dispara carga — um health check não pode ter
-efeito colateral de centenas de megabytes.
+**The microphone transcript goes to the text field, not to the turn.** STT makes
+mistakes; an STT error that becomes a turn makes Charles correct an error the
+student did not make — the same class of failure D3/D4 exist to avoid on the
+model's side. `POST /api/stt` returns only the text and **records no turn at
+all** (`test_nao_grava_turno_nenhum`). It is the only safeguard that does not
+depend on which STT model is loaded, and it exists because accuracy with a
+Brazilian accent is Phase 1.5's open debt (plan 1.5 §2.3).
 
-**`av` está preso em `<19`.** O `decode_audio` do `faster-whisper` 1.2 chama
-`av.open(metadata_errors=...)`, argumento que o PyAV 19 removeu. Com o 19
-instalado, **toda** transcrição estoura em `TypeError` antes de o modelo ver um
-sample. Não é cautela de versão; é incompatibilidade medida.
+**The audio does not travel over the SSE.** The `sentence` frames from
+`/api/chat` carry an index and text; the page asks `/api/tts` for each sentence
+in a request of its own. Base64 would be 33% more bytes on the text's critical
+path — but the real reason is another: synthesizing inside the generator that
+relays the chunks would delay the words to bring the sound forward. Kept apart,
+sentence 1's synthesis runs while the model writes sentence 2, which is the only
+reason per-sentence TTS exists.
 
-**O perfil ativo é `student.seen_seq`, um contador — não uma marca de tempo.**
-Duas versões com relógio (segundo e milissegundo) quebraram o mesmo teste de
-troca-e-volta de perfil: as escritas caem no mesmo instante e o desempate
-devolve sempre o mesmo aluno.
+**The index on the `sentence` frame is not decoration.** The requests to
+`/api/tts` resolve out of order; the queue in `voice.js` plays by index. Playing
+in arrival order would scramble the teacher's speech the first time the network
+hesitated.
 
-**Erros de provider são tipados de propósito** (`ProviderUnavailable`,
-`ModelNotFound`, `ProviderTimeout`, `ProviderBadResponse`). Reaja pelo tipo;
-nunca por substring da mensagem.
+**A sentence boundary also counts at the end of a chunk**, and that is a latency
+choice, not carelessness (`voice/segment.py`). Waiting for the space would cost
+one token of delay on every sentence — ~130 ms at 7-8 tok/s — paid at the only
+point in the turn where the student waits in silence. The one undecidable case,
+a digit before the period (`3.` that may become `3.5`), waits; abbreviations and
+initials are decided by what comes before the period.
 
-**`/api/chat` é POST com corpo JSON e resposta em quadros SSE** (`data: {...}`,
-tipos `chunk` / `done` / `error`). Não é `EventSource`: aquele só faz GET, e a
-fala do aluno não vai em query string. O header `X-Accel-Buffering: no` existe
-para um proxy no caminho não segurar o corpo e anular o streaming.
+**The voice engines load lazily and the warm-up swallows the error.** Bringing
+startup down because of a missing weight would be worse than a degraded
+`/health`. Hence `ready` and `last_error` in `voice/base.Loadable`: it is
+`/health` that reports it, and `ready` never triggers a load — a health check
+cannot have a side effect of hundreds of megabytes.
 
-**`/health` responde 503 quando degradado** (banco ou modelo fora). É
-deliberado: separar "o serviço subiu" de "está pronto para ensinar" evita health
-verde enganoso.
+**`av` is pinned to `<19`.** `faster-whisper` 1.2's `decode_audio` calls
+`av.open(metadata_errors=...)`, an argument PyAV 19 removed. With 19 installed,
+**every** transcription blows up with a `TypeError` before the model sees a
+sample. It is not version caution; it is a measured incompatibility.
 
-## Testes
+**The active profile is `student.seen_seq`, a counter — not a timestamp.** Two
+clock-based versions (second and millisecond) broke the same
+switch-and-switch-back profile test: the writes land in the same instant and the
+tiebreak always returns the same student.
 
-`tests/conftest.py` apaga toda variável `TC_*` e zera o cache de `get_settings`
-em cada teste — um `.env` local já quebrou um teste aqui. Construa settings com
-`Settings(_env_file=None, **overrides)` (ou o `make_settings` do conftest); nunca
-conte com o ambiente da máquina.
+**Provider errors are typed on purpose** (`ProviderUnavailable`,
+`ModelNotFound`, `ProviderTimeout`, `ProviderBadResponse`). React by type;
+never by a substring of the message.
 
-Em `tests/test_level.py` o portão sobre as amostras rotuladas é uma **fração**
-(70% de acerto exato, zero erro de dois degraus), não um valor fixo: a suíte pode
-crescer sem o teste virar frágil, mas uma regressão real quebra.
+**`/api/chat` is a POST with a JSON body and a response in SSE frames**
+(`data: {...}`, types `chunk` / `done` / `error`). It is not `EventSource`: that
+one only does GET, and the student's utterance does not go in a query string.
+The `X-Accel-Buffering: no` header exists so a proxy on the path does not hold
+the body and cancel out the streaming.
 
-Em teste de rota, passe `llm_warmup=False`: o aquecimento consumiria uma das
-respostas roteirizadas do `FakeProvider` e apareceria em `provider.calls`,
-bagunçando as asserções sobre o que o turno mandou ao modelo.
+**`/health` answers 503 when degraded** (database or model down). It is
+deliberate: separating "the service came up" from "it is ready to teach" avoids
+a misleadingly green health check.
 
-`FakeProvider` registra cada chamada (`calls`, `last_call`,
-`system_prompt_of_last_call()`) e fatia a resposta de propósito, para quem
-consome ter que lidar com pedaços como no provider real.
+## Tests
 
-Os testes de integração escolhem o modelo em ordem: `TC_TEST_MODEL`, o
-`TC_LLM_MODEL` configurado se estiver baixado, ou o menor presente na máquina —
-ninguém precisa baixar 2,5 GB para a suíte ficar verde.
+`tests/conftest.py` erases every `TC_*` variable and clears the `get_settings`
+cache in each test — a local `.env` has already broken a test here. Build
+settings with `Settings(_env_file=None, **overrides)` (or the conftest's
+`make_settings`); never rely on the machine's environment.
 
-## O orçamento de hardware decide o design
+In `tests/test_level.py` the gate over the labeled samples is a **fraction**
+(70% exact accuracy, zero two-step errors), not a fixed value: the suite can
+grow without the test turning brittle, but a real regression breaks it.
 
-Alvo mínimo é CPU/iGPU sem CUDA, e o Ollama oficial não usa a iGPU Intel. Medido
-nesta máquina: **9,3 tok/s num 3B Q4 e 4,0 num 7B**, o que põe um 4B em ~7–8 e um
-8B em ~3,5 — por isso o default é 4B-class e não 14B. Isso é premissa de projeto,
-não detalhe de configuração:
+In a route test, pass `llm_warmup=False`: the warm-up would consume one of
+`FakeProvider`'s scripted responses and would show up in `provider.calls`,
+messing up the assertions about what the turn sent to the model.
 
-- Streaming não é enfeite: é o que torna 7–8 tok/s tolerável. Não acumule a
-  resposta antes de repassar.
-- `DEFAULT_HISTORY_TURNS = 20` existe porque avaliar prompt custa tempo real
-  (~54 tok/s num 3B), não por limite de janela de contexto.
-- Modelos de raciocínio (Qwen3 entre eles) pensam antes de responder;
-  `TC_LLM_THINK=false` desliga. `None` deixa o default do servidor valer.
-- Python está pinado em `>=3.12,<3.13` de propósito: os wheels de `ctranslate2` e
-  `onnxruntime`, que a voz da Fase 1.5 vai precisar, ficam atrás das versões
-  novas. Não troque o interpretador.
+`FakeProvider` records every call (`calls`, `last_call`,
+`system_prompt_of_last_call()`) and slices the response on purpose, so that
+whoever consumes it has to deal with chunks as with the real provider.
 
-## Onde o dado mora
+The integration tests pick the model in order: `TC_TEST_MODEL`, the configured
+`TC_LLM_MODEL` if it is downloaded, or the smallest one present on the machine —
+nobody has to download 2.5 GB to get the suite green.
 
-Três destinos, e confundi-los é erro de categoria:
+## The hardware budget decides the design
 
-- **Pesos do modelo** — em `~/.ollama`, nunca no repo. Os de voz também não:
-  Kokoro em `$XDG_CACHE_HOME/teacher-charles/voice` (cache, redownloadável) e
-  Whisper no cache do `huggingface_hub`. **Nunca em `XDG_DATA_HOME`**, que é
-  dado pessoal do aluno.
-- **Progresso do aluno** — `$XDG_DATA_HOME/teacher-charles/charles.db`, fora do
-  repo. É dado pessoal. `*.db` está no `.gitignore`.
-- **Conhecimento curado** — `data/contrastive/*.yaml`, **versionado**: é conteúdo
-  do produto, revisado e testado item por item. Hoje `data/` está vazia; a base
-  chega na E3.
+The minimum target is CPU/iGPU without CUDA, and official Ollama does not use
+the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
+7B**, which puts a 4B at ~7–8 and an 8B at ~3.5 — which is why the default is
+4B-class and not 14B. This is a project premise, not a configuration detail:
 
-## Estado e para onde o código cresce
+- Streaming is not an ornament: it is what makes 7–8 tok/s tolerable. Do not
+  accumulate the response before relaying it.
+- `DEFAULT_HISTORY_TURNS = 20` exists because evaluating the prompt costs real
+  time (~54 tok/s on a 3B), not because of a context window limit.
+- Reasoning models (Qwen3 among them) think before answering;
+  `TC_LLM_THINK=false` turns that off. `None` lets the server's default stand.
+- Python is pinned to `>=3.12,<3.13` on purpose: the `ctranslate2` and
+  `onnxruntime` wheels, which Phase 1.5's voice will need, lag behind the new
+  versions. Do not change the interpreter.
 
-Todas as entregas da Fase 1 estão prontas: E0 (fundação), E1 (provider), E2
-(chat por texto), E3 (base contrastiva), E4 (correção estruturada), E5 (perfil
-e nível), E6 (os três modos) e E7 (tela de progresso, README e latência). A ordem e o critério
-de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
-`docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
+## Where the data lives
 
-A Fase 1 está completa, e a **Fase 1.5 (voz) também** —
-`docs/plano-fase-1-5.md`. O aluno fala por push-to-talk, o Charles responde em
-voz alta sentença por sentença, tudo local. `teaching/`, `llm/` e `store/` não
-mudaram uma linha para isso: a voz entrou como duas pontas, que era a aposta
-do desvio da §4.
+Three destinations, and confusing them is a category error:
 
-A Fase 1.5 deixou duas dívidas, as duas medidas em `docs/plano-fase-1-5.md`:
-**5,4-7,4s até a primeira palavra falada** contra a meta de 1-2s (e a maior
-fatia é o LLM, não o áudio — a alavanca é a iGPU ociosa da §1.3), e a
-**exatidão do STT com sotaque brasileiro, que não foi medida** — o áudio das
-tabelas é sintético, e os 0% de WER são piso, não expectativa.
+- **Model weights** — in `~/.ollama`, never in the repo. The voice ones neither:
+  Kokoro in `$XDG_CACHE_HOME/teacher-charles/voice` (a cache, re-downloadable)
+  and Whisper in `huggingface_hub`'s cache. Phase 2's phoneme recognizer follows
+  Whisper, for the same reason — it is a Hub repository, and the Hub already has
+  a cache. **Never in `XDG_DATA_HOME`**, which is the student's personal data.
+- **Student progress** — `$XDG_DATA_HOME/teacher-charles/charles.db`, outside
+  the repo. It is personal data. `*.db` is in `.gitignore`.
+- **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
+  product content, reviewed and tested item by item. Today `data/` is empty; the
+  base arrives in D3.
 
-O que vem depois está em `docs/plano-fase-1-5.md` §6: iGPU, turn-taking sem
-botão, avaliação de pronúncia e repetição espaçada (Fase 2).
+## State, and where the code grows next
 
-Duas dívidas conhecidas da Fase 1, as duas medidas e registradas na §5.5: a análise custa
-~10s por turno com erro (o caminho é um modelo melhor só para ela, e a medição
-mostra que isso não atrapalha a conversa), e a primeira palavra está em 2,7s
-contra a meta de 1–2s da Fase 1.5.
+All of Phase 1's deliverables are done: D0 (foundation), D1 (provider), D2 (text
+chat), D3 (contrastive base), D4 (structured correction), D5 (profile and
+level), D6 (the three modes) and D7 (progress screen, README and latency). The
+order and the definition of done for each deliverable are in
+`docs/plano-fase-1.md` §5; `docs/analise-inicial.md` has the feasibility
+analysis that gave rise to the project.
 
-Há vários perfis de aluno numa máquina, e o ativo é o de maior `seen_seq`; login
-e multiusuário de verdade ficam fora da Fase 1 (plano §4).
+**D13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
+Phase 2 plan says it does not depend on D9's gate, and it was the path taken
+while D9 stays open. What it swapped out is in §7 of `docs/plano-fase-2.md`, and
+the two debts it opened are in §6 there.
 
-Consulta à base contrastiva na Fase 1 é **casamento por lema e padrão sobre YAML
-curado**, não busca vetorial: ~100 itens cabem na memória, o casamento é
-determinístico e depurável (`"I have 30 years"` → `calque.age-have`, sempre), e
-cada item ganha um teste. Embeddings são anotados como item da Fase 2.
+Phase 1 is complete, and so is **Phase 1.5 (voice)** —
+`docs/plano-fase-1-5.md`. The student speaks via push-to-talk, Charles answers
+out loud sentence by sentence, all local. `teaching/`, `llm/` and `store/` did
+not change a single line for that: the voice came in as two ends, which was the
+bet of the §4 detour.
+
+Phase 1.5 left two debts, both measured in `docs/plano-fase-1-5.md`:
+**5.4-7.4s to the first spoken word** against the 1-2s goal (and the largest
+slice is the LLM, not the audio — the lever is the idle iGPU from §1.3), and the
+**accuracy of the STT with a Brazilian accent, which was not measured** — the
+audio in the tables is synthetic, and the 0% WER is a floor, not an expectation.
+
+**Phase 2 is open** — `docs/plano-fase-2.md`: pronunciation by phonemes and
+spaced repetition. It opened with measurement, as 1.5 did, and the measurement
+has already moved the design in five places (its §3). The numbers that matter:
+
+- Half of the pronunciation stack **is already installed** by the `voice` extra:
+  the `phonemizer` + `espeakng_loader` that Kokoro brings give the G2P, and
+  `onnxruntime` gives the runtime. What is missing is a 318 MB weight.
+- The phoneme recognizer costs **RTF 0.17** — faster than the Whisper that is
+  already on the path — and that is why it runs **after** the turn, never inside
+  it: the path to the first word is already blown at 3.99s.
+- The floor is **0.061** phoneme error rate on correct speech and the signal is
+  **0.119**, with 6 of the 8 curated errors named by the right phoneme. But the
+  Brazilian-accent proxy goes to **0.676**, and there the alignment collapses:
+  when two out of every three phonemes disagree, nothing is *the* error.
+- Hence D9 being a **gate and not a stage**: measuring with a Brazilian human
+  voice is what decides whether the evaluator exists. No product before it.
+
+What comes after is in `docs/plano-fase-2.md` §8: turn-taking without a button,
+prosody, the analysis debt, and mobile/multi-user.
+
+Two known debts from Phase 1, both measured and recorded in §5.5: the analysis
+costs ~10s per turn with an error (the way out is a better model just for it,
+and the measurement shows that does not disturb the conversation), and the first
+word is at 2.7s against Phase 1.5's goal of 1–2s. §7 of the 1.5 plan closed the
+second one by turning on the iGPU (0.9s) and did **not** close the first: the
+analysis *generates* JSON, and generation ties between CPU and iGPU.
+
+There are several student profiles on one machine, and the active one is the one
+with the highest `seen_seq`; real login and multi-user are out of scope for
+Phase 1 (plan §4).
+
+Querying the contrastive base in Phase 1 is **lemma and pattern matching over
+curated YAML**, not vector search: ~100 items fit in memory, the matching is
+deterministic and debuggable (`"I have 30 years"` → `calque.age-have`, always),
+and each item gets a test. Embeddings are noted as a Phase 2 item.

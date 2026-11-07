@@ -13,10 +13,13 @@ from .models import (
     CEFR_LEVELS,
     LEVEL_SOURCES,
     MODES,
+    REVIEW_SOURCES,
     Correction,
     LevelChange,
     LevelSignal,
     RuleCount,
+    RuleReview,
+    RuleSchedule,
     Session,
     Student,
     Turn,
@@ -549,3 +552,149 @@ class LevelRepo:
             (student_id, limit),
         ).fetchall()
         return [LevelChange.from_row(row) for row in rows]
+
+
+class ScheduleRepo:
+    """A fila da repetição espaçada (E13).
+
+    Duas tabelas, e a divisão entre elas é a de ``LevelRepo``: ``rule_review``
+    guarda o evento, ``rule_schedule`` guarda o estado que a fila consulta. O
+    estado é derivável dos eventos de propósito — quando a escada de intervalos
+    mudar, ``rule_schedule`` pode ser reconstruída a partir de ``rule_review``.
+
+    O repositório **não conhece a escada**: recebe degrau e vencimento já
+    calculados, como ``LevelRepo`` recebe o nível já estimado. Quem calcula é
+    ``teaching/schedule.py``, porque intervalo de revisão é regra pedagógica.
+
+    **As duas escritas de uma revisão não são uma transação**, e isso é a regra
+    da conexão compartilhada, não descuido: nada no caminho de uma requisição
+    abre transação de várias instruções. A ordem é escolhida por isso — o evento
+    entra primeiro, porque é dele que o estado se reconstrói. Perder o segundo
+    passo deixa uma revisão sem efeito na fila; perder o primeiro deixaria a
+    fila andada sem registro de por quê.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def get(self, student_id: int, rule_id: str) -> RuleSchedule | None:
+        """O agendamento desta regra, ou ``None`` se ela nunca foi revisada.
+
+        ``None`` não é "agendamento zerado": é a regra que o aluno errou e nunca
+        treinou, que a fila põe na frente de qualquer uma vencida.
+        """
+        row = self._conn.execute(
+            "SELECT * FROM rule_schedule WHERE student_id = ? AND rule_id = ?",
+            (student_id, rule_id),
+        ).fetchone()
+        return RuleSchedule.from_row(row) if row is not None else None
+
+    def for_student(self, student_id: int) -> dict[str, RuleSchedule]:
+        """Tudo o que está agendado para este aluno, por ``rule_id``.
+
+        Uma consulta só: quem ordena a fila precisa do estado de todas as
+        candidatas ao mesmo tempo, e são poucas (o error log entra com cinco).
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM rule_schedule WHERE student_id = ?",
+            (student_id,),
+        ).fetchall()
+        return {row["rule_id"]: RuleSchedule.from_row(row) for row in rows}
+
+    def log_review(
+        self,
+        student_id: int,
+        rule_id: str,
+        turn_id: int,
+        *,
+        hit: bool,
+        source: str,
+        box_before: int,
+        box_after: int,
+        interval_days: float,
+    ) -> int:
+        """Registra a revisão. Primeira das duas escritas, e a que importa mais."""
+        if source not in REVIEW_SOURCES:
+            raise ValueError(f"origem de revisão inválida: {source!r} (use um de {REVIEW_SOURCES})")
+        cur = self._conn.execute(
+            """
+            INSERT INTO rule_review (
+                student_id, rule_id, turn_id, hit, source,
+                box_before, box_after, interval_days
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                student_id,
+                rule_id,
+                turn_id,
+                1 if hit else 0,
+                source,
+                box_before,
+                box_after,
+                interval_days,
+            ),
+        )
+        return int(cur.lastrowid)
+
+    def save(
+        self,
+        student_id: int,
+        rule_id: str,
+        *,
+        box: int,
+        streak: int,
+        due_at: str,
+        reviewed_at: str,
+        lapsed: bool,
+    ) -> None:
+        """Põe o estado derivado no lugar. Uma instrução, como todas as daqui.
+
+        ``reviews`` e ``lapses`` são acumulados pelo próprio SQL em vez de
+        lidos-e-escritos em Python: ler para depois escrever seriam duas
+        instruções, e duas requisições podem se intercalar entre elas.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO rule_schedule (
+                student_id, rule_id, box, streak, reviews, lapses, due_at, last_review_at
+            ) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(student_id, rule_id) DO UPDATE SET
+                box            = excluded.box,
+                streak         = excluded.streak,
+                reviews        = rule_schedule.reviews + 1,
+                lapses         = rule_schedule.lapses + excluded.lapses,
+                due_at         = excluded.due_at,
+                last_review_at = excluded.last_review_at
+            """,
+            (student_id, rule_id, box, streak, 1 if lapsed else 0, due_at, reviewed_at),
+        )
+
+    def reviews(
+        self,
+        student_id: int,
+        rule_id: str | None = None,
+        limit: int = 50,
+    ) -> list[RuleReview]:
+        """As revisões mais recentes, da mais nova para trás.
+
+        É o material de recalibrar a escada: o intervalo que o aluno de fato
+        recebeu está na linha, não na constante de hoje.
+        """
+        if rule_id is None:
+            rows = self._conn.execute(
+                "SELECT * FROM rule_review WHERE student_id = ? ORDER BY id DESC LIMIT ?",
+                (student_id, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM rule_review
+                 WHERE student_id = ? AND rule_id = ?
+                 ORDER BY id DESC LIMIT ?
+                """,
+                (student_id, rule_id, limit),
+            ).fetchall()
+        return [RuleReview.from_row(row) for row in rows]
+
+    def count(self) -> int:
+        return self._conn.execute("SELECT count(*) AS n FROM rule_review").fetchone()["n"]

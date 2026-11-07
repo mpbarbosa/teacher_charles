@@ -50,6 +50,20 @@
           <span class="category">{{ rule.category }}</span>
           {% if rule.last_at %}<span class="when">last: {{ rule.last_at }}</span>{% endif %}
           {% if rule.retired %}<span class="retired">rule retired from the base</span>{% endif %}
+          {#
+            A agenda da E13. Sem isto a tela sabe somar erros e não sabe dizer a
+            única coisa que o aluno quer saber — se ele está melhorando nesta
+            regra. O texto fala em acertos seguidos, nunca em percentual: o
+            sinal é "errou / não errou onde o exercício pediu", e um número de 0
+            a 100 aqui seria precisão inventada.
+          #}
+          {% if rule.graduated %}
+          <span class="learned">learned — next review {{ rule.due_at[:10] }}</span>
+          {% elif rule.streak %}
+          <span class="streak">
+            {{ rule.streak }} right in a row{% if rule.lapses %}, {{ rule.lapses }} slip{{ '' if rule.lapses == 1 else 's' }}{% endif %}
+          </span>
+          {% endif %}
         </div>
       </li>
       {% endfor %}

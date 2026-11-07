@@ -262,11 +262,15 @@ regra de sentido único que vale para `llm`.
   backend Vulkan, e ligá-lo leva o turno de voz de 6,3 s para 4,0 s e a
   primeira palavra do chat de 7,4 s para 0,9 s, sem uma linha de código. Deixa
   de ser trabalho futuro e vira configuração recomendada.
-- **Turn-taking sem botão**, com o Silero que já está no processo.
-- **Avaliação de pronúncia por fonemas** (Fase 2, como na análise inicial): é o
-  que transforma "o aluno falou" em "o aluno falou **bem**", e é a razão de a
-  voz existir num professor de inglês.
-- **Medir o STT com voz humana brasileira** — a dívida da §2.3.
+- **Turn-taking sem botão**, com o Silero que já está no processo. Continua
+  aqui: é máquina de estados de áudio, não ensino, e não encosta na Fase 2.
+- ~~**Avaliação de pronúncia por fonemas**~~ e ~~**medir o STT com voz humana
+  brasileira**~~ — **saíram desta lista e abriram a Fase 2**, ver
+  `docs/plano-fase-2.md`. As duas foram juntas de propósito: a medição de
+  abertura da Fase 2 (§2.4 de lá) colocou o aluno real entre 0,12 e 0,68 de
+  taxa de erro de fonema sem dizer onde dentro desse colchete ele cai, e isso
+  promoveu a dívida da §2.3 de "falta medir" a **portão da fase** — é ela que
+  decide se o avaliador de pronúncia é viável nesta pilha.
 
 ---
 

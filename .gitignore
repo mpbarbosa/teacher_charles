@@ -19,3 +19,10 @@ models/
 *.db
 *.db-wal
 *.db-shm
+
+# Gravacoes de voz nunca entram no repo. Mesma razao do *.db: e dado pessoal.
+# O measure_phonemes escreve o WAV e o relatorio .json lado a lado em
+# gravacoes/, e o relatorio e dado pessoal tambem -- carrega a transcricao do
+# que a pessoa disse. O *.wav solto cobre gravacao feita fora da pasta.
+gravacoes/
+*.wav
