@@ -4,10 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Language
 
-Code, comments, docstrings, commits and docs in **Portuguese**. Everything the
-student sees — persona, UI strings, model response — in **English**, no
-exception: the product is "100% in English" by an audience decision
-(`docs/plano-fase-1.md` §1.1).
+Code, comments, docstrings, commits and docs in **Portuguese**; **this file is
+the exception and stays in English.** Everything the student sees — persona, UI
+strings, model response — in **English**, no exception: the product is "100% in
+English" by an audience decision (`docs/plano-fase-1.md` §1.1).
+
+The deliverable labels are the ones the plans in `docs/` use — **E0–E13**, E for
+*entrega* — so that a reference here and a reference there name the same thing.
 
 ## Commands
 
@@ -50,7 +53,7 @@ To use a model that is already downloaded: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_
 > **The pedagogical structure lives in the application, not in the prompt.
 > A correction is structured data, not prose.**
 
-D13 added the second half of that: **what the application knows about the
+E13 added the second half of that: **what the application knows about the
 student is structured data too, not a ranking.** The drill queue stopped being
 an error count and became a review schedule, because a count only knows how to
 add up — it never records that the student learned.
@@ -59,7 +62,7 @@ Practical consequence: when there is a curated rule for the error, the
 correction **cites the `rule_id`** from `data/contrastive/` instead of letting
 the model invent grammar. That is why the `correction` table has existed since
 the first migration, with a nullable `rule_id` — `NULL` marks "came from the
-model alone", a distinction D4 measures and D7 shows. Before solving something
+model alone", a distinction E4 measures and E7 shows. Before solving something
 by adding a sentence to the prompt, check whether the right place isn't code in
 `teaching/`.
 
@@ -71,7 +74,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/` | The product. **Agnostic about where the text came from** — it takes a string and returns `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed` events. That is what allows STT/TTS to be attached in Phase 1.5 without rewriting the middle. |
 | `voice/` | The two ends of Phase 1.5 — STT and TTS — behind `base.SpeechToText` / `base.TextToSpeech`, in the same arrangement as `llm/`. **It does not import `teaching/`**: it takes bytes and returns text; it takes text and returns PCM. |
 | `store/` | SQLite through the stdlib's `sqlite3`. Schema in numbered `.sql` files, no ORM; the dataclasses in `models.py` only give the rows names. |
-| `teaching/schedule.py` | The review schedule (D13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
 | `web/` | Single page: Jinja template + JS/CSS with no build step. |
@@ -110,12 +113,12 @@ that swaps rules on every message is a quiz, and a stable block in the prompt is
 a cached prefix.
 
 **The drill queue is a schedule, not a ranking.** What orders it is
-`Scheduler.queue` (D13): overdue first, with the frequency in `correction` left
+`Scheduler.queue` (E13): overdue first, with the frequency in `correction` left
 as the *last* tiebreak between equally urgent rules. The swap was not cosmetic —
 frequency is a number that only goes up, so the most-missed rule in the history
 went on being the most-missed one after the student had got it right ten times,
 and the drill never let it go. Reverting the sort key to `-times` leaves four
-tests red, one of them from D6.
+tests red, one of them from E6.
 
 **Getting it right is the absence of an error where the error would have shown
 up, and that is asymmetric.** The analyzer returns errors, not successes, so a
@@ -130,7 +133,7 @@ in §6 of the plan: inside the drill, "did not err" and "did not try" are the
 same observation.
 
 **The first rung of the interval ladder is worth half a day, not zero**, and
-that is what replaces D6's rotation. With zero, a rule just missed falls due at
+that is what replaces E6's rotation. With zero, a rule just missed falls due at
 once and goes back to being the most overdue one in the next session, forever —
 the student would never see the second rule. `DRILL_ROTATION` survived only for
 the case the schedule cannot see (a rule picked in a session that ended with no
@@ -144,8 +147,8 @@ rebuilt from the event and not the other way round.
 **The order of the system messages is persona → level → mode → drill data**,
 and then, at the end of the prompt, the curated hint and the drill request. The
 beginning is ordered by stability (what changes least comes first, because of the
-prefix cache); the end is ordered by effectiveness — measured twice, in D4 with
-the hint and in D6 with the drill: an instruction far from the point of
+prefix cache); the end is ordered by effectiveness — measured twice, in E4 with
+the hint and in E6 with the drill: an instruction far from the point of
 generation gets diluted and the small model ignores it.
 
 **The student's level is decided by code, not by the model.** `teaching/level.py`
@@ -161,7 +164,7 @@ that the same four turns would move the level again on the next turn.
 
 **The warm-up sends the turn's prefix, not a "hi" nor "just the persona".**
 There is a single list, `TurnRunner.stable_prefix()`, and the warm-up and the
-turn use the same one — because there were once two and they diverged: D5 and D6
+turn use the same one — because there were once two and they diverged: E5 and E6
 added level and mode to the turn, the warm-up stayed on the persona, and the
 first turn arrived with 53% of the prompt cached and 11.6s to the first word.
 With the same list: 0.9s (plan §5.5). `_warm_up` never propagates an error —
@@ -183,7 +186,7 @@ message a second time.
 
 **The microphone transcript goes to the text field, not to the turn.** STT makes
 mistakes; an STT error that becomes a turn makes Charles correct an error the
-student did not make — the same class of failure D3/D4 exist to avoid on the
+student did not make — the same class of failure E3/E4 exist to avoid on the
 model's side. `POST /api/stt` returns only the text and **records no turn at
 all** (`test_nao_grava_turno_nenhum`). It is the only safeguard that does not
 depend on which STT model is loaded, and it exists because accuracy with a
@@ -292,20 +295,20 @@ Three destinations, and confusing them is a category error:
   the repo. It is personal data. `*.db` is in `.gitignore`.
 - **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
-  base arrives in D3.
+  base arrives in E3.
 
 ## State, and where the code grows next
 
-All of Phase 1's deliverables are done: D0 (foundation), D1 (provider), D2 (text
-chat), D3 (contrastive base), D4 (structured correction), D5 (profile and
-level), D6 (the three modes) and D7 (progress screen, README and latency). The
+All of Phase 1's deliverables are done: E0 (foundation), E1 (provider), E2 (text
+chat), E3 (contrastive base), E4 (structured correction), E5 (profile and
+level), E6 (the three modes) and E7 (progress screen, README and latency). The
 order and the definition of done for each deliverable are in
 `docs/plano-fase-1.md` §5; `docs/analise-inicial.md` has the feasibility
 analysis that gave rise to the project.
 
-**D13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
-Phase 2 plan says it does not depend on D9's gate, and it was the path taken
-while D9 stays open. What it swapped out is in §7 of `docs/plano-fase-2.md`, and
+**E13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
+Phase 2 plan says it does not depend on E9's gate, and it was the path taken
+while E9 stays open. What it swapped out is in §7 of `docs/plano-fase-2.md`, and
 the two debts it opened are in §6 there.
 
 Phase 1 is complete, and so is **Phase 1.5 (voice)** —
@@ -334,7 +337,7 @@ has already moved the design in five places (its §3). The numbers that matter:
   **0.119**, with 6 of the 8 curated errors named by the right phoneme. But the
   Brazilian-accent proxy goes to **0.676**, and there the alignment collapses:
   when two out of every three phonemes disagree, nothing is *the* error.
-- Hence D9 being a **gate and not a stage**: measuring with a Brazilian human
+- Hence E9 being a **gate and not a stage**: measuring with a Brazilian human
   voice is what decides whether the evaluator exists. No product before it.
 
 What comes after is in `docs/plano-fase-2.md` §8: turn-taking without a button,
