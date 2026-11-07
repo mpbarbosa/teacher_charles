@@ -543,12 +543,13 @@ DC_DOMINANCE = 0.5
 # abertura. Existe porque o degrau não começa necessariamente na amostra zero:
 # medido, um bloco de 10 ms limpo antes dele.
 ONSET_WINDOW_SECONDS = 0.1
-# Quantos blocos não dominados o corte atravessa antes de desistir. Não é
-# folga de segurança: o bloco em que o degrau **atravessa o zero** tem média
-# quase nula contra um RMS enorme e não passa pelo `DC_DOMINANCE`, então um
-# corte contíguo para dentro do próprio degrau. Dois blocos porque a travessia
-# cabe em um na resolução de 10 ms, e o segundo é a margem; mais que isso
-# começaria a andar dentro de fala.
+# Quantos blocos não dominados a travessia do zero pode ocupar. Não é folga
+# de segurança: o bloco em que o degrau **atravessa o zero** tem média quase
+# nula contra um RMS enorme e não passa pelo `DC_DOMINANCE`, então um corte
+# puramente contíguo para dentro do próprio degrau. Dois blocos porque a
+# travessia cabe em um na resolução de 10 ms, e o segundo é a margem. O que
+# impede o corte de andar dentro da fala não é este número, é a travessia ser
+# atravessada **uma vez só** — ver `_trim_lead_in`.
 GAP_MAX_BLOCKS = 2
 
 
@@ -878,10 +879,16 @@ def record(seconds: int, out: Path) -> Path:
 def _trim_lead_in(path: Path, max_seconds: float = LEAD_IN_MAX_SECONDS) -> float:
     """Joga fora só o transiente de abertura, e devolve quanto cortou.
 
-    Varre blocos de 10 ms do começo e para no primeiro que não é dominado por
-    DC — ver ``DC_DOMINANCE``. Reescreve o arquivo no lugar: o WAV é o corpus
-    da E9, e um corpus com o estouro do conversor dentro precisa ser limpo
-    outra vez toda vez que for remedido.
+    Varre blocos de 10 ms do começo, acha onde o degrau começa e segue
+    enquanto o bloco for dominado por DC — ver ``DC_DOMINANCE``. A corrida é
+    contígua com **uma** exceção: a travessia do zero do próprio degrau, uma
+    falha de até ``GAP_MAX_BLOCKS`` blocos que é atravessada no máximo uma
+    vez. Depois dela a contiguidade volta a valer, e é isso que impede um
+    bloco enviesado no meio da fala de puxar o corte para dentro da elocução.
+
+    Reescreve o arquivo no lugar: o WAV é o corpus da E9, e um corpus com o
+    estouro do conversor dentro precisa ser limpo outra vez toda vez que for
+    remedido.
     """
     import numpy as np
 
@@ -914,30 +921,41 @@ def _trim_lead_in(path: Path, max_seconds: float = LEAD_IN_MAX_SECONDS) -> float
     if onset is None:
         return 0.0
 
-    # Daí segue até o **último** bloco dominado por DC, atravessando uma falha
-    # curta no meio. Não contíguo, e a razão é medida: no bloco em que o
-    # degrau atravessa o zero a média quase se anula contra um RMS enorme
-    # (medido numa gravação de verdade: média +0,1004, RMS 0,7222, razão
-    # 0,14), e ele não passa pelo `DC_DOMINANCE`. A versão contígua parava
-    # exatamente nele — cortava um bloco só, anunciava "10 ms de transiente
-    # cortados" e deixava 970 ms de degrau no arquivo, que o
+    def run_end(start: int) -> int:
+        """Onde termina a corrida contígua de blocos dominados a partir daqui."""
+        end = start
+        while end + block <= limit and dc_dominated(end):
+            end += block
+        return end
+
+    # A corrida é contígua, com **uma** exceção atravessada **uma** vez: no
+    # bloco em que o degrau atravessa o zero a média quase se anula contra um
+    # RMS enorme (medido numa gravação de verdade: média +0,1004, RMS 0,7222,
+    # razão 0,14), e esse bloco não passa pelo `DC_DOMINANCE`. A versão
+    # puramente contígua parava nele — cortava um bloco só, anunciava "10 ms
+    # de transiente cortados" e deixava 970 ms de degrau no arquivo, que o
     # `diagnose_signal` recusava em seguida. É o espelho do erro do bloco de
     # onset acima: lá o degrau não começava no primeiro bloco, aqui ele tem um
     # bloco limpo **dentro**.
     #
-    # A tolerância é curta porque a contiguidade protegia algo real: um bloco
-    # isolado com viés no meio da fala não deve autorizar um corte que coma a
-    # elocução. Com `GAP_MAX_BLOCKS` a falha tem de ser breve **e** o degrau
-    # tem de voltar; uma elocução dá dezenas de blocos não dominados em
-    # sequência e não passa por essa peneira.
-    cut = onset
-    probe = onset
-    while probe + block <= limit:
-        if dc_dominated(probe):
-            cut = probe + block
-        elif probe - cut >= GAP_MAX_BLOCKS * block:
+    # Uma vez, e **dentro da janela do onset**. Não "sempre que a falha for
+    # curta", e isso é medido também: numa gravação de verdade o primeiro
+    # segundo tem seis falhas de 1 ou 2 blocos entre blocos dominados **dentro
+    # da fala** — um bloco de fala com viés passa pela peneira de DC de vez em
+    # quando. Atravessar todas levava o corte de 490 ms a 940 ms, comendo o
+    # começo da elocução, e no alinhamento isso reaparece como deleção de
+    # fonema. A travessia do zero é parte do transiente de **abertura**, logo
+    # cai na mesma janela em que o onset tem de cair; fora dela, o que parece
+    # falha curta é fala, e vale a contiguidade.
+    janela = int(ONSET_WINDOW_SECONDS * params.framerate)
+    cut = run_end(onset)
+    for gap in range(1, GAP_MAX_BLOCKS + 1):
+        resume = cut + gap * block
+        if resume >= janela:
             break
-        probe += block
+        if resume + block <= limit and dc_dominated(resume):
+            cut = run_end(resume)
+            break
     skip = cut * frame
     if skip >= len(raw):
         return 0.0
