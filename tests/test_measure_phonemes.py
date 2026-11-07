@@ -212,7 +212,12 @@ def test_run_audio_devolve_a_recusa_como_dado(measure_phonemes, numpy_dublado, t
     assert "per" not in medida
 
 
-def _degrau_com_travessia(path, sr: int = 16000) -> float:
+def _degrau_com_travessia(
+    path,
+    sr: int = 16000,
+    travessia_blocos: int = 1,
+    vies_na_fala: bool = False,
+) -> float:
     """Escreve um WAV com o perfil **medido** de uma abertura de conversor.
 
     Os números vêm de uma gravação de verdade da E9, bloco de 10 ms por bloco
@@ -229,15 +234,23 @@ def _degrau_com_travessia(path, sr: int = 16000) -> float:
     partes = [np.full(bloco, -0.3, dtype=np.float32)]
     # A travessia: parte acima de zero, parte no fundo. A média quase se
     # anula contra um RMS enorme, e é isso que a peneira de DC não vê.
-    travessia = np.full(bloco, -1.0, dtype=np.float32)
-    travessia[: int(bloco * 0.6)] = 0.78
-    partes.append(travessia)
+    for _ in range(travessia_blocos):
+        travessia = np.full(bloco, -1.0, dtype=np.float32)
+        travessia[: int(bloco * 0.6)] = 0.78
+        partes.append(travessia)
     # O degrau decaindo, constante dentro de cada bloco: razão 1,0 em todos.
     for i in range(48):
         partes.append(np.full(bloco, -1.0 * (0.94**i), dtype=np.float32))
     transiente = sum(len(p) for p in partes) / sr
     # Fala: média zero, nível parecido com o da gravação (RMS ~0,017).
     rng = np.random.default_rng(7)
+    if vies_na_fala:
+        # Um bloco de fala, depois um bloco de fala **enviesado** — razão 1,0,
+        # dominado por DC como o degrau. Medido: no primeiro segundo de uma
+        # gravação de verdade há seis falhas curtas entre blocos assim, todas
+        # dentro da elocução.
+        partes.append(rng.normal(0.0, 0.017, size=bloco).astype(np.float32))
+        partes.append(np.full(bloco, 0.02, dtype=np.float32))
     partes.append(rng.normal(0.0, 0.017, size=int(2.0 * sr)).astype(np.float32))
     partes.append(np.zeros(int(0.5 * sr), dtype=np.float32))
     amostras = np.clip(np.concatenate(partes), -1.0, 1.0)
@@ -281,3 +294,45 @@ def test_corta_o_degrau_inteiro_apesar_da_travessia(measure_phonemes, tmp_path):
     # E a fala continua lá: um corte que passasse a peneira comendo a
     # elocução também faria o diagnóstico calar.
     assert len(sobrou) / 16000 == pytest.approx(2.5, abs=0.05)
+
+
+def test_atravessa_travessia_de_dois_blocos(measure_phonemes, tmp_path):
+    """A travessia pode ocupar dois blocos, e o corte ainda chega ao fim.
+
+    `GAP_MAX_BLOCKS` vale 2 justamente para isso: a travessia cabe em um bloco
+    na resolução de 10 ms e o segundo é a margem. Sem este caso, o número 2
+    seria uma afirmação sem medição por trás.
+    """
+    pytest.importorskip("numpy")
+    mp = measure_phonemes
+    wav = tmp_path / "travessia-dupla.wav"
+    transiente = _degrau_com_travessia(wav, travessia_blocos=2)
+
+    cortou = mp._trim_lead_in(wav)
+
+    assert cortou == pytest.approx(transiente, abs=0.02), (
+        f"cortou {cortou * 1000:.0f} ms de {transiente * 1000:.0f} ms de transiente"
+    )
+
+
+def test_nao_estende_o_corte_por_bloco_enviesado_na_fala(measure_phonemes, tmp_path):
+    """Um bloco de fala dominado por DC **não** puxa o corte para dentro dela.
+
+    É o perigo que a contiguidade protegia, e atravessar toda falha curta o
+    reintroduziu: numa gravação de verdade o corte foi de 490 ms para 940 ms
+    comendo o começo da elocução, e no alinhamento isso volta como deleção de
+    fonema — a aplicação acusaria um erro que o aluno não cometeu. A travessia
+    é atravessada uma vez e dentro da janela do onset; o que aparece depois é
+    fala.
+    """
+    pytest.importorskip("numpy")
+    mp = measure_phonemes
+    wav = tmp_path / "vies-na-fala.wav"
+    transiente = _degrau_com_travessia(wav, vies_na_fala=True)
+
+    cortou = mp._trim_lead_in(wav)
+
+    assert cortou == pytest.approx(transiente, abs=0.001), (
+        f"cortou {cortou * 1000:.0f} ms, {(cortou - transiente) * 1000:.0f} ms "
+        "além do transiente — isso é fala"
+    )
