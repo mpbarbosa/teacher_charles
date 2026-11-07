@@ -28,7 +28,7 @@ TC_VOICE_ENABLED=true uv run teacher-charles
 
 ```bash
 uv run pytest                            # tudo (integração inclusa, bate no Ollama de verdade)
-uv run pytest -m "not integration"       # 522 testes, ~4s, sem modelo nenhum
+uv run pytest -m "not integration"       # 620 testes, ~16s, sem modelo nenhum
 uv run pytest -m integration             # só os 9 que exercitam o Ollama local
 uv run pytest tests/test_turn.py::test_nome -x
 uv run ruff check . && uv run ruff format --check .
@@ -51,6 +51,11 @@ Para usar um modelo que já está baixado: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_
 > **A estrutura pedagógica mora na aplicação, não no prompt. Correção é dado
 > estruturado, não prosa.**
 
+A E13 acrescentou a segunda metade disso: **o que a aplicação sabe sobre o
+aluno também é dado estruturado, não um ranking.** A fila do drill deixou de ser
+contagem de erros e passou a ser agenda de revisão, porque contagem só sabe
+somar — ela nunca registra que o aluno aprendeu.
+
 Consequência prática: quando houver uma regra curada para o erro, a correção
 **cita o `rule_id`** de `data/contrastive/` em vez de deixar o modelo inventar
 gramática. Por isso a tabela `correction` existe desde a primeira migração, com
@@ -66,6 +71,7 @@ o lugar certo não é código em `teaching/`.
 | `teaching/` | O produto. **Agnóstico quanto à origem do texto** — recebe string, devolve eventos `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed`. É o que permite acoplar STT/TTS na Fase 1.5 sem reescrever o meio. |
 | `voice/` | As duas pontas da Fase 1.5 — STT e TTS — atrás de `base.SpeechToText` / `base.TextToSpeech`, no mesmo arranjo de `llm/`. **Não importa `teaching/`**: recebe bytes, devolve texto; recebe texto, devolve PCM. |
 | `store/` | SQLite pelo `sqlite3` da stdlib. Esquema em `.sql` numerado, sem ORM; as dataclasses de `models.py` só dão nome às linhas. |
+| `teaching/schedule.py` | A agenda de revisão (E13). Sabe **quando** uma regra volta e não sabe nada de base contrastiva; o `DrillPlanner` sabe **quais** regras podem virar drill. Nenhum dos dois decide sozinho. |
 | `prompts.py` | Carrega `prompts/*.md` com cache por mtime: editar a persona vale no turno seguinte, sem reiniciar. |
 | `app.py` | FastAPI. Monta tudo no `lifespan` e guarda em `app.state`. |
 | `web/` | Página única: template Jinja + JS/CSS sem build step. |
@@ -95,9 +101,39 @@ Por isso o aquecimento também manda o partial do nível do perfil ativo.
 
 **O modo muda política, não só prosa.** `teaching/modes.py` decide o teto de
 correções por turno (5 em `correction`, 2 nos outros) e, no drill, **qual regra**
-é treinada — por consulta ao `correction` agregado, nunca pelo modelo. Uma regra
+é treinada — por consulta ao banco, nunca pelo modelo. Uma regra
 por sessão (`session.drill_rule_id`), não por turno: drill que troca de regra a
 cada mensagem é questionário, e bloco estável no prompt é prefixo cacheado.
+
+**A fila do drill é agenda, não ranking.** Quem ordena é `Scheduler.queue`
+(E13): vencida primeiro, e a frequência de `correction` ficou como *último*
+desempate entre regras igualmente urgentes. A troca não foi cosmética —
+frequência é um número que só sobe, então a regra mais errada do histórico
+continuava sendo a mais errada depois de o aluno acertar dez vezes e o drill
+nunca a soltava. Reverter a chave de ordenação para `-times` deixa quatro testes
+vermelhos, inclusive um da E6.
+
+**Acerto é a ausência de erro onde o erro teria aparecido, e isso é assimétrico.**
+O analisador devolve erros, não acertos, então acerto só pode ser inferido —
+e só vale no drill, sobre a regra em treino, porque ali o exercício construiu a
+oportunidade. Correção pela regra é erro em qualquer modo; turno limpo em
+conversa livre **não é nada**, e contá-lo graduaria regras pelo silêncio.
+A guarda que mais importa: **análise que não rodou não gradua ninguém** —
+sem ela, analisador fora do ar viraria acerto, porque produz a mesma ausência
+de correção. Ponto cego conhecido e anotado na §6 do plano: dentro do drill,
+"não errou" e "não tentou" são a mesma observação.
+
+**O primeiro degrau da escada de intervalos vale meio dia, não zero**, e é isso
+que substitui o rodízio da E6. Com zero, a regra recém-errada vence na hora e
+volta a ser a mais vencida na sessão seguinte, para sempre — o aluno nunca veria
+a segunda regra. O `DRILL_ROTATION` sobreviveu só para o caso que a agenda não
+vê (regra escolhida numa sessão que terminou sem resposta), e como termo de
+ordenação em vez de filtro.
+
+**As duas escritas de uma revisão não são uma transação.** É a regra da conexão
+compartilhada, e a ordem é escolhida por causa dela: `rule_review` (o evento)
+antes de `rule_schedule` (o estado), porque o estado se reconstrói do evento e
+não o contrário.
 
 **A ordem das mensagens de sistema é persona → nível → modo → dados do drill**,
 e depois, no fim do prompt, a dica curada e o pedido do drill. O começo é por
@@ -256,6 +292,11 @@ e nível), E6 (os três modos) e E7 (tela de progresso, README e latência). A o
 de pronto de cada entrega estão em `docs/plano-fase-1.md` §5;
 `docs/analise-inicial.md` tem a análise de viabilidade que originou o projeto.
 
+A **E13 (repetição espaçada) está entregue**, fora de ordem e de propósito: o
+plano da Fase 2 §5 diz que ela não depende do portão da E9, e foi o caminho
+tomado enquanto a E9 segue aberta. O que ela trocou está na §7 de
+`docs/plano-fase-2.md`, e as duas dívidas que ela abriu na §6 de lá.
+
 A Fase 1 está completa, e a **Fase 1.5 (voz) também** —
 `docs/plano-fase-1-5.md`. O aluno fala por push-to-talk, o Charles responde em
 voz alta sentença por sentença, tudo local. `teaching/`, `llm/` e `store/` não
@@ -285,7 +326,7 @@ desenho em cinco lugares (§3 de lá). Os números que importam:
 - Daí a E9 ser **portão e não etapa**: medir com voz humana brasileira é o que
   decide se o avaliador existe. Nada de produto antes dela.
 
-O que vem depois está em `docs/plano-fase-2.md` §7: turn-taking sem botão,
+O que vem depois está em `docs/plano-fase-2.md` §8: turn-taking sem botão,
 prosódia, a dívida da análise, e mobile/multiusuário.
 
 Duas dívidas conhecidas da Fase 1, as duas medidas e registradas na §5.5: a análise custa

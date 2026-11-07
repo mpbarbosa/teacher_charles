@@ -720,7 +720,7 @@ entregas numeradas.
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; ~15 itens, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate`** (§3.2) |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
-| **E13** | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | A regra do drill vem do agendamento e não da contagem; regra acertada *n* vezes seguidas sai da fila e volta depois do intervalo; um teste mede o intervalo |
+| **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
 
 **A E9 é portão, não etapa.** É a única entrega da fase cujo resultado pode
 cancelar as outras, e ela vem primeiro por isso. A §2.4 colocou o aluno real
@@ -732,7 +732,10 @@ código que a medição pode jogar fora — exatamente o que a abertura por medi
 existe para evitar.
 
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
-`correction`, que existe desde a primeira migração.
+`correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
+entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte
+`pronunciation_signal` que a §4 previa não existe ainda, então a agenda nasceu
+com uma fonte só.
 
 ---
 
@@ -748,10 +751,83 @@ A **E13 não depende da E9** e pode correr em paralelo: ela consome
 | **Três modelos nativos no mesmo processo** | O lock por motor da Fase 1.5 continua, e a §3.6 explica por que a CPU agora caberia: o LLM saiu dela |
 | **Gravação quebrada reportada como medição** | Quatro perguntas de sinal antes de o modelo carregar, e recusa com diagnóstico em vez de PER (§3.5). A primeira gravação da E9 caiu exatamente nisso |
 | **318 MB a mais de peso** | Extra desligado por default, como a voz. Quem não quer pronúncia não baixa nada |
+| **Acerto no drill não distingue "não errou" de "não tentou"** (E13) | Dívida aberta, não resolvida. O aluno que responde *"yes"* três vezes gradua a regra. Não há guarda determinística hoje — o analisador devolve erros, não "usou a estrutura" — e um piso inventado (contagem de palavras, lista de respostas triviais) seria número sem medição. O que existe é o dado: `rule_review.turn_id` aponta para o turno, então dá para medir quantos acertos registrados não eram tentativa. Pinado em `test_uma_resposta_vazia_de_conteudo_conta_como_acerto` |
+| **A escada de intervalos não é medida** (E13) | Admitido no código. Não havia histórico de revisão para calibrar escada nenhuma antes de a E13 existir, então os valores são Leitner clássico. É por isso que `rule_review` guarda `interval_days` na linha em vez de confiar na constante: quando houver histórico, a escada se recalibra contra o que o aluno de fato recebeu |
 
 ---
 
-## 7. O que vem depois
+## 7. A E13, e o que ela trocou
+
+A entrega está em `teaching/schedule.py`, `store/migrations/004_schedule.sql` e
+`tests/test_schedule.py`. Três decisões merecem registro, porque nenhuma das
+três é óbvia no arquivo que a implementa.
+
+### 7.1 O sinal que faltava não era "errou mais", era "acertou desde então"
+
+Até a E6 a fila do drill era um ranking de frequência. O problema não era de
+implementação: **frequência é um número que só sobe.** Ela sabe o que o aluno
+errou e não sabe o que ele aprendeu, então a regra mais corrigida do histórico
+continua sendo a mais corrigida depois de o aluno acertar dez vezes, e o drill
+nunca a solta. Nenhum ajuste de ordenação resolve isso, porque o dado que
+faltava não estava no banco.
+
+A troca está medida num teste e não numa frase: em
+`test_a_fila_e_a_agenda_e_nao_a_contagem`, a regra com cinco erros está graduada
+e a com um erro nunca foi treinada. A contagem devolveria a primeira; a agenda
+devolve a segunda. Com a ordenação revertida para `-times`, **quatro** testes
+ficam vermelhos — incluindo o do rodízio da E6, que já existia.
+
+### 7.2 A assimetria do sinal é a decisão de desenho da entrega
+
+Não existe sinal de "o aluno usou a estrutura e acertou": o analisador devolve
+erros. Então acerto aqui é *ausência de erro num lugar onde o erro teria
+aparecido*, e esse lugar é o drill — o exercício pediu a estrutura e esperou a
+resposta, logo a oportunidade foi construída. Fora do drill, turno limpo não é
+nada: pode ser que o aluno não tenha usado a estrutura.
+
+| | conta como |
+|---|---|
+| drill, sobre a regra em treino, sem correção | **acerto** |
+| qualquer modo, correção pela regra | **erro** |
+| conversa, sem correção | **nada** |
+| **análise que não rodou** | **nada** |
+
+A última linha é a guarda que mais importa, e é a §3.3 outra vez: acerto é a
+*ausência* de correção, então análise que não rodou produz a mesma ausência e
+graduaria a regra por falha de infraestrutura. Quando o avaliador não está
+entendendo, calar é a resposta.
+
+O que essa assimetria **não** resolve está na §6: dentro do drill, "não errou" e
+"não tentou" continuam sendo a mesma observação.
+
+### 7.3 O rodízio não foi removido — foi rebaixado, e o intervalo o substituiu
+
+O `DRILL_ROTATION` da E6 existia para a fila não travar na regra mais errada. A
+agenda torna isso desnecessário por um caminho mais barato: o degrau zero da
+escada vale **meio dia**, não zero. Com zero, a regra recém-errada vence na hora
+e volta a ser a mais vencida na sessão seguinte, para sempre — era exatamente o
+que o rodízio remendava. Com meio dia ela volta amanhã e outra vencida é
+treinada hoje. Interleaving passa a ser consequência da agenda, não exceção
+colada em cima dela.
+
+O rodízio sobrevive porque cobre o único caso que a agenda não vê: **regra
+escolhida numa sessão que terminou sem resposta** não gera revisão, então sem
+ele seria escolhida outra vez. Virou termo de ordenação em vez de filtro, o que
+também apagou o `fresh or counts` da E6 — a degradação agora é a própria chave.
+
+### 7.4 Uma fonte, não duas
+
+A §4 especifica `teaching/schedule.py` como repetição espaçada sobre
+`correction` **+** `pronunciation_signal`. A segunda fonte é da E12, atrás do
+portão da E9, e não existe. A §5 já havia reconciliado isso ao dizer que a E13
+não depende da E9 *porque* consome `correction` — e é o que foi feito: a agenda
+nasceu com uma fonte. `Scheduler.review` recebe `rule_id`, acerto e origem, e
+não sabe de onde veio a evidência, então a E12 pendura `pronunciation_signal`
+acrescentando um valor a `rule_review.source` e nada mais.
+
+---
+
+## 8. O que vem depois
 
 - **Turn-taking sem botão**, com o Silero que já está no processo (§6 do plano
   1.5, inalterado).

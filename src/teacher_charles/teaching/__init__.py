@@ -22,6 +22,16 @@ from .level import (
     partial_name,
 )
 from .modes import DrillPlanner, DrillTarget, drill_block
+from .schedule import (
+    GRADUATED_STREAK,
+    INTERVALS_DAYS,
+    Queued,
+    Review,
+    Scheduler,
+    grade,
+    interval_for,
+    is_graduated,
+)
 from .turn import Analyzed, Chunk, Done, Failed, Leveled, TurnEvent, TurnRunner
 
 __all__ = [
@@ -35,6 +45,8 @@ __all__ = [
     "Done",
     "DrillPlanner",
     "DrillTarget",
+    "GRADUATED_STREAK",
+    "INTERVALS_DAYS",
     "Failed",
     "Finding",
     "LevelDecision",
@@ -42,12 +54,18 @@ __all__ = [
     "LevelTracker",
     "Leveled",
     "Match",
+    "Queued",
+    "Review",
+    "Scheduler",
     "Signals",
     "TurnEvent",
     "TurnRunner",
     "drill_block",
     "estimate_level",
     "get_base",
+    "grade",
+    "interval_for",
+    "is_graduated",
     "load_base",
     "partial_name",
 ]
