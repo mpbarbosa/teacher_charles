@@ -109,9 +109,14 @@ def test_recusa_aparece_na_tabela(measure_phonemes):
 
 
 # O `run_audio` é testável sem os 318 MB porque os pesados entram por função:
-# `read_wav`, o diagnóstico, o G2P e o reconhecedor são todos dublados aqui, e o
-# `numpy` que a função importa só precisa existir — nada abaixo dele é exercido.
+# `read_wav`, o diagnóstico, o G2P e o reconhecedor são todos dublados aqui.
 # O que se prende aqui é o **contrato de retorno**, que é o que o `--corpus` lê.
+#
+# O `numpy` é dublado junto, e não por elegância: ele **não** está no extra
+# `dev`: chega com o `voice`. Quem tem a voz instalada vê estes testes passarem
+# com o numpy de verdade; o CI roda `uv sync --extra dev --frozen` e quebrava no
+# `import numpy as np` de dentro da função. Dublar é honesto aqui porque nada
+# abaixo do numpy é exercido: todo helper que o recebe está dublado também.
 
 
 class _Recognizer:
@@ -129,7 +134,19 @@ class _Alinhamento:
     deletions = []
 
 
-def test_run_audio_devolve_os_campos_medidos(measure_phonemes, tmp_path):
+@pytest.fixture
+def numpy_dublado():
+    """Põe um `numpy` de mentira no `sys.modules`.
+
+    O `import` de dentro do `run_audio` encontra o que já está no
+    `sys.modules` e nunca vai ao disco — então isto vale tanto na máquina que
+    tem numpy quanto no CI que não tem.
+    """
+    with mock.patch.dict(sys.modules, {"numpy": mock.MagicMock(name="numpy")}):
+        yield
+
+
+def test_run_audio_devolve_os_campos_medidos(measure_phonemes, numpy_dublado, tmp_path):
     """O retorno é o relatório, não o payload de antes da medição.
 
     Devolver o payload inicial é silencioso: o arquivo no disco fica certo, e
@@ -168,7 +185,7 @@ def test_run_audio_devolve_os_campos_medidos(measure_phonemes, tmp_path):
     assert medida == escrito
 
 
-def test_run_audio_devolve_a_recusa_como_dado(measure_phonemes, tmp_path):
+def test_run_audio_devolve_a_recusa_como_dado(measure_phonemes, numpy_dublado, tmp_path):
     """Recusa volta como dicionário com `recusado`, não como `None`.
 
     O `None` fazia a frase recusada desaparecer da tabela do `--corpus`, e
