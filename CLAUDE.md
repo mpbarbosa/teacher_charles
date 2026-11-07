@@ -31,7 +31,7 @@ TC_VOICE_ENABLED=true uv run teacher-charles
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
-uv run pytest -m "not integration"       # 620 tests, ~16s, no model at all
+uv run pytest -m "not integration"       # 624 tests, ~16s, no model at all
 uv run pytest -m integration             # only the 9 that exercise the local Ollama
 uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .
