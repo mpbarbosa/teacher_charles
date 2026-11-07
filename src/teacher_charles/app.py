@@ -30,13 +30,21 @@ from .llm.base import GenerationOptions, Message
 from .prompts import PromptLibrary
 from .store.db import init_db
 from .store.models import CEFR_LEVELS, MODES, Student
-from .store.repo import CorrectionRepo, LevelRepo, SessionRepo, StudentRepo, TurnRepo
+from .store.repo import (
+    CorrectionRepo,
+    LevelRepo,
+    ScheduleRepo,
+    SessionRepo,
+    StudentRepo,
+    TurnRepo,
+)
 from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, Leveled, TurnRunner
 from .teaching.contrastive import ContrastiveError, load_base
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
+from .teaching.schedule import is_graduated
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice
 
@@ -266,6 +274,12 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # Quantas regras do error log dariam drill agora. Zero é resposta
             # honesta: o aluno ainda não errou nada com regra curada.
             "drillable": len(planner.candidates(student.id)) if planner is not None else 0,
+            # E quantas delas a agenda liberou (E13). As duas contagens são
+            # diferentes de propósito: `drillable` é o que existe, `due` é o
+            # que está vencido. `drillable` alto com `due` zero é o aluno em
+            # dia — e é a única maneira de a tela distinguir isso de "não há o
+            # que treinar", que é `drillable` zero.
+            "due": planner.due_count(student.id) if planner is not None else 0,
         }
 
     def progress_payload(conn: sqlite3.Connection, limit: int = 20) -> dict[str, Any]:
@@ -284,10 +298,13 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         student = active_student(conn)
         corrections = CorrectionRepo(conn)
         base = app.state.base
+        # A agenda da E13, numa consulta só para todas as regras da tela.
+        schedules = ScheduleRepo(conn).for_student(student.id)
 
         rules = []
         for count in corrections.top_rules(student.id, limit=limit):
             item = base.get(count.rule_id) if base is not None and count.rule_id in base else None
+            schedule = schedules.get(count.rule_id)
             rules.append(
                 {
                     "rule_id": count.rule_id,
@@ -300,6 +317,14 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                     # Regra que saiu da base continua no histórico do aluno; a
                     # tela diz isso em vez de fingir que a regra ainda existe.
                     "retired": item is None,
+                    # A agenda (E13). O error log sozinho só sabe somar erros, e
+                    # com isso a tela não conseguia dizer a única coisa que o
+                    # aluno quer saber: se ele está melhorando nesta regra.
+                    "streak": schedule.streak if schedule is not None else 0,
+                    "graduated": is_graduated(schedule),
+                    "due_at": schedule.due_at if schedule is not None else "",
+                    "reviews": schedule.reviews if schedule is not None else 0,
+                    "lapses": schedule.lapses if schedule is not None else 0,
                 }
             )
 
