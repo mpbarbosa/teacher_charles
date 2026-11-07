@@ -8,7 +8,7 @@ Modo não é um adjetivo no prompt. Cada um muda **três** coisas, e só a prime
    a persona pede uma. Em correção, o aluno pediu os erros, então o teto sobe:
    capar em dois ali seria esconder dele o que ele veio buscar.
 3. No drill, **qual regra** vai ser treinada — e isso é escolhido por consulta
-   ao error log, não pelo modelo.
+   ao error log e à agenda de revisão, não pelo modelo.
 
 ## Por que a regra do drill é escolhida em código
 
@@ -23,6 +23,18 @@ contrastiva o item curado (explicação, formas certas) e junta as frases que o
 **aluno** escreveu. O modelo recebe isso pronto e faz o que modelo faz bem:
 conversar. Nada de gramática improvisada, nada de erro que o aluno não cometeu.
 
+## O que a E13 mudou aqui
+
+A E6 ordenava as candidatas por **frequência**: a regra mais corrigida primeiro.
+Quem ordena agora é a agenda de ``teaching/schedule.py`` — vencida primeiro —, e
+a frequência ficou como último desempate entre regras igualmente urgentes. A
+diferença que isso faz é a que a frequência não conseguia fazer: regra acertada
+três vezes seguidas sai da fila e volta depois do intervalo, enquanto pela
+contagem ela continuaria sendo a mais errada do histórico para sempre.
+
+O filtro continua sendo o desta camada, e não mudou: só entra regra com
+``rule_id`` que ainda existe na base curada.
+
 Só entra correção com ``rule_id``: correção sem regra curada veio do modelo
 sozinho, e treinar em cima dela seria ensinar o erro com mais repetição (plano
 §5.2).
@@ -33,16 +45,23 @@ Pedagogia: drill que troca de regra a cada mensagem é questionário, não drill
 Técnica: o bloco do drill é mensagem de sistema estável dentro da sessão, então
 o prefixo do prompt continua cacheado — trocar de regra a cada turno custaria a
 reavaliação inteira a cada turno (plano §1.4).
+
+A agenda da E13 não muda isso: ela é consultada **quando a sessão começa**, e as
+revisões que acontecem durante a sessão só valem para a escolha seguinte. O
+plano da Fase 2 (§4, "Fora") mantém drill com várias regras por sessão fora do
+escopo pela mesma razão de cache.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 
-from ..store.models import MODES, Mode, RuleCount
-from ..store.repo import CorrectionRepo, SessionRepo
+from ..store.models import MODES, Mode, RuleCount, RuleSchedule
+from ..store.repo import CorrectionRepo
 from .contrastive import ContrastiveBase, ContrastiveItem
+from .schedule import DRILL_ROTATION, Queued, Scheduler, is_graduated
 
 DEFAULT_MODE: Mode = "conversation"
 
@@ -67,10 +86,6 @@ MAX_STUDENT_EXAMPLES = 3
 # bastam para o modelo variar o exercício sem encher o prompt.
 MAX_RIGHT_EXAMPLES = 3
 
-# Quantas regras recém-treinadas o rodízio evita. Com 3, o aluno não recebe a
-# mesma regra em sessões seguidas enquanto houver outra no error log.
-DRILL_ROTATION = 3
-
 
 def is_mode(value: str) -> bool:
     return value in MODES
@@ -93,15 +108,30 @@ class DrillTarget:
     aluno escreveu de verdade. A distinção importa: a explicação e as formas
     certas vêm da curadoria revisada, os erros vêm do banco, e **nada** vem da
     imaginação do modelo.
+
+    ``schedule`` é o estado desta regra na agenda (E13), ou ``None`` se ela
+    nunca foi revisada. Vai junto porque o aluno tem direito de saber que está
+    a um acerto de tirar a regra da fila — "you've got this right twice in a
+    row" é afirmação verificável, e é o retorno que faz a repetição espaçada
+    deixar de ser invisível para quem estuda.
     """
 
     item: ContrastiveItem
     times: int = 0
     student_examples: tuple[str, ...] = ()
+    schedule: RuleSchedule | None = None
 
     @property
     def rule_id(self) -> str:
         return self.item.id
+
+    @property
+    def streak(self) -> int:
+        return self.schedule.streak if self.schedule is not None else 0
+
+    @property
+    def graduated(self) -> bool:
+        return is_graduated(self.schedule)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -109,6 +139,12 @@ class DrillTarget:
             "times": self.times,
             "explanation": self.item.explanation,
             "examples": list(self.student_examples),
+            # A agenda, para a tela poder dizer onde o aluno está nela.
+            "streak": self.streak,
+            "graduated": self.graduated,
+            "due_at": self.schedule.due_at if self.schedule is not None else "",
+            "reviews": self.schedule.reviews if self.schedule is not None else 0,
+            "lapses": self.schedule.lapses if self.schedule is not None else 0,
         }
 
 
@@ -138,6 +174,12 @@ def drill_block(target: DrillTarget | None) -> str:
     if target.times:
         times = "once" if target.times == 1 else f"{target.times} times"
         lines.append(f"The student has made this mistake {times}.")
+    if target.streak:
+        # O que a agenda sabe e a contagem não sabia: o aluno está melhorando
+        # nesta regra. Dizer isso ao modelo muda o tom do exercício, e dizer ao
+        # aluno é metade do valor de repetição espaçada.
+        right = "once" if target.streak == 1 else f"{target.streak} times"
+        lines.append(f"They have got it right {right} in a row since then — say so.")
     if target.student_examples:
         joined = "; ".join(f'"{example}"' for example in target.student_examples)
         lines.append(f"Their own words: {joined}")
@@ -167,7 +209,14 @@ def drill_reminder(target: DrillTarget | None) -> str:
 
 
 class DrillPlanner:
-    """Escolhe a regra do próximo drill a partir do error log do aluno."""
+    """Escolhe a regra do próximo drill: error log do aluno, ordem da agenda.
+
+    A divisão de trabalho com ``teaching/schedule.py`` é de propósito. O
+    ``Scheduler`` sabe **quando** uma regra volta e não sabe nada de base
+    contrastiva; o planner sabe **quais** regras podem virar drill (as que têm
+    item curado) e monta o alvo com as frases do aluno. Nenhum dos dois decide
+    sozinho.
+    """
 
     def __init__(
         self,
@@ -176,9 +225,15 @@ class DrillPlanner:
         rotation: int = DRILL_ROTATION,
     ) -> None:
         self._corrections = CorrectionRepo(conn)
-        self._sessions = SessionRepo(conn)
+        self._scheduler = Scheduler(conn, rotation=rotation)
         self._base = base
         self._rotation = rotation
+
+    @property
+    def scheduler(self) -> Scheduler:
+        """A agenda, para quem precisa registrar revisão (o turno) ou contar
+        o que está vencido (a tela)."""
+        return self._scheduler
 
     def candidates(self, student_id: int, limit: int = 5) -> list[RuleCount]:
         """As regras do error log que ainda existem na base.
@@ -193,21 +248,46 @@ class DrillPlanner:
             if count.rule_id in self._base
         ]
 
-    def pick(self, student_id: int) -> DrillTarget | None:
+    def queue(
+        self,
+        student_id: int,
+        limit: int = 5,
+        at: datetime | None = None,
+    ) -> list[Queued]:
+        """A fila, em ordem de urgência. É a agenda que ordena (E13).
+
+        ``at`` existe para o relógio ser injetável daqui até o ``Scheduler``: a
+        fila é feita de datas, e vencimento só se testa com o relógio na mão.
+        """
+        return self._scheduler.queue(student_id, self.candidates(student_id, limit=limit), at=at)
+
+    def due_count(self, student_id: int, limit: int = 5, at: datetime | None = None) -> int:
+        """Quantas regras estão vencidas agora.
+
+        Diferente de ``len(candidates())``: candidata é regra que o aluno errou
+        e que tem item curado; vencida é candidata que a agenda liberou. Zero
+        vencidas com candidatas de sobra é o aluno em dia, e a tela diz isso.
+        """
+        return self._scheduler.due_count(
+            student_id, self.candidates(student_id, limit=limit), at=at
+        )
+
+    def pick(self, student_id: int, at: datetime | None = None) -> DrillTarget | None:
         """A regra a treinar agora, ou ``None`` se não houver erro registrado.
 
-        Mais frequente primeiro, evitando as últimas já treinadas. Se todas as
-        candidatas foram treinadas há pouco, volta para a mais frequente: o
-        rodízio é preferência, não impedimento — é melhor repetir a regra do
-        que não treinar nada.
-        """
-        counts = self.candidates(student_id)
-        if not counts:
-            return None
+        A ordem é a da agenda — ``Scheduler.queue`` explica cada termo da
+        chave. O que esta camada garante é o resto: só regra com item curado
+        entra, e ``None`` significa "não há o que treinar", nunca "está tudo
+        em dia".
 
-        recent = set(self._sessions.drilled_rules(student_id, limit=self._rotation))
-        fresh = [count for count in counts if count.rule_id not in recent]
-        chosen = (fresh or counts)[0]
+        Nada vencido **não** é ``None``: a fila devolve a de vencimento mais
+        próximo e o aluno treina ela. É melhor repetir a regra que não treinar
+        nada, que é a mesma escolha que a E6 fez com o rodízio.
+        """
+        queued = self.queue(student_id, at=at)
+        if not queued:
+            return None
+        chosen = queued[0]
         return self.target_for(student_id, chosen.rule_id, times=chosen.times)
 
     def target_for(
@@ -224,6 +304,7 @@ class DrillPlanner:
             item=self._base.get(rule_id),
             times=times or len(examples),
             student_examples=tuple(examples),
+            schedule=self._scheduler.schedule_for(student_id, rule_id),
         )
 
 

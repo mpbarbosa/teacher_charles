@@ -19,6 +19,10 @@ CEFR_LEVELS: tuple[CefrLevel, ...] = ("A2", "B1", "B2", "C1", "C2")
 LEVEL_SOURCES: tuple[LevelSource, ...] = ("self", "auto")
 MODES: tuple[Mode, ...] = ("conversation", "correction", "drill")
 
+# De onde veio a evidência de uma revisão (E13). Ver RuleReview.
+ReviewSource = Literal["drill", "lapse"]
+REVIEW_SOURCES: tuple[ReviewSource, ...] = ("drill", "lapse")
+
 
 @dataclass(frozen=True, slots=True)
 class Student:
@@ -221,5 +225,89 @@ class LevelChange:
             source=row["source"],
             reason=row["reason"],
             at_signal_id=row["at_signal_id"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuleSchedule:
+    """O estado de uma regra na fila do drill (E13).
+
+    ``box`` é o degrau na escada de intervalos de ``teaching/schedule.py``;
+    ``streak`` são os acertos consecutivos, e é o que gradua a regra. Os dois
+    andam juntos no acerto e os dois voltam a zero no erro, mas não são o mesmo
+    número: ``box`` tem teto (o último degrau da escada) e ``streak`` não, então
+    o aluno que continua acertando continua contando sem ganhar intervalo novo.
+
+    **A ausência de linha é informação.** Regra que o aluno errou e nunca
+    treinou não tem registro aqui, e é a mais urgente da fila — na frente de
+    qualquer uma com ``due_at`` vencido. Por isso o repositório devolve ``None``
+    em vez de um agendamento zerado.
+    """
+
+    student_id: int
+    rule_id: str
+    box: int
+    streak: int
+    reviews: int
+    lapses: int
+    due_at: str
+    last_review_at: str
+    created_at: str = ""
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> RuleSchedule:
+        return cls(
+            student_id=row["student_id"],
+            rule_id=row["rule_id"],
+            box=row["box"],
+            streak=row["streak"],
+            reviews=row["reviews"],
+            lapses=row["lapses"],
+            due_at=row["due_at"],
+            last_review_at=row["last_review_at"],
+            created_at=row["created_at"] if "created_at" in row.keys() else "",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuleReview:
+    """Uma revisão, como evento.
+
+    Mesmo motivo de ``LevelSignal`` existir ao lado de ``LevelChange``: o estado
+    derivado (``RuleSchedule``) responde "quando esta regra volta", e só as
+    linhas cruas respondem "a escada de intervalos está no lugar certo?". Uma
+    escada que ninguém mede é chute, e sem estas linhas não há como recalibrá-la
+    sobre histórico real.
+
+    ``source`` carrega a assimetria do sinal: ``'drill'`` é resposta a um
+    exercício **sobre esta regra**, onde a ausência de correção é evidência de
+    acerto porque o exercício construiu a oportunidade; ``'lapse'`` é erro pela
+    regra em qualquer outro lugar. Não existe acerto fora do drill.
+    """
+
+    id: int
+    student_id: int
+    rule_id: str
+    turn_id: int
+    hit: bool
+    source: str
+    box_before: int
+    box_after: int
+    interval_days: float
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> RuleReview:
+        return cls(
+            id=row["id"],
+            student_id=row["student_id"],
+            rule_id=row["rule_id"],
+            turn_id=row["turn_id"],
+            hit=bool(row["hit"]),
+            source=row["source"],
+            box_before=row["box_before"],
+            box_after=row["box_after"],
+            interval_days=row["interval_days"],
             created_at=row["created_at"],
         )

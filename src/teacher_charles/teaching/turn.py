@@ -59,6 +59,7 @@ from .modes import (
     max_findings,
 )
 from .modes import partial_name as mode_partial_name
+from .schedule import Review, Scheduler
 
 log = logging.getLogger(__name__)
 
@@ -193,6 +194,11 @@ class TurnRunner:
         self._turns = TurnRepo(conn)
         self._sessions = SessionRepo(conn)
         self._corrections = CorrectionRepo(conn)
+        # A agenda de revisão (E13) não é opcional como o planner e o tracker.
+        # Erro pela regra é evidência negativa em qualquer modo, inclusive em
+        # conversa livre e inclusive sem base carregada para dar drill: deixar
+        # de registrá-lo faria a fila esquecer o erro de ontem.
+        self._scheduler = Scheduler(conn)
         self._options = options or GenerationOptions()
         self._history_turns = history_turns
         # Sem analisador o turno volta a ser o da E2: conversa e nada mais. É
@@ -470,6 +476,66 @@ class TurnRunner:
             return None
         return Leveled(decision=decision)
 
+    # --- revisão ---------------------------------------------------------- #
+
+    def _observe_schedule(
+        self,
+        student: Student,
+        student_turn_id: int,
+        mode: str,
+        rule_id: str | None,
+        analysis: Analysis | None,
+    ) -> tuple[Review, ...]:
+        """Move a agenda de revisão com o que este turno mostrou. Nunca levanta.
+
+        **Sem análise não há revisão**, e esta é a guarda que importa mais aqui:
+        acerto no drill é a *ausência* de correção pela regra, então análise que
+        não rodou (sem analisador, estourou o timeout, o modelo caiu) produziria
+        a mesma ausência e graduaria a regra por falha de infraestrutura. É a
+        mesma lição da §3.3 do plano da Fase 2 — quando o avaliador não está
+        entendendo, calar é a resposta.
+
+        A assimetria do sinal está em ``teaching/schedule.py``: correção pela
+        regra é erro em qualquer modo; turno limpo só é acerto no drill, sobre a
+        regra em treino, porque ali o exercício construiu a oportunidade.
+        """
+        if analysis is None:
+            return ()
+
+        try:
+            erred = {finding.rule_id for finding in analysis.findings if finding.rule_id}
+            reviews: list[Review] = []
+
+            # O erro primeiro, e inclusive o da regra em treino: quem errou a
+            # regra do drill no próprio drill errou, e o acerto abaixo não
+            # acontece porque a regra está em `erred`.
+            for erred_rule in sorted(erred):
+                source = "drill" if mode == "drill" and erred_rule == rule_id else "lapse"
+                reviews.append(
+                    self._scheduler.review(
+                        student.id,
+                        erred_rule,
+                        student_turn_id,
+                        hit=False,
+                        source=source,
+                    )
+                )
+
+            if mode == "drill" and rule_id and rule_id not in erred:
+                reviews.append(
+                    self._scheduler.review(
+                        student.id,
+                        rule_id,
+                        student_turn_id,
+                        hit=True,
+                        source="drill",
+                    )
+                )
+            return tuple(reviews)
+        except Exception:  # noqa: BLE001 - agenda nunca derruba o turno
+            log.exception("agenda de revisão falhou (turno segue)")
+            return ()
+
     # --- o turno ---------------------------------------------------------- #
 
     async def run(
@@ -563,6 +629,12 @@ class TurnRunner:
             leveled = self._observe_level(student, student_turn_id, text, analysis)
             if leveled is not None:
                 yield leveled
+
+            # A agenda também depende da análise, e por um motivo mais forte: o
+            # acerto no drill É a ausência de correção. Ela não emite evento
+            # porque não muda este turno — muda a regra da PRÓXIMA sessão de
+            # drill, e o aluno a vê no payload da sessão.
+            self._observe_schedule(student, student_turn_id, mode, rule_id, analysis)
 
         yield Done(
             reply=reply,

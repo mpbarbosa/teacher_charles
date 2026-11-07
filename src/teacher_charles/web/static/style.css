@@ -431,6 +431,16 @@ main.progress .lead.empty { font-size: 0.95rem; }
 
 .rule-card .footnote .retired { color: var(--loose); }
 
+/* A agenda de revisão (E13). `learned` é a regra que saiu da fila por acerto
+   repetido, e ganha a cor de "curado" porque é a única boa notícia desta tela:
+   todo o resto aqui é erro contado. */
+.rule-card .footnote .learned {
+  color: var(--curated);
+  font-weight: 600;
+}
+
+.rule-card .footnote .streak { color: var(--curated); }
+
 .levels h2 {
   font-size: 0.95rem;
   margin: 0.5rem 0 0.3rem;

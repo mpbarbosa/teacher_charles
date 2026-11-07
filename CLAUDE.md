@@ -28,7 +28,7 @@ TC_VOICE_ENABLED=true uv run teacher-charles
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
-uv run pytest -m "not integration"       # 522 tests, ~4s, no model at all
+uv run pytest -m "not integration"       # 620 tests, ~16s, no model at all
 uv run pytest -m integration             # only the 9 that exercise the local Ollama
 uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .
@@ -50,6 +50,11 @@ To use a model that is already downloaded: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_
 > **The pedagogical structure lives in the application, not in the prompt.
 > A correction is structured data, not prose.**
 
+D13 added the second half of that: **what the application knows about the
+student is structured data too, not a ranking.** The drill queue stopped being
+an error count and became a review schedule, because a count only knows how to
+add up — it never records that the student learned.
+
 Practical consequence: when there is a curated rule for the error, the
 correction **cites the `rule_id`** from `data/contrastive/` instead of letting
 the model invent grammar. That is why the `correction` table has existed since
@@ -66,6 +71,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/` | The product. **Agnostic about where the text came from** — it takes a string and returns `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed` events. That is what allows STT/TTS to be attached in Phase 1.5 without rewriting the middle. |
 | `voice/` | The two ends of Phase 1.5 — STT and TTS — behind `base.SpeechToText` / `base.TextToSpeech`, in the same arrangement as `llm/`. **It does not import `teaching/`**: it takes bytes and returns text; it takes text and returns PCM. |
 | `store/` | SQLite through the stdlib's `sqlite3`. Schema in numbered `.sql` files, no ORM; the dataclasses in `models.py` only give the rows names. |
+| `teaching/schedule.py` | The review schedule (D13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
 | `web/` | Single page: Jinja template + JS/CSS with no build step. |
@@ -98,10 +104,42 @@ active profile.
 
 **The mode changes policy, not just prose.** `teaching/modes.py` decides the cap
 on corrections per turn (5 in `correction`, 2 in the others) and, in the drill,
-**which rule** is trained — by querying the aggregated `correction`, never by
+**which rule** is trained — by querying the database, never by
 the model. One rule per session (`session.drill_rule_id`), not per turn: a drill
 that swaps rules on every message is a quiz, and a stable block in the prompt is
 a cached prefix.
+
+**The drill queue is a schedule, not a ranking.** What orders it is
+`Scheduler.queue` (D13): overdue first, with the frequency in `correction` left
+as the *last* tiebreak between equally urgent rules. The swap was not cosmetic —
+frequency is a number that only goes up, so the most-missed rule in the history
+went on being the most-missed one after the student had got it right ten times,
+and the drill never let it go. Reverting the sort key to `-times` leaves four
+tests red, one of them from D6.
+
+**Getting it right is the absence of an error where the error would have shown
+up, and that is asymmetric.** The analyzer returns errors, not successes, so a
+success can only be inferred — and it only counts inside the drill, over the
+rule being trained, because there the exercise built the opportunity. A
+correction by the rule is an error in any mode; a clean turn in free
+conversation **is nothing at all**, and counting it would graduate rules by
+silence. The guard that matters most: **an analysis that did not run graduates
+nobody** — without it, an analyzer that is down would turn into a success,
+because it produces the same absence of corrections. A known blind spot, noted
+in §6 of the plan: inside the drill, "did not err" and "did not try" are the
+same observation.
+
+**The first rung of the interval ladder is worth half a day, not zero**, and
+that is what replaces D6's rotation. With zero, a rule just missed falls due at
+once and goes back to being the most overdue one in the next session, forever —
+the student would never see the second rule. `DRILL_ROTATION` survived only for
+the case the schedule cannot see (a rule picked in a session that ended with no
+answer), and as a sort term instead of a filter.
+
+**The two writes of a review are not one transaction.** That is the
+shared-connection rule, and the order is chosen because of it: `rule_review`
+(the event) before `rule_schedule` (the state), because the state can be
+rebuilt from the event and not the other way round.
 
 **The order of the system messages is persona → level → mode → drill data**,
 and then, at the end of the prompt, the curated hint and the drill request. The
@@ -265,6 +303,11 @@ order and the definition of done for each deliverable are in
 `docs/plano-fase-1.md` §5; `docs/analise-inicial.md` has the feasibility
 analysis that gave rise to the project.
 
+**D13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
+Phase 2 plan says it does not depend on D9's gate, and it was the path taken
+while D9 stays open. What it swapped out is in §7 of `docs/plano-fase-2.md`, and
+the two debts it opened are in §6 there.
+
 Phase 1 is complete, and so is **Phase 1.5 (voice)** —
 `docs/plano-fase-1-5.md`. The student speaks via push-to-talk, Charles answers
 out loud sentence by sentence, all local. `teaching/`, `llm/` and `store/` did
@@ -294,7 +337,7 @@ has already moved the design in five places (its §3). The numbers that matter:
 - Hence D9 being a **gate and not a stage**: measuring with a Brazilian human
   voice is what decides whether the evaluator exists. No product before it.
 
-What comes after is in `docs/plano-fase-2.md` §7: turn-taking without a button,
+What comes after is in `docs/plano-fase-2.md` §8: turn-taking without a button,
 prosody, the analysis debt, and mobile/multi-user.
 
 Two known debts from Phase 1, both measured and recorded in §5.5: the analysis
