@@ -1141,7 +1141,17 @@ def run_audio(
     path: Path,
     said: str,
     rule_id: str | None = None,
-) -> dict | None:
+) -> dict:
+    """Mede um WAV e devolve **o que foi escrito no relatório**, não o payload
+    inicial.
+
+    A distinção não é estética: quem chama monta tabela com `per`, `ouvido`,
+    `avisos` e `recusado`, e devolver o payload de antes da medição fazia a
+    elocução medida com sucesso aparecer como recusada. A recusa também volta
+    como dicionário (com `recusado`), para a tabela do `--corpus` mostrar a
+    linha em vez de omiti-la — quem decide código de saída olha `recusado`, e
+    não a verdade do valor.
+    """
     import numpy as np
 
     audio = read_wav(path, np)
@@ -1155,7 +1165,8 @@ def run_audio(
     }
     problem = diagnose_signal(audio, np)
     if problem:
-        report = write_report(path, payload | {"recusado": problem.message})
+        refused = payload | {"recusado": problem.message}
+        report = write_report(path, refused)
         print(f"\n## {path.name} ({seconds:.1f}s) — recusado")
         print(f"  {problem.message}")
         if problem.gain_related:
@@ -1165,7 +1176,7 @@ def run_audio(
             "  número que parece medição e não é. Ver a §3.3 do plano da Fase 2."
         )
         print(f"  relatório: {report}  (md5 {payload['md5'][:12]})")
-        return None
+        return refused
     span = speech_span(audio, np)
     remarks = [
         remark
@@ -1192,23 +1203,20 @@ def run_audio(
         print("trocas   : " + ", ".join(f"/{a}/→/{b}/" for a, b in result.substitutions[:12]))
     if result.deletions:
         print("comidos  : " + ", ".join(f"/{p}/" for p in result.deletions[:12]))
-    report = write_report(
-        path,
-        payload
-        | {
-            "avisos": remarks,
-            "fala_de_s": round(span[0], 2),
-            "fala_ate_s": round(span[1], 2),
-            "esperado": expected,
-            "ouvido": heard,
-            "per": round(result.per, 4),
-            "erros": result.errors,
-            "trocas": [list(t) for t in result.substitutions],
-            "comidos": list(result.deletions),
-        },
-    )
+    measured = payload | {
+        "avisos": remarks,
+        "fala_de_s": round(span[0], 2),
+        "fala_ate_s": round(span[1], 2),
+        "esperado": expected,
+        "ouvido": heard,
+        "per": round(result.per, 4),
+        "erros": result.errors,
+        "trocas": [list(t) for t in result.substitutions],
+        "comidos": list(result.deletions),
+    }
+    report = write_report(path, measured)
     print(f"relatório: {report}  (md5 {payload['md5'][:12]})")
-    return payload
+    return measured
 
 
 def _slug(rule_id: str) -> str:
@@ -1293,15 +1301,20 @@ def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> 
         # ninguém escreveu — exatamente a falha calada que o docstring acima diz
         # que a execução única existe para evitar.
         path = record(seconds, RECORDING_DIR / f"e9-{_slug(item.rule_id)}.wav")
-        payload = run_audio(
+        # A tabela recebe o resultado completo — medições e recusa —, e não o
+        # payload de antes da medição: `_report_corpus` lê `per`, `ouvido`,
+        # `avisos` e `recusado` de cada linha. Com o payload inicial, as oito
+        # frases recém-medidas saíam todas como "recusada", nenhum erro curado
+        # era nomeado, e a elocução de fato recusada não aparecia na tabela.
+        medida = run_audio(
             recognizer,
             g2p,
             path,
             item.phrase,
             rule_id=item.rule_id,
         )
-        if payload:
-            results.append(payload)
+        if medida:
+            results.append(medida)
 
     return _report_corpus(results)
 
@@ -1420,7 +1433,11 @@ def main() -> int:
         return run_corpus(recognizer, g2p, args.corpus, args.redo)
 
     if audio_path:
-        return 0 if run_audio(recognizer, g2p, audio_path, args.say) else 2
+        # Pela recusa e não pela verdade do dicionário: o `run_audio` passou a
+        # devolver a recusa como dado para a tabela do `--corpus`, e um `dict`
+        # não vazio é verdadeiro. Sem isto, sinal recusado sairia com 0.
+        medida = run_audio(recognizer, g2p, audio_path, args.say)
+        return 2 if not medida or medida.get("recusado") else 0
 
     synth = Synth(settings)
     if args.rtf:
