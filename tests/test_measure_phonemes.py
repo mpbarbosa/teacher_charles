@@ -210,3 +210,74 @@ def test_run_audio_devolve_a_recusa_como_dado(measure_phonemes, numpy_dublado, t
 
     assert medida["recusado"] == _Problema.message
     assert "per" not in medida
+
+
+def _degrau_com_travessia(path, sr: int = 16000) -> float:
+    """Escreve um WAV com o perfil **medido** de uma abertura de conversor.
+
+    Os números vêm de uma gravação de verdade da E9, bloco de 10 ms por bloco
+    de 10 ms: um bloco já enviesado, depois o bloco em que o degrau atravessa
+    o zero (média +0,1004 contra RMS 0,7222 — razão 0,14, abaixo do
+    `DC_DOMINANCE`), e só então o degrau cravado em -1,0 decaindo. Devolve
+    quantos segundos de transiente foram escritos.
+    """
+    import wave
+
+    import numpy as np
+
+    bloco = sr // 100
+    partes = [np.full(bloco, -0.3, dtype=np.float32)]
+    # A travessia: parte acima de zero, parte no fundo. A média quase se
+    # anula contra um RMS enorme, e é isso que a peneira de DC não vê.
+    travessia = np.full(bloco, -1.0, dtype=np.float32)
+    travessia[: int(bloco * 0.6)] = 0.78
+    partes.append(travessia)
+    # O degrau decaindo, constante dentro de cada bloco: razão 1,0 em todos.
+    for i in range(48):
+        partes.append(np.full(bloco, -1.0 * (0.94**i), dtype=np.float32))
+    transiente = sum(len(p) for p in partes) / sr
+    # Fala: média zero, nível parecido com o da gravação (RMS ~0,017).
+    rng = np.random.default_rng(7)
+    partes.append(rng.normal(0.0, 0.017, size=int(2.0 * sr)).astype(np.float32))
+    partes.append(np.zeros(int(0.5 * sr), dtype=np.float32))
+    amostras = np.clip(np.concatenate(partes), -1.0, 1.0)
+    with wave.open(str(path), "wb") as dst:
+        dst.setnchannels(1)
+        dst.setsampwidth(2)
+        dst.setframerate(sr)
+        dst.writeframes((amostras * 32767).astype(np.int16).tobytes())
+    return transiente
+
+
+def test_corta_o_degrau_inteiro_apesar_da_travessia(measure_phonemes, tmp_path):
+    """O corte atravessa o bloco limpo que existe **dentro** do degrau.
+
+    A versão contígua parava nele: cortava um bloco só, anunciava "10 ms de
+    transiente cortados" e devolvia um arquivo que o `diagnose_signal`
+    recusava em seguida — duas elocuções do corpus da E9 se perderam assim, e
+    a mensagem da recusa mandava usar o `--record`, que é justamente quem
+    acabou de cortar errado.
+    """
+    np = pytest.importorskip("numpy")
+    mp = measure_phonemes
+    wav = tmp_path / "abertura.wav"
+    transiente = _degrau_com_travessia(wav)
+
+    cortou = mp._trim_lead_in(wav)
+
+    assert cortou == pytest.approx(transiente, abs=0.02), (
+        f"cortou {cortou * 1000:.0f} ms de {transiente * 1000:.0f} ms de transiente"
+    )
+    # O que importa não é o número de milissegundos, é o veredito de quem
+    # recusa: o mesmo diagnóstico que rejeitou as duas elocuções.
+    import wave
+
+    with wave.open(str(wav), "rb") as src:
+        sobrou = (
+            np.frombuffer(src.readframes(src.getnframes()), dtype=np.int16).astype(np.float32)
+            / 32768.0
+        )
+    assert mp.diagnose_signal(sobrou, np) is None, "o diagnóstico ainda recusa o arquivo cortado"
+    # E a fala continua lá: um corte que passasse a peneira comendo a
+    # elocução também faria o diagnóstico calar.
+    assert len(sobrou) / 16000 == pytest.approx(2.5, abs=0.05)

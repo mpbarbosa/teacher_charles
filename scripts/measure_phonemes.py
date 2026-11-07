@@ -543,6 +543,13 @@ DC_DOMINANCE = 0.5
 # abertura. Existe porque o degrau não começa necessariamente na amostra zero:
 # medido, um bloco de 10 ms limpo antes dele.
 ONSET_WINDOW_SECONDS = 0.1
+# Quantos blocos não dominados o corte atravessa antes de desistir. Não é
+# folga de segurança: o bloco em que o degrau **atravessa o zero** tem média
+# quase nula contra um RMS enorme e não passa pelo `DC_DOMINANCE`, então um
+# corte contíguo para dentro do próprio degrau. Dois blocos porque a travessia
+# cabe em um na resolução de 10 ms, e o segundo é a margem; mais que isso
+# começaria a andar dentro de fala.
+GAP_MAX_BLOCKS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -907,12 +914,30 @@ def _trim_lead_in(path: Path, max_seconds: float = LEAD_IN_MAX_SECONDS) -> float
     if onset is None:
         return 0.0
 
-    # Daí segue enquanto o bloco for dominado por DC. Contíguo de propósito:
-    # um bloco isolado com viés no meio da fala não deve autorizar um corte
-    # que coma a elocução.
+    # Daí segue até o **último** bloco dominado por DC, atravessando uma falha
+    # curta no meio. Não contíguo, e a razão é medida: no bloco em que o
+    # degrau atravessa o zero a média quase se anula contra um RMS enorme
+    # (medido numa gravação de verdade: média +0,1004, RMS 0,7222, razão
+    # 0,14), e ele não passa pelo `DC_DOMINANCE`. A versão contígua parava
+    # exatamente nele — cortava um bloco só, anunciava "10 ms de transiente
+    # cortados" e deixava 970 ms de degrau no arquivo, que o
+    # `diagnose_signal` recusava em seguida. É o espelho do erro do bloco de
+    # onset acima: lá o degrau não começava no primeiro bloco, aqui ele tem um
+    # bloco limpo **dentro**.
+    #
+    # A tolerância é curta porque a contiguidade protegia algo real: um bloco
+    # isolado com viés no meio da fala não deve autorizar um corte que coma a
+    # elocução. Com `GAP_MAX_BLOCKS` a falha tem de ser breve **e** o degrau
+    # tem de voltar; uma elocução dá dezenas de blocos não dominados em
+    # sequência e não passa por essa peneira.
     cut = onset
-    while cut + block <= limit and dc_dominated(cut):
-        cut += block
+    probe = onset
+    while probe + block <= limit:
+        if dc_dominated(probe):
+            cut = probe + block
+        elif probe - cut >= GAP_MAX_BLOCKS * block:
+            break
+        probe += block
     skip = cut * frame
     if skip >= len(raw):
         return 0.0
