@@ -1286,10 +1286,17 @@ def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> 
         if answer == "p":
             print("   pulada")
             continue
+        # A gravação acontece **aqui**, e não no `main`: o `--corpus` é o único
+        # modo que grava mais de uma vez, e a primeira versão deste laço só
+        # montava o caminho e chamava o `run_audio`. O microfone nunca abria, e
+        # o que o terminal mostrava era um `FileNotFoundError` sobre o WAV que
+        # ninguém escreveu — exatamente a falha calada que o docstring acima diz
+        # que a execução única existe para evitar.
+        path = record(seconds, RECORDING_DIR / f"e9-{_slug(item.rule_id)}.wav")
         payload = run_audio(
             recognizer,
             g2p,
-            RECORDING_DIR / f"e9-{_slug(item.rule_id)}.wav",
+            path,
             item.phrase,
             rule_id=item.rule_id,
         )
