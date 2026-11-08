@@ -795,6 +795,59 @@ needs a quieter room — gain is not the lever, as §3.5 measured. The `--errado
 pass is still unrecorded, and is still what turns the eight "não" above from
 ambiguous into informative.
 
+#### The tenth and eleventh utterances, and the room that was the lever
+
+Two runs at the operating point of §3.5 — capture at 70% (+15,75 dB), boost
+off, the same gain the nine takes before these were recorded at. Three takes,
+and two of them count.
+
+| regra | áudio (md5) | PER | o que saiu |
+|---|---|---|---|
+| `pron.epenthesis-final` | `37fba6fa` | 0,312 | **limpa.** 630 ms de transiente cortados; `/ɡ/→/iː/` no lugar da epêntese prevista |
+| `pron.ing-alveolar` | `27daf04f` | — | **recusada:** contraste de fala 1,6× contra o mínimo de 4 |
+| `pron.ing-alveolar` | `365e3cfb` | 0,529 | **limpa**, mesma frase e mesmo ganho, sala mais silenciosa. `/ŋ/→/n/` nomeado, duas vezes |
+
+**Eleven clean utterances against the ten the criterion asks for**, median PER
+of the clean set **0,154**, and **two curated errors named** — `sub /ð/→/d/` on
+`th-voiced` and `sub /ŋ/→/n/` on `ing-alveolar`.
+
+**The room was the lever, and that is now measured instead of supposed.** The
+refusal of `ing-alveolar` was left ambiguous on purpose: 1,8× did not say
+whether the file was unreadable or merely muffled, and the subsection above
+wrote that the way to find out was a re-take of the same phrase at the same
+operating point, not a lower threshold. That is what happened, twice. The first
+re-take fell to 1,6× and was refused again; the second, same gain and a quieter
+room, passed. The threshold never moved, and the fifth question refused twice
+what was not a measurement and let through what was.
+
+**`/ŋ/→/n/` is the second gabarito named in human speech, and it came from the
+noisiest clean utterance in the set.** Its 0,529 sits between the signal of
+§2.3 (0,119) and the proxy of §2.4 (0,676), and the alignment around it is
+noisy — `/ɹ/→/v/` in *reading*, `/æ/→/ɪ/` in *and*. The curated operation came
+out anyway, on both `-ing` endings of the phrase. That is exactly what §3.2
+asks for and nothing beyond it: the operation carrying a `rule_id` is what
+reaches the student, the rest of the alignment is not.
+
+**`epenthesis-final` did not confirm its own hypothesis, and that is not the
+same as silence.** The curated hypothesis is `/ɡ/→/ɡi/` — the final plosive
+followed by an `/i/`. What the recognizer heard in *big* was `/ɡ/→/iː/`: the
+vowel is there, the plosive is gone. A neighbour of the hypothesis, and still a
+"não" in the `previsto?` column, because the signature of §3.4 matches
+operations and not neighbourhoods. The honest reading is §6's: without the
+`--errado` pass there is no separating "the evaluator did not find it" from
+"the error was not there", and on this utterance both readings stay open.
+
+**The gate of §2.4 is answered, and the answer is 0,154.** The risk that opened
+this phase — the real student landing near the proxy's 0,676 — did not happen:
+eleven human utterances, measured through the diagnostic rather than taken on
+faith, put the median at 0,154. That is 2,5× the floor of 0,061 and well below
+the proxy, on the side of the scale where §3.3 can operate. **E9 asks for the
+decision written with the number in hand, and the `--errado` pass is what is
+missing to write it:** two gabaritos named out of eleven show the evaluator
+names an error when the error is there, but it is the wrong pass that says
+whether the nine remaining "não" are absent errors or a blind evaluator. That
+is what is left of the deliverable.
+
 ### 3.6 A iGPU da §7 é o que paga a pronúncia
 
 A §7.5 da Fase 1.5 tirou o LLM do caminho crítico pela iGPU, e a §5 do mesmo
@@ -857,7 +910,7 @@ entregas numeradas.
 | | Entrega | Pronto quando |
 |---|---|---|
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
-| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento |
+| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Onze elocuções limpas, mediana 0,154, dois gabaritos nomeados** (§3.5) — o critério de elocuções está cumprido; falta a passada `--errado` e a decisão escrita |
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; ~15 itens, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate`** (§3.2) |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
