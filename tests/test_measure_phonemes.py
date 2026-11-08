@@ -733,3 +733,47 @@ def test_every_clean_take_counts_and_not_one_per_rule(
     assert "elocuções limpas: 2" in saida, "a réplica não entrou na contagem do critério"
     linhas = [line for line in saida.splitlines() if line.strip().startswith(item.rule_id)]
     assert len(linhas) == 2, f"a tabela mostrou {len(linhas)} tomada(s) de duas"
+
+
+def test_the_median_is_over_the_clean_takes_only(measure_phonemes, capsys):
+    """The headline median counts what the criterion counts, and nothing else.
+
+    Taken over every measured row it mixed in the takes a warning excludes: one
+    run printed 0,094 across ten rows while its nine clean ones sat at 0,125,
+    so the number at the head of the table was one no table in the plan could
+    be built from. `limpas` already kept "measured" and "counts" apart; the
+    median did not.
+    """
+    mp = measure_phonemes
+    regra = mp.SUBSTITUTIONS[0].rule_id
+    base = {"regra": regra, "esperado": ["a"], "ouvido": ["a"]}
+    results = [
+        base | {"per": 0.4, "avisos": ["a fala começa em 0,0s"]},
+        base | {"per": 0.1, "avisos": []},
+        base | {"per": 0.2, "avisos": []},
+        base | {"recusado": "sem contraste de fala"},
+    ]
+
+    assert mp._report_corpus(results) == 0
+    saida = capsys.readouterr().out
+    assert "elocuções limpas: 2" in saida
+    assert "PER mediano das limpas: 0.150" in saida, (
+        f"a mediana levou a tomada com aviso ou a recusa: {saida!r}"
+    )
+
+
+def test_no_clean_take_means_no_median(measure_phonemes, capsys):
+    """Measured but nothing clean is not a median; it is a sentence saying so.
+
+    Printing the median anyway would put a number the criterion rejects exactly
+    where the headline goes — the same failure as reporting a PER for audio the
+    diagnostic refused.
+    """
+    mp = measure_phonemes
+    regra = mp.SUBSTITUTIONS[0].rule_id
+    results = [{"regra": regra, "per": 0.4, "avisos": ["a fala vai até o fim"]}]
+
+    assert mp._report_corpus(results) == 0
+    saida = capsys.readouterr().out
+    assert "não há mediana que o critério aceite" in saida
+    assert "mediano das limpas" not in saida, "inventou uma mediana sem elocução limpa"
