@@ -1214,6 +1214,7 @@ def run_audio(
     path: Path,
     said: str,
     rule_id: str | None = None,
+    wrong: bool = False,
 ) -> dict:
     """Mede um WAV e devolve **o que foi escrito no relatório**, não o payload
     inicial.
@@ -1235,6 +1236,11 @@ def run_audio(
         "dito": said,
         "modelo": recognizer.model,
         **({"regra": rule_id} if rule_id else {}),
+        # Qual passada produziu esta elocução. Sem isto, as duas tomadas da
+        # mesma frase — a correta e a com o erro de propósito — são
+        # indistinguíveis no disco, e o `_clean_report_for` deixaria de pedir
+        # uma porque a outra já está limpa.
+        **({"errado": True} if wrong else {}),
     }
     problem = diagnose_signal(audio, np)
     if problem:
@@ -1306,7 +1312,7 @@ def _same_phrase(a: str | None, b: str) -> bool:
     )
 
 
-def _clean_report_for(phrase: str) -> Path | None:
+def _clean_report_for(phrase: str, wrong: bool = False) -> Path | None:
     """Relatório já no disco para esta frase, sem recusa e sem aviso.
 
     Serve para o `--corpus` não mandar regravar o que já está medido e limpo —
@@ -1327,13 +1333,19 @@ def _clean_report_for(phrase: str) -> Path | None:
         # pedir para regravar o que já estava medido e limpo.
         if _same_phrase(data.get("dito"), phrase) is False:
             continue
+        # A mesma frase tem duas tomadas com propósitos opostos; cada uma só
+        # dispensa a si mesma.
+        if bool(data.get("errado")) is not wrong:
+            continue
         if data.get("recusado") or data.get("avisos"):
             continue
         return report
     return None
 
 
-def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> int:
+def run_corpus(
+    recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool, wrong: bool = False
+) -> int:
     """Grava e mede as oito frases curadas numa execução só.
 
     Uma execução e não oito por uma razão que esta máquina impôs: o terminal
@@ -1347,18 +1359,37 @@ def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> 
     Entre as frases espera o Enter: quem grava precisa escolher quando falar.
     Sem terminal interativo, segue sem pausa.
     """
-    print("\n## Corpus da E9 — oito frases curadas")
+    titulo = "com o erro de propósito" if wrong else "oito frases curadas"
+    print(f"\n## Corpus da E9 — {titulo}")
     print(f"   {seconds}s por elocução, em {RECORDING_DIR}/")
     print("   Diga só a frase. O primeiro instante é descartado, então fale sem pressa.")
+    if wrong:
+        # Por que esta passada existe. Na passada correta, "erro previsto não
+        # nomeado" soma duas coisas opostas: o avaliador não achou o erro, e o
+        # erro não estava lá. Medido, foi 0 de 8 — e com PER entre 0,12 e 0,50
+        # em seis das oito, nenhuma das duas leituras se sustenta sozinha. É a
+        # cegueira da §6 caída justamente no que o portão da §3.3 decide.
+        #
+        # Cometer o erro de propósito desfaz o empate: se o avaliador nomeia a
+        # substituição curada quando ela está de fato lá, a base é boa e o
+        # 0 de 8 só dizia que o falante não comete esses erros. Se não nomeia
+        # nem assim, o avaliador não faz o trabalho.
+        print("   Esta é a passada ERRADA: cometa o erro curado de propósito.")
+        print("   O que se mede aqui não é o PER, é se o erro certo foi nomeado.")
 
     results: list[dict] = []
     for item in SUBSTITUTIONS:
-        done = None if redo else _clean_report_for(item.phrase)
+        done = None if redo else _clean_report_for(item.phrase, wrong=wrong)
         if done:
             print(f"\n[{item.rule_id}] já medida e limpa em {done.name} — pulando")
             results.append(json.loads(done.read_text()) | {"regra": item.rule_id})
             continue
         print(f'\n[{item.rule_id}]  "{item.phrase}"')
+        if wrong:
+            # O como-dizer-errado já está na base curada desde o início: é o
+            # par `wrong`/`right` de cada item, que até aqui só servia de
+            # documentação.
+            print(f'   DIGA ERRADO: "{item.wrong}" em vez de "{item.right}"')
         print(f"   hipótese curada: /{item.swap[0]}/ → /{item.swap[1]}/ — {item.why}")
         try:
             answer = input("   Enter para gravar, 'p' para pular: ").strip().lower()
@@ -1373,7 +1404,8 @@ def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> 
         # o que o terminal mostrava era um `FileNotFoundError` sobre o WAV que
         # ninguém escreveu — exatamente a falha calada que o docstring acima diz
         # que a execução única existe para evitar.
-        path = record(seconds, RECORDING_DIR / f"e9-{_slug(item.rule_id)}.wav")
+        sufixo = "-errado" if wrong else ""
+        path = record(seconds, RECORDING_DIR / f"e9-{_slug(item.rule_id)}{sufixo}.wav")
         # A tabela recebe o resultado completo — medições e recusa —, e não o
         # payload de antes da medição: `_report_corpus` lê `per`, `ouvido`,
         # `avisos` e `recusado` de cada linha. Com o payload inicial, as oito
@@ -1385,18 +1417,39 @@ def run_corpus(recognizer: PhonemeRecognizer, g2p, seconds: int, redo: bool) -> 
             path,
             item.phrase,
             rule_id=item.rule_id,
+            wrong=wrong,
         )
         if medida:
             results.append(medida)
 
-    return _report_corpus(results)
+    return _report_corpus(results, wrong=wrong)
 
 
-def _report_corpus(results: list[dict]) -> int:
-    """A tabela final: PER por regra, e se o erro previsto foi nomeado."""
+def _per_do_certo(phrase: str) -> float | None:
+    """O PER da tomada **correta** e limpa desta frase, se houver uma."""
+    report = _clean_report_for(phrase, wrong=False)
+    if report is None:
+        return None
+    try:
+        per = json.loads(report.read_text()).get("per")
+    except (OSError, json.JSONDecodeError):
+        return None
+    return per if isinstance(per, (int, float)) else None
+
+
+def _report_corpus(results: list[dict], wrong: bool = False) -> int:
+    """A tabela final: PER por regra, e se o erro previsto foi nomeado.
+
+    Na passada errada a coluna que decide não é o PER, é `nomeou?` — e ela vem
+    ao lado do PER da tomada correta de propósito, porque é o par que resolve
+    a ambiguidade do `previsto? não`.
+    """
     by_rule = {item.rule_id: item for item in SUBSTITUTIONS}
-    print("\n## Tabela do corpus")
-    print(f"   {'regra':<26} {'PER':>6}  {'previsto?':<10} avisos")
+    print("\n## Tabela do corpus" + (" — passada errada" if wrong else ""))
+    if wrong:
+        print(f"   {'regra':<26} {'certo':>6} {'errado':>7}  {'nomeou?':<9} avisos")
+    else:
+        print(f"   {'regra':<26} {'PER':>6}  {'previsto?':<10} avisos")
     limpas, nomeados = 0, 0
     for data in results:
         rule_id = data.get("regra", "?")
@@ -1412,13 +1465,44 @@ def _report_corpus(results: list[dict]) -> int:
             limpas += 1
         per = data.get("per")
         per_txt = f"{per:.3f}" if isinstance(per, (int, float)) else "recusada"
-        print(f"   {rule_id:<26} {per_txt:>6}  {named:<10} {avisos or ''}")
+        if wrong:
+            certo = _per_do_certo(item.phrase) if item else None
+            certo_txt = f"{certo:.3f}" if certo is not None else "—"
+            print(f"   {rule_id:<26} {certo_txt:>6} {per_txt:>7}  {named:<9} {avisos or ''}")
+        else:
+            print(f"   {rule_id:<26} {per_txt:>6}  {named:<10} {avisos or ''}")
 
     pers = [d["per"] for d in results if isinstance(d.get("per"), (int, float))]
     print(f"\n   elocuções limpas: {limpas} (o critério da E9 pede 10 no total)")
     if pers:
         print(f"   PER mediano: {statistics.median(pers):.3f}")
     print(f"   erros curados nomeados: {nomeados} de {len(pers)} medidas")
+    if wrong:
+        # A leitura é o produto desta passada, e não o número: dito de outro
+        # modo, é aqui que o portão da §3.3 abre ou fecha.
+        if not pers:
+            # Zero medidas não são zero acertos. Sem esta guarda, uma passada
+            # em que tudo foi pulado anunciava que o avaliador não nomeou erro
+            # nenhum — uma conclusão sobre o portão tirada de nada.
+            print("   Nenhuma elocução medida nesta passada: não há o que concluir.")
+        elif nomeados == len(pers):
+            print(
+                "   O avaliador nomeou o erro curado em todas as elocuções em que ele\n"
+                "   estava de fato lá. A base serve, e o 0 de 8 da passada correta dizia\n"
+                "   apenas que o falante não comete esses erros."
+            )
+        elif nomeados:
+            print(
+                f"   O avaliador nomeou o erro em {nomeados} de {len(pers)}: ele enxerga\n"
+                "   parte das regras curadas e não todas. Olhe regra por regra — o portão\n"
+                "   pode abrir para um subconjunto em vez de abrir ou fechar inteiro."
+            )
+        else:
+            print(
+                "   O avaliador não nomeou o erro curado em nenhuma elocução em que ele\n"
+                "   estava de fato lá. Isso não é o falante: é o avaliador não fazendo o\n"
+                "   trabalho, e é o que a §3.3 pede para decidir antes de haver produto."
+            )
     if limpas < len(SUBSTITUTIONS):
         print("   Regrave as que faltam ou saíram com aviso — `--corpus` pula as limpas.")
     return 0
@@ -1451,6 +1535,11 @@ def main() -> int:
         help="grava e mede as oito frases curadas numa execução (default 6s cada)",
     )
     parser.add_argument("--redo", action="store_true", help="com --corpus, regrava as já limpas")
+    parser.add_argument(
+        "--errado",
+        action="store_true",
+        help="com --corpus, grava a passada em que o erro curado é cometido de propósito",
+    )
     parser.add_argument("--say", help="o que foi dito no --audio ou no --record")
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--threads", type=int, default=0)
@@ -1479,6 +1568,8 @@ def main() -> int:
         )
     if args.corpus is not None and args.corpus < 1:
         raise SystemExit("--corpus precisa de pelo menos 1 segundo por elocução")
+    if args.errado and args.corpus is None:
+        raise SystemExit("--errado é uma passada do --corpus; use `--corpus --errado`")
     if (args.audio or args.record) and not args.say:
         raise SystemExit("--audio/--record precisam de --say para ter o que comparar")
     if args.audio and not args.audio.is_file():
@@ -1503,7 +1594,7 @@ def main() -> int:
     g2p = _build_g2p()
 
     if args.corpus is not None:
-        return run_corpus(recognizer, g2p, args.corpus, args.redo)
+        return run_corpus(recognizer, g2p, args.corpus, args.redo, wrong=args.errado)
 
     if audio_path:
         # Pela recusa e não pela verdade do dicionário: o `run_audio` passou a
