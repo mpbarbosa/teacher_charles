@@ -1282,7 +1282,22 @@ def run_audio(
         print("trocas   : " + ", ".join(f"/{a}/→/{b}/" for a, b in result.substitutions[:12]))
     if result.deletions:
         print("comidos  : " + ", ".join(f"/{p}/" for p in result.deletions[:12]))
+    # A assinatura do erro curado **no papel**: o que a troca faz à sequência
+    # de fonemas, pelas duas transcrições, sem áudio no meio. Vem para cá por
+    # dois motivos. Primeiro, é aqui que existem o G2P e o vocabulário do
+    # reconhecedor — o `_report_corpus` só vê relatórios. Segundo, ela fica
+    # registrada no relatório, e por isso a resposta de "o avaliador pegou o
+    # erro?" passa a ser auditável depois, em vez de ser recalculada de
+    # memória.
+    #
+    # Derivada das transcrições e não nomeada à mão, que é a lição que o
+    # `ops` já carrega: epêntese (*isport*, *bigi*) é **inserção**, e /h/
+    # mudo é **deleção**. Procurar só uma substituição `/sp/→/ɪsp/` nunca
+    # casa, e três das oito regras curadas ficavam estruturalmente impossíveis
+    # de nomear — "não" garantido pelo critério, não medido.
+    signature = _error_signature(recognizer, g2p, said, rule_id)
     measured = payload | {
+        **({"assinatura": sorted(list(op) for op in signature)} if signature else {}),
         "avisos": remarks,
         "fala_de_s": round(span[0], 2),
         "fala_ate_s": round(span[1], 2),
@@ -1296,6 +1311,30 @@ def run_audio(
     report = write_report(path, measured)
     print(f"relatório: {report}  (md5 {payload['md5'][:12]})")
     return measured
+
+
+def _error_signature(
+    recognizer: PhonemeRecognizer, g2p, said: str, rule_id: str | None
+) -> set[tuple[str, ...]]:
+    """As operações que a troca curada produz na sequência de fonemas.
+
+    O mesmo cálculo do `run_pairs`: fonemiza a frase, aplica a troca sobre a
+    transcrição e alinha as duas. Devolve conjunto vazio quando não há regra,
+    ou quando o fonema de origem não aparece na transcrição desta frase —
+    nesse caso não há gabarito, e o `_report_corpus` diz `—` em vez de "não".
+    """
+    if not rule_id:
+        return set()
+    item = next((i for i in SUBSTITUTIONS if i.rule_id == rule_id), None)
+    if item is None:
+        return set()
+    expected_ipa = phonemize(g2p, said)
+    source, target = item.swap
+    if source not in expected_ipa:
+        return set()
+    expected = tokenize(expected_ipa, recognizer.vocab)
+    wrong = tokenize(expected_ipa.replace(source, target), recognizer.vocab)
+    return ops(align(expected, wrong))
 
 
 def _slug(rule_id: str) -> str:
@@ -1450,19 +1489,27 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
         print(f"   {'regra':<26} {'certo':>6} {'errado':>7}  {'nomeou?':<9} avisos")
     else:
         print(f"   {'regra':<26} {'PER':>6}  {'previsto?':<10} avisos")
-    limpas, nomeados = 0, 0
+    limpas, nomeados, nomeaveis = 0, 0, 0
     for data in results:
         rule_id = data.get("regra", "?")
         item = by_rule.get(rule_id)
         heard, expected = data.get("ouvido"), data.get("esperado")
+        assinatura = data.get("assinatura")
         named = "—"
-        if item and heard and expected:
-            found = ("sub", item.swap[0], item.swap[1]) in ops(align(expected, heard))
+        medida_nomeavel = False
+        if item and heard and expected and assinatura:
+            # Interseção, como no `run_pairs`: basta o reconhecedor produzir
+            # **uma** das operações do gabarito. Relatório sem assinatura fica
+            # em `—` de propósito: é anterior a este cálculo, e chamá-lo de
+            # "não" seria inventar uma medida que ninguém fez.
+            found = bool({tuple(op) for op in assinatura} & ops(align(expected, heard)))
             named = "sim" if found else "não"
             nomeados += bool(found)
+            medida_nomeavel = True
         avisos = len(data.get("avisos", []))
         if not data.get("recusado") and not avisos:
             limpas += 1
+        nomeaveis += medida_nomeavel
         per = data.get("per")
         per_txt = f"{per:.3f}" if isinstance(per, (int, float)) else "recusada"
         if wrong:
@@ -1476,16 +1523,22 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
     print(f"\n   elocuções limpas: {limpas} (o critério da E9 pede 10 no total)")
     if pers:
         print(f"   PER mediano: {statistics.median(pers):.3f}")
-    print(f"   erros curados nomeados: {nomeados} de {len(pers)} medidas")
+    print(f"   erros curados nomeados: {nomeados} de {nomeaveis} com gabarito")
+    if nomeaveis < len(pers):
+        print(
+            f"   ({len(pers) - nomeaveis} elocução(ões) sem gabarito no relatório, "
+            "medida(s) antes deste cálculo — remeça com --redo para incluí-la(s))"
+        )
     if wrong:
         # A leitura é o produto desta passada, e não o número: dito de outro
         # modo, é aqui que o portão da §3.3 abre ou fecha.
-        if not pers:
-            # Zero medidas não são zero acertos. Sem esta guarda, uma passada
-            # em que tudo foi pulado anunciava que o avaliador não nomeou erro
-            # nenhum — uma conclusão sobre o portão tirada de nada.
-            print("   Nenhuma elocução medida nesta passada: não há o que concluir.")
-        elif nomeados == len(pers):
+        if not nomeaveis:
+            # Zero medidas com gabarito não são zero acertos. Sem esta guarda,
+            # uma passada em que tudo foi pulado — ou cujos relatórios são
+            # anteriores ao gabarito — anunciava que o avaliador não nomeou
+            # erro nenhum, uma conclusão sobre o portão tirada de nada.
+            print("   Nenhuma elocução com gabarito nesta passada: não há o que concluir.")
+        elif nomeados == nomeaveis:
             print(
                 "   O avaliador nomeou o erro curado em todas as elocuções em que ele\n"
                 "   estava de fato lá. A base serve, e o 0 de 8 da passada correta dizia\n"
@@ -1493,7 +1546,7 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
             )
         elif nomeados:
             print(
-                f"   O avaliador nomeou o erro em {nomeados} de {len(pers)}: ele enxerga\n"
+                f"   O avaliador nomeou o erro em {nomeados} de {nomeaveis}: ele enxerga\n"
                 "   parte das regras curadas e não todas. Olhe regra por regra — o portão\n"
                 "   pode abrir para um subconjunto em vez de abrir ou fechar inteiro."
             )
