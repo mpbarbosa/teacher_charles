@@ -336,3 +336,97 @@ def test_nao_estende_o_corte_por_bloco_enviesado_na_fala(measure_phonemes, tmp_p
         f"cortou {cortou * 1000:.0f} ms, {(cortou - transiente) * 1000:.0f} ms "
         "além do transiente — isso é fala"
     )
+
+
+def test_guarda_o_bruto_antes_de_cortar(measure_phonemes, tmp_path):
+    """O WAV de antes do corte fica num irmão `.bruto.wav`.
+
+    O corte é uma heurística sobre um dado que custou alguém falar, e
+    reescrever no lugar torna um corte errado irreversível: reverter o código
+    não devolve a amostra. Já cobrou uma vez — quando a primeira versão desta
+    função cortou 10 ms de um degrau de 980 ms, o original tinha sido
+    reescrito e a falha não pôde ser reproduzida com o áudio de verdade.
+    """
+    pytest.importorskip("numpy")
+    mp = measure_phonemes
+    import wave
+
+    wav = tmp_path / "abertura.wav"
+    _degrau_com_travessia(wav)
+    with wave.open(str(wav), "rb") as src:
+        antes = src.readframes(src.getnframes())
+
+    cortou = mp._trim_lead_in(wav)
+    assert cortou > 0, "sem corte este teste não prova nada"
+
+    bruto = tmp_path / "abertura.bruto.wav"
+    assert bruto.is_file(), "o bruto não foi guardado"
+    with wave.open(str(bruto), "rb") as src:
+        assert src.readframes(src.getnframes()) == antes, "o bruto não é o áudio de antes"
+    with wave.open(str(wav), "rb") as src:
+        assert len(src.readframes(src.getnframes())) < len(antes), "o arquivo não foi cortado"
+
+
+def _dois_degraus(path, sr: int = 16000) -> None:
+    """Um WAV em que a **segunda** passada do corte também corta.
+
+    Não é hipótese: aconteceu nesta base. O `record` cortou 10 ms de um degrau
+    de 980 ms, e rodar o mesmo corte sobre o resultado tirou os 970 ms que
+    tinham sobrado — porque cortar o começo traz o resto do degrau para dentro
+    da janela do onset. O perfil aqui reproduz isso: um degrau curto, uma
+    falha longa demais para ser atravessada, e outro degrau.
+    """
+    import wave
+
+    import numpy as np
+
+    bloco = sr // 100
+    partes = [np.full(bloco, -0.3, dtype=np.float32)]
+    travessia = np.full(bloco, -1.0, dtype=np.float32)
+    travessia[: int(bloco * 0.6)] = 0.78
+    partes.append(travessia)
+    partes += [np.full(bloco, -0.9, dtype=np.float32) for _ in range(3)]
+    # Falha maior que `GAP_MAX_BLOCKS`: a primeira passada para aqui.
+    rng = np.random.default_rng(11)
+    partes += [rng.normal(0.0, 0.017, size=bloco).astype(np.float32) for _ in range(5)]
+    partes += [np.full(bloco, -0.8 * (0.9**i), dtype=np.float32) for i in range(10)]
+    partes.append(rng.normal(0.0, 0.017, size=int(1.0 * sr)).astype(np.float32))
+    amostras = np.clip(np.concatenate(partes), -1.0, 1.0)
+    with wave.open(str(path), "wb") as dst:
+        dst.setnchannels(1)
+        dst.setsampwidth(2)
+        dst.setframerate(sr)
+        dst.writeframes((amostras * 32767).astype(np.int16).tobytes())
+
+
+def test_segunda_passada_nao_sobrescreve_o_bruto(measure_phonemes, tmp_path):
+    """Remedir não troca o bruto pelo arquivo já cortado.
+
+    Numa segunda passada o original de verdade é o da primeira. Sobrescrever
+    guardaria uma cópia do já cortado e perderia exatamente o que o irmão
+    existe para preservar — com a agravante de parecer que está tudo guardado.
+
+    O perfil tem dois degraus de propósito: com um só, a segunda passada não
+    acha onset, devolve 0 e nem chega a escrever o bruto, então o teste
+    passaria sem a guarda e não provaria nada. Foi o que ele fez na primeira
+    versão.
+    """
+    pytest.importorskip("numpy")
+    mp = measure_phonemes
+    import wave
+
+    wav = tmp_path / "abertura.wav"
+    _dois_degraus(wav)
+    with wave.open(str(wav), "rb") as src:
+        original = src.readframes(src.getnframes())
+
+    primeiro = mp._trim_lead_in(wav)
+    segundo = mp._trim_lead_in(wav)
+    assert primeiro > 0 and segundo > 0, (
+        f"as duas passadas precisam cortar para o teste valer: {primeiro}, {segundo}"
+    )
+
+    with wave.open(str(tmp_path / "abertura.bruto.wav"), "rb") as src:
+        assert src.readframes(src.getnframes()) == original, (
+            "a segunda passada sobrescreveu o bruto com o arquivo já cortado"
+        )
