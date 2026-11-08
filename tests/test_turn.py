@@ -23,6 +23,7 @@ from teacher_charles.teaching import (
     Leveled,
     TurnRunner,
 )
+from teacher_charles.teaching.capabilities import partial_name as app_partial_name
 from teacher_charles.teaching.contrastive import load_base
 from teacher_charles.teaching.level import AGREEING_TURNS, LevelTracker
 from teacher_charles.teaching.level import partial_name as level_partial_name
@@ -471,20 +472,25 @@ def student(conn):
     return StudentRepo(conn).get_or_create("ana", cefr_level="B1")
 
 
-def test_level_prompt_is_the_second_system_message(real_prompts, conn, session_id):
+def test_level_prompt_is_a_system_message_of_its_own(real_prompts, conn, session_id):
     """Depois da persona, nunca dentro dela.
 
-    O Ollama cacheia o prefixo do prompt. Como segunda mensagem, o ajuste de
+    O Ollama cacheia o prefixo do prompt. Como mensagem separada, o ajuste de
     nível só invalida o cache quando o nível muda; interpolado na persona,
     invalidaria a cada turno e devolveria os segundos que o aquecimento
     economizou (plano §1.4).
+
+    Terceira mensagem, não segunda: as capacidades do aplicativo entram antes,
+    porque não mudam enquanto o servidor está de pé.
     """
     runner = runner_for(FakeProvider(), real_prompts, conn)
     messages = runner.build_messages(session_id, "hello there", "B2")
 
     assert messages[0].content == real_prompts.get("persona")
-    assert messages[1].role == "system"
-    assert messages[1].content == real_prompts.get(level_partial_name("B2"))
+    assert messages[2].role == "system"
+    assert messages[2].content == real_prompts.get(level_partial_name("B2"))
+    # E nada do nível foi interpolado na persona.
+    assert "B2" not in messages[0].content
 
 
 def test_changing_the_level_changes_the_prompt(real_prompts, conn, session_id):
@@ -499,8 +505,9 @@ def test_changing_the_level_changes_the_prompt(real_prompts, conn, session_id):
     advanced = runner.build_messages(session_id, "hello there", "C1")
 
     assert beginner[0] == advanced[0], "a persona não pode mudar com o nível"
-    assert beginner[1] != advanced[1]
-    assert "A2" in beginner[1].content and "C1" in advanced[1].content
+    assert beginner[1] == advanced[1], "as capacidades do app não mudam com o nível"
+    assert beginner[2] != advanced[2]
+    assert "A2" in beginner[2].content and "C1" in advanced[2].content
     # E o ajuste de verdade chega ao modelo, não só ao build_messages.
     assert len({len(beginner), len(advanced)}) == 1
 
@@ -615,9 +622,9 @@ def test_mode_prompt_comes_after_the_level(real_prompts, conn, session_id):
     runner = runner_for(FakeProvider(), real_prompts, conn)
     messages = runner.build_messages(session_id, "hello there", "B1", "correction")
 
-    assert [m.role for m in messages[:3]] == ["system", "system", "system"]
-    assert messages[1].content == real_prompts.get(level_partial_name("B1"))
-    assert messages[2].content == real_prompts.get("modes/correction")
+    assert [m.role for m in messages[:4]] == ["system"] * 4
+    assert messages[2].content == real_prompts.get(level_partial_name("B1"))
+    assert messages[3].content == real_prompts.get("modes/correction")
 
 
 def test_each_mode_sends_its_own_prompt(real_prompts, conn, session_id):
@@ -764,4 +771,133 @@ async def test_the_drill_asks_for_an_exercise_at_the_end_of_the_prompt(
     assert "one short exercise" in last.content.lower()
     assert "calque.age-have" in last.content
     # E o bloco de dados continua lá em cima, onde o prefixo é cacheado.
-    assert "Correct forms:" in messages[3].content
+    assert "Correct forms:" in messages[4].content
+
+
+# --- O que o aplicativo sabe fazer --------------------------------------- #
+#
+# Estes testes usam os prompts **de verdade**: o que está sob teste é a verdade
+# que o produto conta sobre si, não um partial inventado no tmp_path. A falha
+# que os motivou é de uma sessão real — perguntado se tinha microfone para
+# capturar a voz do aluno, o Charles disse que não tinha e sugeriu gravar por
+# fora, com o botão de push-to-talk na tela ao lado da frase.
+
+
+def prefix_text(runner, level="B1", mode="conversation") -> str:
+    """O prefixo estável concatenado, com o espaço em branco normalizado.
+
+    Os prompts são markdown com linhas de 79 colunas, então uma frase procurada
+    aqui pode estar quebrada no meio. Normalizar faz o teste ser sobre o que o
+    professor lê, e não sobre onde o parágrafo foi dobrado.
+    """
+    joined = "\n".join(m.content for m in runner.stable_prefix(level, mode))
+    return " ".join(joined.split())
+
+
+def test_capability_partial_is_picked_by_the_flag():
+    assert app_partial_name(voice_enabled=True) == "partials/app/voice"
+    assert app_partial_name(voice_enabled=False) == "partials/app/text"
+
+
+def test_with_voice_off_charles_knows_there_is_no_microphone(real_prompts, conn):
+    """A resposta honesta, sem inventar saída.
+
+    Sem voz não há microfone nenhum, e o que o Charles não pode fazer é
+    improvisar um contorno: ele não sabe o que mais existe na máquina do aluno.
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=False)
+    text = prefix_text(runner)
+
+    assert "no microphone" in text
+    assert "Hold to talk" not in text, "não existe botão nenhum neste estado"
+
+
+def test_with_voice_on_charles_knows_about_the_button(real_prompts, conn):
+    """Com voz, a verdade é a oposta — e o botão tem nome na tela."""
+    runner = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=True)
+    text = prefix_text(runner)
+
+    # O mesmo rótulo do template (``web/templates/index.html``): mandar outro
+    # nome faria o Charles apontar para um botão que o aluno não vê.
+    assert "Hold to talk" in text
+    assert "out loud" in text
+    assert "no microphone" not in text
+
+
+def test_neither_state_claims_to_hear_pronunciation(real_prompts, conn):
+    """O avaliador de fonemas da Fase 2 não existe: a E9 é um portão aberto.
+
+    Com voz ou sem, o que chega ao professor é texto — a transcrição, nunca o
+    som. Deixá-lo agir como se ouvisse seria a mesma classe de erro que a E3 e
+    a E4 existem para evitar do lado da gramática.
+    """
+    for voice_enabled in (False, True):
+        runner = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=voice_enabled)
+        text = prefix_text(runner)
+        assert "cannot hear pronunciation" in text
+        assert "how *they* said it" in text
+
+
+def test_the_persona_does_not_change_with_the_voice_flag(real_prompts, conn):
+    """A persona não virou texto por execução.
+
+    É o invariante do cache de prefixo: o Ollama cacheia o começo do prompt, e
+    valor que varia dentro da persona jogaria esse cache fora a cada subida com
+    configuração diferente. O que varia entra como mensagem própria.
+    """
+    off = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=False).stable_prefix()
+    on = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=True).stable_prefix()
+
+    assert off[0] == on[0], "a persona não pode mudar com a voz"
+    assert off[0].content == real_prompts.get("persona")
+    # Diferem numa mensagem só, e é a das capacidades.
+    assert off[1] != on[1]
+    assert [m.content for m in off[2:]] == [m.content for m in on[2:]]
+
+
+def test_the_capabilities_are_the_second_system_message(real_prompts, conn, session_id):
+    """Logo depois da persona, antes do nível e do modo.
+
+    O critério é o mesmo de sempre: o cache é de prefixo, e isto é o mais
+    estável do que sobra — a voz é decidida na subida do servidor, enquanto o
+    nível muda a cada muitos turnos e o modo o aluno troca na tela.
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn, voice_enabled=True)
+    messages = runner.build_messages(session_id, "hello there", "B1", "correction")
+
+    assert messages[1].role == "system"
+    assert messages[1].content == real_prompts.get("partials/app/voice")
+
+
+@pytest.mark.parametrize(
+    ("voice_enabled", "needle"),
+    [(True, "Hold to talk"), (False, "no microphone")],
+)
+async def test_the_capabilities_reach_the_model(
+    real_prompts, conn, session_id, voice_enabled, needle
+):
+    """E chegam ao modelo, não só ao ``build_messages``."""
+    provider = FakeProvider()
+    runner = runner_for(provider, real_prompts, conn, voice_enabled=voice_enabled)
+
+    await collect(runner, session_id, "do you have a microphone?")
+
+    assert needle in provider.system_prompt_of_last_call()
+
+
+@pytest.mark.parametrize("voice_enabled", [False, True])
+async def test_a_missing_capability_partial_does_not_break_the_turn(
+    prompts, conn, session_id, voice_enabled
+):
+    """Mesma regra do nível e do modo: arquivo que falta não derruba a aula.
+
+    O ``prompts`` do tmp_path tem só a persona.
+    """
+    provider = FakeProvider(replies="Sure.")
+    runner = runner_for(provider, prompts, conn, voice_enabled=voice_enabled)
+
+    assert runner.app_prompt() == ""
+    assert [m.content for m in runner.stable_prefix()] == [prompts.get("persona")]
+
+    events = await collect(runner, session_id, "hello there")
+    assert isinstance(events[-1], Done)

@@ -48,6 +48,7 @@ from ..prompts import PromptLibrary
 from ..store.models import Student
 from ..store.repo import CorrectionRepo, SessionRepo, TurnRepo
 from .analyzer import Analysis, Analyzer
+from .capabilities import partial_name as app_partial_name
 from .level import LevelDecision, LevelTracker
 from .level import partial_name as level_partial_name
 from .modes import (
@@ -188,6 +189,7 @@ class TurnRunner:
         analysis_after_reply: bool = True,
         tracker: LevelTracker | None = None,
         planner: DrillPlanner | None = None,
+        voice_enabled: bool = False,
     ) -> None:
         self._provider = provider
         self._prompts = prompts
@@ -211,6 +213,10 @@ class TurnRunner:
         # Sem planner o modo drill ainda funciona: o bloco diz que não há regra
         # para treinar, que é a verdade quando a base não carregou.
         self._planner = planner
+        # Um ``bool``, não o objeto ``Voice``: `teaching/` não importa `voice/`.
+        # Decide qual partial de capacidades entra no prefixo — ver
+        # ``teaching/capabilities.py``.
+        self._voice_enabled = voice_enabled
 
     # --- prompt da resposta ---------------------------------------------- #
 
@@ -238,6 +244,19 @@ class TurnRunner:
             "explanation instead of your own:\n" + "\n".join(lines)
         )
 
+    def app_prompt(self) -> str:
+        """O que este aplicativo sabe fazer, ou string vazia.
+
+        Verdade sobre o produto, não comportamento: se há botão de falar, se o
+        professor responde em voz alta, e — nos dois estados — que o que chega
+        aqui é texto, então pronúncia não se ouve nem se pontua. Sem isso o
+        modelo responde pelo palpite genérico de chatbot, e respondeu: disse que
+        não tinha microfone com o push-to-talk na tela do aluno.
+
+        Partial ausente não é erro, mesma regra do nível e do modo.
+        """
+        return self._optional_prompt(app_partial_name(self._voice_enabled))
+
     def level_prompt(self, level: str) -> str:
         """O ajuste de registro deste nível, ou string vazia.
 
@@ -261,10 +280,17 @@ class TurnRunner:
     ) -> list[Message]:
         """As mensagens de sistema que não mudam de turno para turno.
 
-        Persona, ajuste de nível e comportamento do modo — nesta ordem, da que
-        muda menos para a que muda mais. É **este** prefixo que o Ollama
-        mantém em cache, e é por isso que ele existe como método: o
-        aquecimento aquece exatamente o que o turno manda.
+        Persona, capacidades do aplicativo, ajuste de nível e comportamento do
+        modo — nesta ordem, da que muda menos para a que muda mais. É **este**
+        prefixo que o Ollama mantém em cache, e é por isso que ele existe como
+        método: o aquecimento aquece exatamente o que o turno manda.
+
+        As capacidades vêm em segundo porque são o mais estável do que sobra: a
+        voz é decidida na subida e não muda enquanto o servidor está de pé,
+        enquanto o nível muda a cada muitos turnos e o modo o aluno troca na
+        tela. E vêm como mensagem própria, não interpoladas na persona, pelo
+        mesmo motivo que o nível (plano §1.4): o que varia dentro da persona
+        invalidaria o prefixo inteiro.
 
         Medido na E7 (plano §5.5): quando o aquecimento mandava só a persona e
         o turno mandava persona + nível + modo, o primeiro turno chegava com
@@ -273,6 +299,10 @@ class TurnRunner:
         a E6 depois mudaram. Duplicata some; sobra uma lista só.
         """
         messages = [Message(role="system", content=self._prompts.get("persona"))]
+
+        capabilities = self.app_prompt()
+        if capabilities:
+            messages.append(Message(role="system", content=capabilities))
 
         adjustment = self.level_prompt(level)
         if adjustment:
@@ -315,10 +345,11 @@ class TurnRunner:
         todo o histórico para fora do prefixo comum com o turno anterior e faria
         o modelo reavaliar a conversa inteira a cada turno.
         """
-        # Persona, nível e modo: a parte estável, que o aquecimento já pôs no
-        # cache. Nível antes de modo porque o cache é de prefixo e o nível muda
-        # menos — trocar de modo não deveria invalidar o ajuste de nível que já
-        # estava lá.
+        # Persona, capacidades, nível e modo: a parte estável, que o
+        # aquecimento já pôs no cache. Nível antes de modo porque o cache é de
+        # prefixo e o nível muda menos — trocar de modo não deveria invalidar o
+        # ajuste de nível que já estava lá. As capacidades antes dos dois, pelo
+        # mesmo critério: elas não mudam enquanto o servidor está de pé.
         messages = self.stable_prefix(level, mode)
 
         # O bloco do drill é dado apurado pela aplicação (qual regra, com que

@@ -456,7 +456,9 @@ def test_warmup_sends_exactly_the_prefix_the_turn_sends(tmp_path):
         expected = app.state.runner.stable_prefix()
 
     assert [m.content for m in warm.messages[:-1]] == [m.content for m in expected]
-    assert len(expected) == 3, "persona, nível e modo — o prefixo estável de um turno real"
+    assert len(expected) == 4, (
+        "persona, capacidades, nível e modo — o prefixo estável de um turno real"
+    )
     assert warm.messages[-1].role == "user"
 
 
@@ -796,3 +798,51 @@ def test_progress_shows_the_level_history(client_and_provider):
 def test_the_conversation_links_to_the_error_log(client_and_provider):
     client, _ = client_and_provider
     assert 'href="/progress"' in client.get("/").text
+
+
+# --- As capacidades do aplicativo chegam ao modelo ------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("voice_enabled", "present", "absent"),
+    [(True, "Hold to talk", "no microphone"), (False, "no microphone", "Hold to talk")],
+)
+def test_the_turn_tells_the_model_what_the_app_can_do(tmp_path, voice_enabled, present, absent):
+    """A rota monta o runner; é ela que tem o flag da voz.
+
+    Numa sessão real o Charles respondeu que não tinha microfone com o
+    push-to-talk na tela do aluno, porque nada no prompt falava do produto. O
+    flag só chegava ao ``config.py`` e ao ``voice/``.
+    """
+    provider = FakeProvider(replies="Yes — hold the button and talk to me.")
+    settings = settings_for(tmp_path, voice_enabled=voice_enabled)
+
+    with TestClient(create_app(settings, provider=provider)) as client:
+        response = client.post("/api/chat", json={"message": "do you have a microphone?"})
+        assert response.status_code == 200
+
+    system = " ".join(provider.calls[0].messages[0].content.split())
+    prompt = " ".join(provider.system_prompt_of_last_call().split())
+    assert present in prompt
+    assert absent not in prompt
+    # E nada disso entrou na persona, que é o prefixo cacheado.
+    assert present not in system
+
+
+def test_the_warmup_carries_the_capabilities_too(tmp_path):
+    """Mesma lição da §5.5: o aquecimento não pode divergir do turno.
+
+    Um prefixo com as capacidades no turno e sem elas no aquecimento faria o
+    primeiro turno do aluno reavaliar tudo o que vem depois da persona.
+    """
+    provider = FakeProvider(replies="ok")
+    settings = settings_for(tmp_path, llm_warmup=True, voice_enabled=True)
+    app = create_app(settings, provider=provider)
+
+    with TestClient(app) as client:
+        client.get("/health")
+        warm = provider.calls[0]
+        expected = app.state.runner.stable_prefix()
+
+    assert [m.content for m in warm.messages[:-1]] == [m.content for m in expected]
+    assert "Hold to talk" in " ".join(expected[1].content.split())
