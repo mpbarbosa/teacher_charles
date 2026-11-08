@@ -840,7 +840,15 @@ def record(seconds: int, out: Path) -> Path:
     ``wave`` da stdlib tropeça neles.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
-    print(f"\n  Gravando {seconds}s em {out} — fale agora, sem esperar.", flush=True)
+    # "Fale agora, sem esperar" was right when the trim took a fixed 1,0 s and
+    # wrong since it became a decay search: it now stops at the first block not
+    # dominated by DC — 40 ms on a clean start — so speaking instantly buys no
+    # audio and trips the head-cut warning, which excludes the take from the
+    # criterion. §3.5 of the plan records this message eating a `/ð ə/` once;
+    # the second time it cost a take of `pron.epenthesis-final` measured at PER
+    # 0,062 and thrown out for an edge warning. The prompt now asks for what
+    # the diagnostic wants.
+    print(f"\n  Gravando {seconds}s em {out} — deixe um instante de silêncio e fale.", flush=True)
     try:
         subprocess.run(
             [
@@ -1604,9 +1612,25 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
             print(f"   {rule_id:<26} {md5:<9} {per_txt:>6}  {named:<10} {avisos or ''}")
 
     pers = [d["per"] for d in results if isinstance(d.get("per"), (int, float))]
+    # The median over the **clean** takes, because that is the set the criterion
+    # counts and the set the plan's tables are built from. Over every measured
+    # row it mixed in the ones a warning excludes: one run printed 0,094 across
+    # ten rows while its nine clean ones sat at 0,125, so the headline number
+    # was one no table in the plan could be built from — the same confusion
+    # between "what was measured" and "what counts" that `limpas` exists to
+    # keep apart.
+    pers_limpos = [
+        d["per"]
+        for d in results
+        if isinstance(d.get("per"), (int, float)) and not d.get("recusado") and not d.get("avisos")
+    ]
     print(f"\n   elocuções limpas: {limpas} (o critério da E9 pede 10 no total)")
-    if pers:
-        print(f"   PER mediano: {statistics.median(pers):.3f}")
+    if pers_limpos:
+        print(f"   PER mediano das limpas: {statistics.median(pers_limpos):.3f}")
+    elif pers:
+        # Measured but none of it clean. Printing the median anyway would put a
+        # number the criterion rejects where the headline goes.
+        print("   Nenhuma elocução limpa: não há mediana que o critério aceite.")
     print(f"   erros curados nomeados: {nomeados} de {nomeaveis} com gabarito")
     if detalhe:
         print("\n   Qual operação do gabarito casou — confira se é a que a regra descreve:")

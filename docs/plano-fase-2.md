@@ -732,7 +732,7 @@ aggregate ceiling to calibrate, and E9 should stop looking for one.**
 
 What the gate still owes, and neither item needs new code:
 
-* **Two clean utterances.** Three phrases have no clean take —
+* **Two clean utterances** — one, after the recording session below. Three phrases have no clean take —
   `pron.epenthesis-final`, `pron.vowel-length` and `pron.ing-alveolar` — and all
   three were measured only with the **low-level** warning, at the old operating
   point. Recording those three at the operating point of §3.5 (`Capture` 70%,
@@ -741,6 +741,59 @@ What the gate still owes, and neither item needs new code:
   picture; they are owed because the criterion counts clean ones.
 * **The `--errado` pass**, eight utterances, never recorded. It is what turns
   the seven "não" above from ambiguous into informative.
+
+#### The ninth clean utterance, and two messages that cost takes
+
+Three takes recorded at the operating point of §3.5, with the gain set to 70%
+(+15,75 dB) and the boost off. One of them counts.
+
+| regra | áudio (md5) | PER | o que saiu |
+|---|---|---|---|
+| `pron.vowel-length` | `52561607` | **0,059** | **limpa.** `/ʊ/→/uː/` em *full*; os dois `/iː/` de *beach* e *people* certos |
+| `pron.epenthesis-final` | `f27e7ed6` | 0,062 | aviso de borda — fala em 0,0 s. Não conta |
+| `pron.ing-alveolar` | `4d742010` | — | **recusada:** contraste de fala 1,8× contra o mínimo de 4 |
+
+**Nine clean utterances of the ten the criterion asks for**, median PER of the
+clean set **0,125**, and still one curated error named — `sub /ð/→/d/`. The new
+clean take is the second lowest of the nine, and it is a *rejection* of its own
+curated hypothesis done properly: both `/iː/` came out long, so `sub /iː/→/ɪ/`
+is absent, and the single disagreement is `/ʊ/→/uː/` in *full* — a vowel the
+`--discriminate` floor of §2.2 already named as unreliable in this stack.
+
+**The refusal is the fifth question doing its job on real speech, and it is the
+calibration point §3.5 asked for.** That subsection left
+`SPEECH_CONTRAST_MIN = 4` provisional, on two files of unknown content, and
+said E9 would calibrate it with utterances of a known phrase — this is one:
+1,8×, a known phrase, refused before the model loaded. What it does **not**
+settle is whether that file was unreadable or merely muffled, and that cannot
+be settled from inside: the way to find out is a re-take of the same phrase at
+the same operating point, not a lower threshold.
+
+**Two messages in the script asked for the opposite of what the diagnostic
+wants, and both have cost takes.** They are the same defect in two places —
+a number or an instruction that describes the file rather than the utterance,
+which is the thread §3.5 has been pulling since the first recording.
+
+* **`record` said "fale agora, sem esperar".** True when the trim took a fixed
+  1,0 s; false since it became a decay search, which stops at the first block
+  not dominated by DC — 40 ms on a clean start. Speaking instantly buys no
+  audio and trips the head-cut warning, which excludes the take. §3.5 records
+  this message eating a `/ð ə/` once; the second time it cost
+  `pron.epenthesis-final` at PER 0,062, thrown out with the curated error
+  absent and a `/ɡ/` deleted mid-phrase, nowhere near the cut. The prompt now
+  asks for the instant of silence the diagnostic wants.
+* **The headline median counted takes the criterion excludes.** The same run
+  printed `PER mediano: 0,094` over ten measured rows while its nine clean ones
+  sat at 0,125 — a number no table here could be built from. `limpas` had kept
+  "measured" and "counts" apart since it existed; the median had not. It is now
+  the median of the clean takes, and with nothing clean it says so instead of
+  printing one.
+
+**One clean utterance left**, and two phrases can supply it: `epenthesis-final`
+needs only the beat of silence the prompt now asks for, and `ing-alveolar`
+needs a quieter room — gain is not the lever, as §3.5 measured. The `--errado`
+pass is still unrecorded, and is still what turns the eight "não" above from
+ambiguous into informative.
 
 ### 3.6 A iGPU da §7 é o que paga a pronúncia
 
