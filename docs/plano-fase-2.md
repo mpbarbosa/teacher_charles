@@ -305,6 +305,13 @@ o proxy em 0,68. O valor exato é da E9 — ele **não pode** ser calibrado em �
 sintético, porque é exatamente o número que separa "aluno com sotaque" de
 "reconhecedor perdido", e o sintético não tem nem um nem outro.
 
+**O teto nunca foi calibrado, e a §3.5 mede por que não deve ser.** Em fala
+humana as duas faixas se sobrepõem: uma leitura sem erro de pronúncia nenhum
+dá PER 0,364, e uma com o erro curado presente dá 0,188. O portão continua
+sendo "calar é resposta", e o que o dispara é a **operação de alinhamento**
+casada com regra curada — não um número agregado. Ler esta subseção como um
+pedido de teto é perseguir um valor que os dados dizem não existir.
+
 ### 3.4 A epêntese é classe, não fonema
 
 A §2.2 mostra que o piso é feito de rótico e vogal reduzida, e a §2.3 mostra o
@@ -605,7 +612,9 @@ precisa:
 Ele **pula o que já está medido e limpo**, e "limpo" é o critério da E9: passou
 pelo diagnóstico e não tem aviso de borda. Relatório com aviso não conta — foi
 assim que um `/ð ə/` comido pelo corte quase entrou na tabela como erro do
-aluno. Mas a hipótese que fecharia a Fase 2 — "o reconhecedor não lê brasileiro,
+aluno. O que ele pula, ele **completa**: o gabarito do relatório antigo é
+preenchido ali mesmo, sem regravar nada, pela razão da subseção da passada
+correta. Mas a hipótese que fecharia a Fase 2 — "o reconhecedor não lê brasileiro,
 e sem alinhamento não há feedback" — **não se sustentou nos primeiros dados
 reais.**
 
@@ -653,6 +662,85 @@ remedir quando o limiar mudar. Nesta máquina:
 Com isso: contraste 15,71, pico −11,0 dBFS, 42 blocos de fala em 70, e as cinco
 perguntas caladas. É o melhor sinal da série e o número a reproduzir nas dez
 elocuções — variar o ganho entre elas tornaria os PER incomparáveis.
+
+#### The correct pass, checked by machine: eight clean utterances, one gabarito named
+
+The "erro previsto nomeado?" column was `—` for every take on disk, and it is
+the one column the gate reads. The reason was mechanical: the signature is
+computed inside `run_audio`, so only a take recorded **after** that calculation
+existed carried one — and the only route the script offered to the rest was
+`--redo`, which records over the take. That spends someone's voice on a number
+nobody has to speak for, and destroys a clean utterance of a corpus that needs
+ten.
+
+The gabarito is not a measurement. `_error_signature` phonemizes the curated
+phrase, applies the swap to the transcription and aligns the two: it needs the
+G2P and the recognizer's vocabulary, and **no audio at all**. So the `--corpus`
+now writes it into the clean report it skips, at that report's own path, and the
+column answers over audio that already held the answer — including the two takes
+whose WAV a later recording of the same rule overwrote, because `esperado` and
+`ouvido` are in the report and that is everything the alignment needs. `--audio`
+gained `--rule` for the same reason: `main` was the one caller that never passed
+the rule along, so a one-off measurement could not carry a gabarito either.
+
+Counting changed too, and it was wrong in the direction that asks someone to
+speak again. The loop opened **one** report per phrase, reported five clean
+utterances with eight on disk — and the take it dropped for `pron.th-voiced` was
+the one carrying the curated `/ð/→/d/`. The criterion counts utterances, not
+rules; ten over eight phrases means replicas, and §3.5 above is where replicas
+earned their place.
+
+| regra | áudio (md5) | PER | gabarito nomeado? |
+|---|---|---|---|
+| `pron.r-initial` | `af87b8d1` | **0,000** | não |
+| `pron.th-unvoiced` | `30d91003` | 0,053 | não |
+| `pron.th-unvoiced` | `523e87f7` | 0,053 | não |
+| `pron.th-voiced` | `3ba35169` | 0,125 | não |
+| `pron.r-initial` | `5907fa81` | 0,154 | não |
+| `pron.th-voiced` | `b704dc72` | 0,188 | **sim** — `sub /ð/→/d/` |
+| `pron.epenthesis-initial` | `c8f85cb5` | 0,312 | não |
+| `pron.h-dropping` | `728ff6cb` | 0,364 | não |
+| **mediana** | | **0,139** | **1 de 8** |
+
+**One of eight is not a verdict on the evaluator, and that is exactly why the
+`--errado` pass exists.** In the correct pass a "não" sums two opposite things:
+the evaluator missed the error, and the error was not there. Here all seven are
+the second, and the reports say so phoneme by phoneme — the speaker produced all
+five `/h/` of *He has a house here*, inserted no vowel before `/sp/` in *Sport*,
+and kept `/θ/` and `/ɹ/` in the four takes of the two sentences that test them.
+A base that is never exercised cannot be judged by how often it fires.
+
+**The one "sim" is the first curated error named by machine on human speech.**
+§3.5 read `/ð/`→`/d/` in *other* off the transcription by hand; now the
+alignment is intersected with a gabarito derived from the two transcriptions,
+and the operation that matched is `sub /ð/→/d/` — the one the item describes,
+not one of the collateral operations the swap also produces. That is the
+difference between a number and an answer the evaluator could give a student.
+
+**And the two bands now overlap, which settles §3.3 by data instead of by
+argument.** The clean take at **0,364** has no curated error in it at all: its
+four disagreements are `/ɐ/→/æ/`, `/z/→/h/`, `/s/→/z/` and `/ɪɹ/→/iː/` —
+reduced vowel, resegmentation across a word boundary, inter-word voicing
+assimilation and the rhotic, which are the three categories §2.2 and §3.5
+already named as legitimate divergence between two transcriptions of correct
+English. The take **with** a real curated error sits at 0,188, **0,176 below
+it**. A PER ceiling loose enough to spare this correct speaker would never fire
+on the erroneous take. §3.5 reached that conclusion from a 0,063 delta between
+two readings of one sentence; the gap is now wider, across sentences, and
+pointing the wrong way. **The gate is per alignment operation. There is no
+aggregate ceiling to calibrate, and E9 should stop looking for one.**
+
+What the gate still owes, and neither item needs new code:
+
+* **Two clean utterances.** Three phrases have no clean take —
+  `pron.epenthesis-final`, `pron.vowel-length` and `pron.ing-alveolar` — and all
+  three were measured only with the **low-level** warning, at the old operating
+  point. Recording those three at the operating point of §3.5 (`Capture` 70%,
+  boost 0, speaking close) takes the corpus to eleven. Their PERs at the old
+  point were 0,063, 0,059 and 0,177, so nothing suggests they will move the
+  picture; they are owed because the criterion counts clean ones.
+* **The `--errado` pass**, eight utterances, never recorded. It is what turns
+  the seven "não" above from ambiguous into informative.
 
 ### 3.6 A iGPU da §7 é o que paga a pronúncia
 
@@ -716,7 +804,7 @@ entregas numeradas.
 | | Entrega | Pronto quando |
 |---|---|---|
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
-| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, teto do portão da §3.3 calibrado | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão** |
+| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento |
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; ~15 itens, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate`** (§3.2) |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
