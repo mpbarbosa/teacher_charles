@@ -559,3 +559,33 @@ def test_relatorio_sem_gabarito_nao_conta_como_nao(measure_phonemes, capsys):
     assert "não" not in linha, f"relatório sem gabarito virou um 'não': {linha!r}"
     assert "nomeados: 0 de 0" in saida
     assert "sem gabarito no relatório" in saida
+
+
+def test_mostra_qual_operacao_do_gabarito_casou(measure_phonemes, capsys):
+    """O "sim" vem acompanhado da operação que o produziu.
+
+    O gabarito sai de trocar o fonema em **toda** a transcrição, então numa
+    frase com várias ocorrências ele cobre mais do que a regra descreve: em
+    "The red car is ready" há três /ɹ/, e o gabarito da `r-initial` inclui
+    `sub /ɑːɹ/→/h/` — o /ɹ/ de *car*, final de sílaba, o oposto de inicial.
+    Casar com essa daria um "sim" pela razão errada, e um "sim" pela razão
+    errada é o que abriria o portão da §3.3 sem o avaliador funcionar.
+
+    A construção do gabarito não muda: é a mesma do `run_pairs`, e mexer nela
+    redefiniria em silêncio os números da §2. O que o teste prende é a
+    operação casada ficar à vista, para quem lê poder recusá-la.
+    """
+    mp = measure_phonemes
+    regra = "pron.r-initial"
+    dados = {
+        "regra": regra,
+        "per": 0.2,
+        "esperado": ["ɑːɹ", "ɪz"],
+        "ouvido": ["h", "ɪz"],
+        "assinatura": [["sub", "ɹ", "h"], ["sub", "ɑːɹ", "h"]],
+    }
+
+    assert mp._report_corpus([dados], wrong=True) == 0
+    saida = capsys.readouterr().out
+    assert "Qual operação do gabarito casou" in saida
+    assert "sub/ɑːɹ/h" in saida, "não disse qual operação casou, só que casou"
