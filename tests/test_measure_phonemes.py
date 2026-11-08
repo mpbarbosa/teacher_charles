@@ -511,3 +511,51 @@ def test_passada_errada_sem_medicao_nao_conclui_nada(measure_phonemes, capsys):
     saida = capsys.readouterr().out
     assert "não há o que concluir" in saida
     assert "não fazendo o" not in saida, "concluiu sobre o avaliador sem medir nada"
+
+
+def test_epentese_nomeada_e_insercao_e_nao_substituicao(measure_phonemes, capsys):
+    """Epêntese é **inserção**, e o gabarito tem de casar com ela.
+
+    O critério antigo procurava a substituição `/sp/→/ɪsp/` no alinhamento.
+    Nenhum alinhador produz isso: a vogal epentética aparece como `ins /ɪ/`.
+    Medido com o vocabulário de verdade, três das oito regras curadas eram
+    **estruturalmente impossíveis** de nomear — `epenthesis-initial` (`ins
+    /ɪ/`), `epenthesis-final` (`ins /i/`) e `h-dropping` (`del /h/`) —, então
+    a coluna que decide o portão da §3.3 devolvia "não" garantido pelo
+    critério e não medido. É a mesma lição que o docstring do `ops` já
+    registrava de uma rodada anterior.
+    """
+    mp = measure_phonemes
+    regra = "pron.epenthesis-initial"
+    dados = {
+        "regra": regra,
+        "per": 0.5,
+        "esperado": ["s", "p"],
+        "ouvido": ["ɪ", "s", "p"],
+        "assinatura": [["ins", "ɪ"]],
+    }
+
+    assert mp._report_corpus([dados], wrong=True) == 0
+    saida = capsys.readouterr().out
+    linha = next(line for line in saida.splitlines() if regra in line)
+    assert " sim " in f" {linha.split(regra)[1]} ", f"epêntese não foi nomeada: {linha!r}"
+    assert "nomeados: 1 de 1" in saida
+
+
+def test_relatorio_sem_gabarito_nao_conta_como_nao(measure_phonemes, capsys):
+    """Sem assinatura no relatório, a resposta é `—` e não "não".
+
+    Os relatórios medidos antes deste cálculo não têm gabarito. Chamá-los de
+    "não" seria inventar uma medida que ninguém fez — e o denominador do
+    "erros curados nomeados" diria que foram avaliados.
+    """
+    mp = measure_phonemes
+    regra = "pron.th-unvoiced"
+    dados = {"regra": regra, "per": 0.1, "esperado": ["θ"], "ouvido": ["t"]}
+
+    assert mp._report_corpus([dados], wrong=True) == 0
+    saida = capsys.readouterr().out
+    linha = next(line for line in saida.splitlines() if regra in line)
+    assert "não" not in linha, f"relatório sem gabarito virou um 'não': {linha!r}"
+    assert "nomeados: 0 de 0" in saida
+    assert "sem gabarito no relatório" in saida
