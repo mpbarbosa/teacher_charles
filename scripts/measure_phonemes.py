@@ -1490,6 +1490,7 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
     else:
         print(f"   {'regra':<26} {'PER':>6}  {'previsto?':<10} avisos")
     limpas, nomeados, nomeaveis = 0, 0, 0
+    detalhe: list[tuple[str, list[str]]] = []
     for data in results:
         rule_id = data.get("regra", "?")
         item = by_rule.get(rule_id)
@@ -1502,10 +1503,24 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
             # **uma** das operações do gabarito. Relatório sem assinatura fica
             # em `—` de propósito: é anterior a este cálculo, e chamá-lo de
             # "não" seria inventar uma medida que ninguém fez.
-            found = bool({tuple(op) for op in assinatura} & ops(align(expected, heard)))
+            casadas = {tuple(op) for op in assinatura} & ops(align(expected, heard))
+            found = bool(casadas)
             named = "sim" if found else "não"
             nomeados += bool(found)
             medida_nomeavel = True
+            if found:
+                # **Qual** operação casou, e não só que casou. O gabarito vem
+                # de trocar o fonema em toda a transcrição, então numa frase
+                # com várias ocorrências ele cobre mais do que a regra
+                # descreve: em "The red car is ready" há três /ɹ/, e o
+                # gabarito da `r-initial` inclui `sub /ɑːɹ/→/h/`, que é o /ɹ/
+                # de *car* — final de sílaba, o oposto de inicial. Casar com
+                # essa daria um "sim" pela razão errada. A construção não muda
+                # aqui de propósito: é a mesma do `run_pairs`, e mexer nela
+                # redefiniria em silêncio os números da §2 do plano. O que
+                # muda é que a operação casada fica à vista, para quem lê a
+                # tabela poder recusá-la.
+                detalhe.append((rule_id, sorted("/".join(op) for op in casadas)))
         avisos = len(data.get("avisos", []))
         if not data.get("recusado") and not avisos:
             limpas += 1
@@ -1524,6 +1539,10 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
     if pers:
         print(f"   PER mediano: {statistics.median(pers):.3f}")
     print(f"   erros curados nomeados: {nomeados} de {nomeaveis} com gabarito")
+    if detalhe:
+        print("\n   Qual operação do gabarito casou — confira se é a que a regra descreve:")
+        for rule_id, casadas in detalhe:
+            print(f"     {rule_id:<26} {', '.join(casadas)}")
     if nomeaveis < len(pers):
         print(
             f"   ({len(pers) - nomeaveis} elocução(ões) sem gabarito no relatório, "
