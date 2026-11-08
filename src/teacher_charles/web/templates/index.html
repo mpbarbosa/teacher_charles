@@ -33,6 +33,12 @@
       {% endif %}
       <a class="button" href="/progress" title="No que o aluno mais erra">Your mistakes</a>
       <button id="reset" type="button" title="Começar uma conversa nova">New conversation</button>
+      {# Desligar daqui existe porque quem sobe o Charles por `scripts/run.sh` e
+         estuda no navegador não tem o terminal à vista para dar Ctrl-C. #}
+      <button id="shutdown" type="button" class="danger"
+              title="Stop Charles — you'll need the terminal to start him again">
+        Shut down
+      </button>
     </div>
   </header>
 

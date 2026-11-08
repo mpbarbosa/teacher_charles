@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import signal
 
 import pytest
 from fastapi.testclient import TestClient
 
-from teacher_charles.app import create_app
+from teacher_charles.app import create_app, request_stop
 from teacher_charles.config import Settings
 from teacher_charles.llm import FakeProvider, ProviderUnavailable
 from teacher_charles.prompts import PromptLibrary
@@ -305,6 +306,71 @@ def test_reset_starts_a_new_session_and_keeps_the_old_turns(client_and_provider)
     # ...mas o histórico antigo continua no banco, que é o material da E7.
     rows = client.app.state.db.execute("SELECT count(*) AS n FROM turn").fetchone()
     assert rows["n"] == 2
+
+
+# --- /api/shutdown --------------------------------------------------------- #
+
+
+def test_shutdown_answers_and_asks_the_process_to_stop(client_and_provider):
+    client, _ = client_and_provider
+    asked = []
+    # A rota lê ``app.state.stop`` a cada chamada justamente para isto: o teste
+    # troca o sinal por um registro, em vez de matar o pytest.
+    client.app.state.stop = lambda: asked.append("stop")
+
+    response = client.post("/api/shutdown")
+
+    assert response.status_code == 200
+    assert response.json() == {"stopping": True}
+    # A parada é um BackgroundTask: ela roda depois do corpo ter ido para o
+    # socket. Parar antes faria o navegador ver conexão cortada no lugar da
+    # despedida — mesmo clique, cara de queda.
+    assert asked == ["stop"]
+
+
+def test_the_default_stop_is_the_signal_of_ctrl_c():
+    """Sinal, e não ``os._exit``: o ``finally`` do lifespan fecha o banco."""
+    seen = []
+    previous = signal.signal(signal.SIGINT, lambda *_: seen.append("sigint"))
+    try:
+        request_stop()
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    assert seen == ["sigint"]
+
+
+def test_shutdown_refuses_a_request_from_another_page(client_and_provider):
+    client, _ = client_and_provider
+    asked = []
+    client.app.state.stop = lambda: asked.append("stop")
+
+    response = client.post("/api/shutdown", headers={"Origin": "http://evil.example"})
+
+    assert response.status_code == 403
+    # O servidor não tem autenticação nenhuma, e qualquer aba aberta consegue
+    # fazer POST entre sites: sem este teste, uma página qualquer desligaria o
+    # Charles do aluno no meio da aula.
+    assert asked == []
+
+
+def test_shutdown_accepts_the_request_from_its_own_page(client_and_provider):
+    client, _ = client_and_provider
+    asked = []
+    client.app.state.stop = lambda: asked.append("stop")
+
+    response = client.post("/api/shutdown", headers={"Origin": "http://testserver"})
+
+    assert response.status_code == 200
+    assert asked == ["stop"]
+
+
+def test_index_renders_the_shutdown_button(client_and_provider):
+    client, _ = client_and_provider
+    page = client.get("/").text
+
+    assert 'id="shutdown"' in page
+    assert "Shut down" in page
 
 
 # --- A página -------------------------------------------------------------- #

@@ -11,16 +11,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from . import __version__
 from .config import PACKAGE_ROOT, Settings, get_settings
@@ -56,6 +59,46 @@ WEB_DIR = PACKAGE_ROOT / "web"
 # vários perfis numa máquina — o ativo é o visto por último —, mas não há login:
 # multiusuário fica fora da Fase 1 (plano §4).
 DEFAULT_STUDENT = "student"
+
+
+def request_stop() -> None:
+    """Pede ao processo que pare, com o mesmo sinal do Ctrl-C.
+
+    Por que um sinal e não ``os._exit``: o desligamento precisa passar pelo
+    ``finally`` do lifespan, que é onde o provider e a voz fecham e onde a
+    conexão do SQLite é fechada. Um ``_exit`` pularia tudo isso e deixaria o
+    banco do aluno para o sistema operacional fechar.
+
+    É o mesmo caminho do Ctrl-C no terminal: o uvicorn trata o SIGINT, marca
+    ``should_exit`` e desce sozinho depois de terminar o que está em curso —
+    inclusive a resposta desta rota, que a essa altura já saiu.
+
+    Com ``--reload`` o sinal chega só ao processo que serve, e o supervisor
+    do reload fica vivo sem filho. Fica assim de propósito: ``--reload`` é
+    modo de desenvolvimento, e lá o terminal está à mão.
+    """
+    signal.raise_signal(signal.SIGINT)
+
+
+def from_this_page(request: Request) -> bool:
+    """Diz se o pedido de desligar veio da própria página do Charles.
+
+    O servidor escuta em localhost sem autenticação nenhuma, e POST entre
+    sites é coisa que qualquer aba aberta no navegador consegue fazer: sem
+    este teste, uma página qualquer poderia desligar o Charles do aluno no
+    meio da aula. O navegador manda ``Origin`` em todo POST, então comparar
+    com o ``Host`` basta — e sai bem mais barato que uma camada de sessão
+    para proteger um botão.
+
+    Pedido sem ``Origin`` não veio de navegador (curl, script, o
+    ``TestClient``), e esse continua podendo desligar: um
+    ``curl -X POST .../api/shutdown`` na própria máquina é exatamente o que
+    se espera que funcione.
+    """
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    return urlsplit(origin).netloc == request.headers.get("host")
 
 
 async def _warm_up(provider: ChatProvider, prefix: list[Message]) -> None:
@@ -173,6 +216,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
 
         app.state.settings = settings
         app.state.db = conn
+        # Em app.state, e não fechado na rota: é aqui que o teste troca o
+        # sinal por um registro de que o desligamento foi pedido.
+        app.state.stop = request_stop
         app.state.provider = chat
         app.state.voice = voice
         app.state.prompts = prompts
@@ -764,6 +810,22 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             sessions.end(current.id)
         sessions.start(student.id, mode, rule_id)
         return JSONResponse(session_payload(conn))
+
+    @app.post("/api/shutdown")
+    async def shutdown(request: Request) -> JSONResponse:
+        """Desliga o Charles a pedido do botão da página.
+
+        A parada vai num ``BackgroundTask`` porque ele só roda depois que o
+        corpo da resposta foi para o socket. Sinalizar antes faria o
+        navegador ver a conexão cair no lugar do "parando" — o mesmo clique,
+        mas com cara de queda, que é justamente o que a E0 tirou da subida.
+        """
+        if not from_this_page(request):
+            return JSONResponse(
+                {"detail": "shutdown is only accepted from the Charles page"},
+                status_code=403,
+            )
+        return JSONResponse({"stopping": True}, background=BackgroundTask(app.state.stop))
 
     @app.get("/health")
     async def health() -> JSONResponse:
