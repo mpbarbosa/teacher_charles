@@ -26,3 +26,9 @@ models/
 # que a pessoa disse. O *.wav solto cobre gravacao feita fora da pasta.
 gravacoes/
 *.wav
+
+# Preferencia de quem desenvolve, nao configuracao do projeto. O
+# .claude/launch.json ao lado e rastreado de proposito: ele diz como subir o
+# servidor, e isso vale para quem clonar. O settings.json guarda a escolha de
+# modelo de quem esta na maquina, que nao vale para os outros.
+.claude/settings.json
