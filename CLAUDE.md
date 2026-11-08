@@ -144,12 +144,32 @@ shared-connection rule, and the order is chosen because of it: `rule_review`
 (the event) before `rule_schedule` (the state), because the state can be
 rebuilt from the event and not the other way round.
 
-**The order of the system messages is persona → level → mode → drill data**,
-and then, at the end of the prompt, the curated hint and the drill request. The
-beginning is ordered by stability (what changes least comes first, because of the
-prefix cache); the end is ordered by effectiveness — measured twice, in E4 with
-the hint and in E6 with the drill: an instruction far from the point of
-generation gets diluted and the small model ignores it.
+**The order of the system messages is persona → app capabilities → level →
+mode → drill data**, and then, at the end of the prompt, the curated hint and
+the drill request. The beginning is ordered by stability (what changes least
+comes first, because of the prefix cache); the end is ordered by effectiveness —
+measured twice, in E4 with the hint and in E6 with the drill: an instruction far
+from the point of generation gets diluted and the small model ignores it.
+
+**Charles knows what the app can do, and that knowledge is a partial, not the
+persona.** `prompts/partials/app/voice.md` and `.../text.md`, picked by
+`teaching/capabilities.py::partial_name(settings.voice_enabled)`. It is second
+in the prefix because it is the most stable thing left — voice is decided at
+startup and does not change while the server is up, while the level changes
+every many turns and the mode the student switches on screen. It exists because
+without it the model answered from its generic chatbot priors: asked whether he
+had a microphone to capture the student's voice, Charles said he did not and
+suggested recording elsewhere — with the push-to-talk button on screen beside
+that very sentence. `TurnRunner` takes a `bool`, not the `Voice` object:
+`teaching/` does not import `voice/`, and that holds here too.
+
+**He does not invent facts about sounds either**, which is the sibling the
+persona's "do not invent grammar rules" had been missing. Asked for the IPA, he
+offered *pat* against *bat* as a vowel contrast — the vowel is the same in both,
+and the contrast is the initial consonant he had himself proposed a turn
+earlier. Phase 2's phoneme evaluator does not exist (E9 is an unpassed gate),
+and what reaches him is the transcript and never the sound, so **neither voice
+state lets him claim to hear or score pronunciation.**
 
 **The student's level is decided by code, not by the model.** `teaching/level.py`
 has a deterministic rubric (sentence length, long words, connectives,

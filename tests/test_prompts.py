@@ -107,3 +107,44 @@ def test_real_persona_exists_and_is_english_only():
     assert "only English" in text
     # E tem que saber que o aluno é brasileiro — é o diferencial do produto.
     assert "Brazilian" in text
+
+
+def test_real_persona_does_not_invent_sounds():
+    """A irmã da instrução sobre gramática, que faltava.
+
+    Pedido o IPA numa sessão real, o Charles propôs *pat* contra *bat* como
+    contraste de vogal — a vogal é a mesma nas duas palavras, e o contraste é a
+    consoante inicial, que ele mesmo havia proposto um turno antes. Mesma classe
+    de erro que a E3 e a E4 existem para evitar do lado da gramática: o modelo
+    pequeno inventa com segurança, e o aluno não tem como conferir.
+    """
+    text = PromptLibrary(REPO_ROOT / "prompts").get("persona")
+
+    assert "Do not invent grammar rules" in text
+    assert "Do not invent facts about sounds" in text
+
+
+def test_real_persona_says_nothing_about_the_microphone():
+    """O que varia com a configuração não entra na persona.
+
+    A persona é o prefixo que o Ollama cacheia. A verdade sobre a voz muda com
+    ``TC_VOICE_ENABLED``, então ela mora em ``partials/app/`` e entra como
+    mensagem de sistema própria; aqui dentro invalidaria o cache (ver
+    ``teaching/capabilities.py``).
+    """
+    text = PromptLibrary(REPO_ROOT / "prompts").get("persona").lower()
+
+    for word in ("microphone", "hold to talk", "out loud", "transcript"):
+        assert word not in text, f"{word!r} varia com a configuração: não cabe na persona"
+
+
+@pytest.mark.parametrize("name", ["partials/app/text", "partials/app/voice"])
+def test_the_app_partials_load_and_are_fixed_text(name):
+    """Os dois estados existem no repo, e nenhum deles é template."""
+    text = PromptLibrary(REPO_ROOT / "prompts").get(name)
+
+    assert text.startswith("## What this app can do")
+    assert "Teacher Charles" in text
+    # Nada de interpolação: a escolha é de arquivo, feita pelo flag. Um
+    # ``{placeholder}`` aqui seria a volta do valor por execução no prefixo.
+    assert "{" not in text and "}" not in text

@@ -189,6 +189,11 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             analysis_after_reply=settings.analysis_after_reply,
             tracker=app.state.tracker,
             planner=planner,
+            # O professor tem que saber se existe botão de falar na tela do
+            # aluno. Vai o flag, não o objeto ``voice``: `teaching/` não
+            # importa `voice/` (ver ``teaching/capabilities.py``), e o que o
+            # prompt descreve é o produto, não o motor carregado.
+            voice_enabled=settings.voice_enabled,
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
