@@ -155,4 +155,5 @@ fi
 
 # `exec`, so Ctrl-C reaches uvicorn instead of this shell, and so the server is
 # the process the terminal is waiting on.
+echo "==> uv run teacher-charles ${passthrough[*]}"
 exec uv run teacher-charles "${passthrough[@]}"
