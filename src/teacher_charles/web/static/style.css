@@ -78,6 +78,27 @@ button {
 button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
 
+/* Desligar nao e "mais uma acao do cabecalho": e a unica que nao tem desfazer
+ * pela pagina. O vermelho so no hover mantem o cabecalho calmo e ainda avisa
+ * no instante em que o dedo esta sobre o botao. */
+button.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+
+/* Depois do desligamento a conversa continua legivel e os controles param de
+ * fingir que ha servidor do outro lado. O link do error log nao aceita
+ * `disabled` por ser ancora, dai a classe no body. */
+body.stopped a.button { opacity: 0.5; pointer-events: none; }
+
+.notice {
+  align-self: center;
+  margin: 0.5rem 0 1rem;
+  padding: 0.6rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 main {
   flex: 1;
   overflow-y: auto;

@@ -13,6 +13,7 @@ const input = document.getElementById("message");
 const sendButton = document.getElementById("send");
 const statusLine = document.getElementById("status");
 const resetButton = document.getElementById("reset");
+const shutdownButton = document.getElementById("shutdown");
 const levelSelect = document.getElementById("level");
 const levelNote = document.getElementById("level-note");
 const nameInput = document.getElementById("student-name");
@@ -109,6 +110,23 @@ function setBusy(value) {
 function setStatus(text, isError = false) {
   statusLine.textContent = text;
   statusLine.classList.toggle("error", isError);
+}
+
+// Fim de expediente: a conversa continua na tela para ser lida, e nenhum
+// controle continua prometendo um servidor que nao esta mais la. `busy` fica
+// ligado, entao os outros handlers tambem saem na primeira linha.
+function freeze() {
+  document.body.classList.add("stopped");
+  for (const control of document.querySelectorAll("button, input, select, textarea")) {
+    control.disabled = true;
+  }
+  const notice = document.createElement("div");
+  notice.className = "notice";
+  notice.textContent =
+    "Charles has stopped. You can close this tab — scripts/run.sh brings him back.";
+  transcript.append(notice);
+  scrollToEnd();
+  setStatus("");
 }
 
 // Cresce o textarea com o texto, ate um limite.
@@ -357,6 +375,28 @@ resetButton.addEventListener("click", async () => {
     setStatus(`Could not start a new conversation: ${error.message}`, true);
   } finally {
     setBusy(false);
+  }
+});
+
+// Desligar nao tem desfazer pela pagina -- o Charles so volta pelo terminal --,
+// e o botao fica a um centimetro do "new conversation", que nao perde nada. Dai
+// a confirmacao, que o reset ao lado nao precisa ter.
+shutdownButton.addEventListener("click", async () => {
+  if (busy) return;
+  if (!window.confirm("Stop Charles? He only comes back from the terminal.")) return;
+
+  voice.stopSpeaking();
+  setBusy(true);
+  setStatus("Stopping Charles…");
+  try {
+    const response = await fetch("/api/shutdown", { method: "POST" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    // O servidor responde antes de parar, de proposito: sem isso o navegador
+    // mostraria conexao cortada no lugar da despedida.
+    freeze();
+  } catch (error) {
+    setBusy(false);
+    setStatus(`Could not stop Charles: ${error.message}`, true);
   }
 });
 

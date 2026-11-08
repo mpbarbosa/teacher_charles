@@ -82,6 +82,18 @@ Abra <http://localhost:8000> e comece a conversar. O endpoint
 está ao alcance, se a base contrastiva carregou e se algum prompt de nível ou
 de modo está faltando.
 
+Para parar, o **Shut down** do cabeçalho faz o mesmo que o Ctrl-C no terminal:
+pede a parada com um SIGINT, então o desligamento passa pelo `finally` do
+lifespan — provider e voz fechados, conexão do SQLite fechada — em vez de o
+processo sumir. Ele existe porque quem sobe o Charles por `scripts/run.sh` e
+estuda no navegador não tem o terminal à vista. O servidor responde antes de
+parar, e a página fica legível e inerte; o Charles só volta pelo terminal.
+A rota é `POST /api/shutdown`, e um `curl -X POST
+http://localhost:8000/api/shutdown` funciona igual — o que ela recusa é POST
+vindo de **outra** página do navegador, que sem isso desligaria a aula de fora.
+Com `--reload` o sinal chega ao processo que serve, e o supervisor do reload
+fica vivo sem filho: lá o Ctrl-C ainda é o jeito certo.
+
 Se preferir um atalho para os modos acima, `scripts/run.sh` monta o ambiente de
 cada um e sobe o servidor:
 
