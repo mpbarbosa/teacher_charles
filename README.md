@@ -82,6 +82,22 @@ Abra <http://localhost:8000> e comece a conversar. O endpoint
 está ao alcance, se a base contrastiva carregou e se algum prompt de nível ou
 de modo está faltando.
 
+Se preferir um atalho para os modos acima, `scripts/run.sh` monta o ambiente de
+cada um e sobe o servidor:
+
+```bash
+scripts/run.sh --help
+```
+
+```bash
+scripts/run.sh --check --reload
+```
+
+Ele **não** roda `uv sync` por conta própria: `uv sync` poda o que os extras
+pedidos não nomeiam, então sincronizar só com `--extra dev` desinstalaria a voz
+— e com ela o `onnxruntime` de que as medições da Fase 2 dependem.
+Sincronizar é opt-in, com `--sync`, e `--sync --voice` mantém os dois extras.
+
 Para mexer na interface sem modelo nenhum — a tela responde na hora, com um
 professor de mentira:
 
