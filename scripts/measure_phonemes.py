@@ -872,7 +872,11 @@ def record(seconds: int, out: Path) -> Path:
         ) from exc
     cut = _trim_lead_in(out)
     size_kb = out.stat().st_size / 1024
-    print(f"  pronto, {size_kb:.0f} KB, {cut * 1000:.0f} ms de transiente cortados")
+    nota = f", {cut * 1000:.0f} ms de transiente cortados" if cut else ""
+    # Dizer onde o bruto ficou é parte da garantia: um corte errado só é
+    # reversível por quem sabe que o original existe.
+    bruto = f" (bruto em {out.with_suffix('.bruto.wav').name})" if cut else ""
+    print(f"  pronto, {size_kb:.0f} KB{nota}{bruto}")
     return out
 
 
@@ -959,6 +963,32 @@ def _trim_lead_in(path: Path, max_seconds: float = LEAD_IN_MAX_SECONDS) -> float
     skip = cut * frame
     if skip >= len(raw):
         return 0.0
+
+    # O bruto fica antes de a reescrita acontecer, e isso não é zelo: o corte
+    # é uma heurística sobre um dado que custou alguém falar, e reescrever no
+    # lugar torna um corte errado irreversível — reverter o código não devolve
+    # a amostra. Já cobrou: quando a primeira versão desta função cortou 10 ms
+    # de um degrau de 980 ms, o original tinha sido reescrito e não houve como
+    # reproduzir a falha com o áudio de verdade; o caso de teste teve de ser
+    # sintetizado a partir do perfil medido.
+    #
+    # É a mesma razão por que o WAV fica no disco em vez de ser amostra
+    # descartável (ver `record`): o corpus precisa poder ser remedido quando o
+    # portão da §3.3 mudar de valor ou o modelo mudar de variante. Aqui foi o
+    # **cortador** que mudou, duas vezes num dia, e o argumento é igual.
+    #
+    # Não sobrescreve um bruto que já exista: numa segunda passada o original
+    # de verdade é o da primeira, não o arquivo já cortado. E `*.wav` inteiro
+    # está no `.gitignore`, então o irmão não vira ruído no `git status` nem
+    # entra no repo — é dado pessoal como o resto da pasta. Nada no projeto
+    # varre `*.wav` (o `_clean_report_for` olha `*.json`), logo ele é inerte
+    # para a lógica do corpus.
+    bruto = path.with_suffix(".bruto.wav")
+    if not bruto.exists():
+        with wave.open(str(bruto), "wb") as copia:
+            copia.setparams(params)
+            copia.writeframes(raw)
+
     with wave.open(str(path), "wb") as dst:
         dst.setparams(params)
         dst.writeframes(raw[skip:])
