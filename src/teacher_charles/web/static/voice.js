@@ -178,6 +178,10 @@ const CharlesVoice = (() => {
   let startedAt = 0;
   let latched = false;
   let stream = null;
+  // Ligada quando o desligamento larga o microfone. Existe por causa da
+  // espera do `getUserMedia`: a permissao pode voltar depois do clique em
+  // desligar, e sem a bandeira a gravacao comecaria com a pagina ja congelada.
+  let micClosed = false;
 
   function supported() {
     return Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
@@ -205,6 +209,14 @@ const CharlesVoice = (() => {
       return;
     }
 
+    // A permissao demora o quanto o aluno levar para clicar em "permitir", e
+    // nesse meio tempo o Charles pode ter sido desligado.
+    if (micClosed) {
+      for (const track of stream.getTracks()) track.stop();
+      stream = null;
+      return;
+    }
+
     const mimeType = pickMimeType();
     recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     chunks = [];
@@ -225,6 +237,28 @@ const CharlesVoice = (() => {
     for (const track of stream?.getTracks() ?? []) track.stop();
     stream = null;
     talkButton?.classList.remove("recording");
+    latched = false;
+  }
+
+  /** Larga a gravacao em curso sem transcrever e devolve o microfone.
+   *
+   * Diferente do `stopRecording`, que e o caminho do aluno soltando o botao:
+   * la o evento `stop` dispara o `transcribe`, que e o que se quer. Aqui o
+   * servidor esta descendo, entao o que sobraria seria um POST para um
+   * `/api/stt` que ja nao atende -- e, pior, o microfone seguiria aberto
+   * depois de a pagina dizer que o Charles parou.
+   */
+  function stopListening() {
+    micClosed = true;
+    if (recorder) {
+      recorder.removeEventListener("stop", transcribe);
+      recorder.stop();
+      recorder = null;
+    }
+    chunks = [];
+    for (const track of stream?.getTracks() ?? []) track.stop();
+    stream = null;
+    talkButton?.classList.remove("recording", "latched");
     latched = false;
   }
 
@@ -300,6 +334,7 @@ const CharlesVoice = (() => {
     startTurn,
     endTurn,
     stopSpeaking,
+    stopListening,
     /** O app.js injeta como mostrar status e o que fazer com a transcricao. */
     wire({ status, transcript }) {
       if (status) onStatus = status;

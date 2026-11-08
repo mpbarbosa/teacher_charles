@@ -84,8 +84,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 button.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 
 /* Depois do desligamento a conversa continua legivel e os controles param de
- * fingir que ha servidor do outro lado. O link do error log nao aceita
- * `disabled` por ser ancora, dai a classe no body. */
+ * fingir que ha servidor do outro lado. Quem desliga de verdade o link do error
+ * log e o `freeze()`, tirando o `href` -- ancora nao aceita `disabled`, e
+ * `pointer-events` sozinho deixaria o Tab chegar la. Aqui so a aparencia. */
 body.stopped a.button { opacity: 0.5; pointer-events: none; }
 
 .notice {
