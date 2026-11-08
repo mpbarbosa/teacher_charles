@@ -17,6 +17,7 @@ nenhum deles.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from unittest import mock
@@ -63,7 +64,7 @@ def test_grava_cada_frase_antes_de_medir(measure_phonemes):
         mock.patch.object(mp, "record", fake_record),
         mock.patch.object(mp, "run_audio", fake_run_audio),
         # Sem isto o laço pularia o que já está medido no disco desta máquina.
-        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
+        mock.patch.object(mp, "_clean_reports_for", lambda phrase, wrong=False: []),
         mock.patch("builtins.input", side_effect=EOFError),
         mock.patch.object(
             mp, "_report_corpus", lambda results, wrong=False: tabela.extend(results) or 0
@@ -100,7 +101,7 @@ def test_recusa_aparece_na_tabela(measure_phonemes):
     with (
         mock.patch.object(mp, "record", lambda seconds, out: out),
         mock.patch.object(mp, "run_audio", fake_run_audio),
-        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
+        mock.patch.object(mp, "_clean_reports_for", lambda phrase, wrong=False: []),
         mock.patch("builtins.input", side_effect=EOFError),
         mock.patch.object(
             mp, "_report_corpus", lambda results, wrong=False: tabela.extend(results) or 0
@@ -437,8 +438,6 @@ def test_segunda_passada_nao_sobrescreve_o_bruto(measure_phonemes, tmp_path):
 
 
 def _relatorio(path, dito: str, *, errado: bool, per: float = 0.1) -> None:
-    import json
-
     dados = {"dito": dito, "per": per, "esperado": ["a"], "ouvido": ["a"]}
     if errado:
         dados["errado"] = True
@@ -487,7 +486,7 @@ def test_passada_errada_grava_em_arquivo_proprio(measure_phonemes):
     with (
         mock.patch.object(mp, "record", fake_record),
         mock.patch.object(mp, "run_audio", fake_run_audio),
-        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
+        mock.patch.object(mp, "_clean_reports_for", lambda phrase, wrong=False: []),
         mock.patch("builtins.input", side_effect=EOFError),
     ):
         assert mp.run_corpus(object(), object(), 6, redo=True, wrong=True) == 0
@@ -589,3 +588,148 @@ def test_mostra_qual_operacao_do_gabarito_casou(measure_phonemes, capsys):
     saida = capsys.readouterr().out
     assert "Qual operação do gabarito casou" in saida
     assert "sub/ɑːɹ/h" in saida, "não disse qual operação casou, só que casou"
+
+
+def test_the_gabarito_is_filled_in_without_recording_again(
+    measure_phonemes, tmp_path, monkeypatch, capsys
+):
+    """A clean report with no gabarito gets one from disk, not from a microphone.
+
+    The gabarito is not a measurement: it is the curated phrase through the G2P
+    with the swap applied, so it needs no audio. Before this, the only route to
+    the column the E9 gate reads was `--redo`, which records over the take — it
+    spent someone's voice on a number nobody had to speak for, and it destroyed
+    a clean utterance of a corpus that needs ten. This test fails if `record` is
+    reached at all.
+    """
+    mp = measure_phonemes
+    item = mp.SUBSTITUTIONS[0]
+    monkeypatch.setattr(mp, "RECORDING_DIR", tmp_path)
+    monkeypatch.setattr(mp, "SUBSTITUTIONS", (item,))
+    report = tmp_path / "e9-ja-medida.json"
+    _relatorio(report, item.phrase, errado=False, per=0.0526)
+    # `esperado`/`ouvido` are what the report already keeps, and the alignment
+    # between them is everything the "nomeou?" column needs.
+    dados = json.loads(report.read_text()) | {"esperado": ["θ"], "ouvido": ["t"]}
+    report.write_text(json.dumps(dados))
+
+    def nunca_grava(seconds, out):
+        raise AssertionError("gravou de novo o que o disco já tinha medido")
+
+    with (
+        mock.patch.object(mp, "record", nunca_grava),
+        mock.patch.object(mp, "_error_signature", lambda r, g, said, rule: {("sub", "θ", "t")}),
+        mock.patch("builtins.input", side_effect=EOFError),
+    ):
+        assert mp.run_corpus(object(), object(), 6, redo=False) == 0
+
+    # On disk, so the answer is auditable later instead of recomputed from
+    # memory on the next run.
+    assert json.loads(report.read_text())["assinatura"] == [["sub", "θ", "t"]]
+    saida = capsys.readouterr().out
+    assert "gabarito preenchido" in saida, "preencheu em silêncio"
+    # The table row, not the "já medida e limpa" line above it: both carry the
+    # rule id, and matching the first one asserted nothing about the column.
+    linha = next(line for line in saida.splitlines() if line.strip().startswith(item.rule_id))
+    assert " sim " in f" {linha.split(item.rule_id)[1]} ", f"ficou sem nomear: {linha!r}"
+
+
+def test_a_report_measured_without_a_rule_is_not_a_filled_in_one(
+    measure_phonemes, numpy_dublado, tmp_path
+):
+    """An empty `assinatura` and a missing one are different answers.
+
+    No key means nobody computed the gabarito. `"assinatura": []` means it was
+    computed and this phrase has none, because the rule's source phoneme does
+    not occur in it. Keyed off the signature being non-empty — which is what the
+    code did — the two were the same report, and the backfill could not tell
+    which reports it still owed an answer: it would recompute an empty answer
+    forever, and overwrite the report each time.
+    """
+    mp = measure_phonemes
+    escrito: dict = {}
+
+    def medir(rule_id):
+        escrito.clear()
+        with (
+            mock.patch.object(mp, "read_wav", lambda path, np: [0] * mp.SAMPLE_RATE),
+            mock.patch.object(mp, "_audio_fingerprint", lambda wav: {"md5": "0" * 32}),
+            mock.patch.object(mp, "diagnose_signal", lambda samples, np: None),
+            mock.patch.object(mp, "speech_span", lambda samples, np: (0.1, 0.9)),
+            mock.patch.object(mp, "warn_if_quiet", lambda samples, np: None),
+            mock.patch.object(mp, "warn_if_head_cut", lambda span: None),
+            mock.patch.object(mp, "warn_if_truncated", lambda samples, span: None),
+            mock.patch.object(mp, "phonemize", lambda g2p, text: "a"),
+            mock.patch.object(mp, "tokenize", lambda ipa, vocab: ["a"]),
+            mock.patch.object(mp, "align", lambda expected, heard: _Alinhamento()),
+            # No gabarito for this phrase: the swap's source phoneme is not in it.
+            mock.patch.object(mp, "_error_signature", lambda r, g, said, rule: set()),
+            mock.patch.object(
+                mp,
+                "write_report",
+                lambda wav, payload: escrito.update(payload) or tmp_path / "r.json",
+            ),
+        ):
+            return mp.run_audio(
+                _Recognizer(), object(), tmp_path / "e9.wav", "Other", rule_id=rule_id
+            )
+
+    com_regra = medir("pron.th-unvoiced")
+    assert com_regra["assinatura"] == [], "quem pediu a regra não recebeu a resposta vazia"
+    sem_regra = medir(None)
+    assert "assinatura" not in sem_regra, "sem regra, inventou um gabarito que ninguém calculou"
+
+
+def test_the_rule_is_refused_without_an_audio_to_measure(measure_phonemes, monkeypatch):
+    """`--rule` alone is a typo, and it is refused before the 318 MB load.
+
+    The `--corpus` takes the rule from the curated list, so a `--rule` with
+    nothing to measure is someone reaching for the wrong mode. Refusing it here
+    keeps it alongside the checks that exist so nobody waits 1,8 s of model load
+    for a traceback.
+    """
+    mp = measure_phonemes
+    monkeypatch.setattr(sys, "argv", ["measure_phonemes.py", "--rule", "pron.th-unvoiced"])
+    with pytest.raises(SystemExit, match="--audio/--record"):
+        mp.main()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["measure_phonemes.py", "--record", "5", "--say", "x", "--rule", "pron.nope"],
+    )
+    with pytest.raises(SystemExit, match="não é regra curada"):
+        mp.main()
+
+
+def test_every_clean_take_counts_and_not_one_per_rule(
+    measure_phonemes, tmp_path, monkeypatch, capsys
+):
+    """The criterion counts utterances, so replicas have to reach the table.
+
+    Ten clean utterances over eight phrases means replicas, and a replica is
+    the only thing that separates a measurement from a coincidence (§3.5).
+    Reading one report per phrase reported five clean utterances with eight on
+    disk — and the one it dropped for `pron.th-voiced` was the take carrying
+    the curated `/ð/→/d/`, the single piece of real evidence the gate turns on.
+    The count printed against the criterion was wrong in the direction that
+    asks someone to speak again for data they already have.
+    """
+    mp = measure_phonemes
+    item = mp.SUBSTITUTIONS[0]
+    monkeypatch.setattr(mp, "RECORDING_DIR", tmp_path)
+    monkeypatch.setattr(mp, "SUBSTITUTIONS", (item,))
+    for nome, per in (("e9-a.json", 0.0526), ("e9-b.json", 0.1875)):
+        _relatorio(tmp_path / nome, item.phrase, errado=False, per=per)
+
+    with (
+        mock.patch.object(mp, "record", lambda seconds, out: out),
+        mock.patch.object(mp, "_error_signature", lambda r, g, said, rule: set()),
+        mock.patch("builtins.input", side_effect=EOFError),
+    ):
+        assert mp.run_corpus(object(), object(), 6, redo=False) == 0
+
+    saida = capsys.readouterr().out
+    assert "elocuções limpas: 2" in saida, "a réplica não entrou na contagem do critério"
+    linhas = [line for line in saida.splitlines() if line.strip().startswith(item.rule_id)]
+    assert len(linhas) == 2, f"a tabela mostrou {len(linhas)} tomada(s) de duas"

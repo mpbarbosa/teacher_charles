@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Language
 
-Code, comments, docstrings, commits and docs in **Portuguese**; **this file is
+Code, comments, docstrings, commits and docs in **English**; **this file is
 the exception and stays in English.** Everything the student sees — persona, UI
 strings, model response — in **English**, no exception: the product is "100% in
 English" by an audience decision (`docs/plano-fase-1.md` §1.1).
@@ -31,7 +31,7 @@ TC_VOICE_ENABLED=true uv run teacher-charles
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
-uv run pytest -m "not integration"       # 624 tests, ~16s, no model at all
+uv run pytest -m "not integration"       # 639 tests, ~16s, no model at all
 uv run pytest -m integration             # only the 9 that exercise the local Ollama
 uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .

@@ -1297,7 +1297,14 @@ def run_audio(
     # de nomear — "não" garantido pelo critério, não medido.
     signature = _error_signature(recognizer, g2p, said, rule_id)
     measured = payload | {
-        **({"assinatura": sorted(list(op) for op in signature)} if signature else {}),
+        # The key is present whenever a rule was given, **even when the
+        # signature is empty**, and that is the difference the backfill reads.
+        # No key means nobody computed the gabarito; `"assinatura": []` means it
+        # was computed and this phrase has none, because the rule's source
+        # phoneme does not occur in it. Keyed off `signature` instead, the two
+        # were the same report, and a backfill could not tell which reports it
+        # still owed an answer.
+        **({"assinatura": sorted(list(op) for op in signature)} if rule_id else {}),
         "avisos": remarks,
         "fala_de_s": round(span[0], 2),
         "fala_ate_s": round(span[1], 2),
@@ -1351,16 +1358,25 @@ def _same_phrase(a: str | None, b: str) -> bool:
     )
 
 
-def _clean_report_for(phrase: str, wrong: bool = False) -> Path | None:
-    """Relatório já no disco para esta frase, sem recusa e sem aviso.
+def _clean_reports_for(phrase: str, wrong: bool = False) -> list[Path]:
+    """Every clean report on disk for this phrase, oldest name first.
 
-    Serve para o `--corpus` não mandar regravar o que já está medido e limpo —
-    e "limpo" aqui é exatamente o critério da E9: passou pelo diagnóstico e não
-    tem aviso de borda. Um relatório com aviso **não** conta, porque foi assim
-    que um `/ð ə/` comido pelo corte quase entrou na tabela como erro do aluno.
+    All of them, and not the first one, because the E9 criterion counts
+    **utterances** and not rules: ten clean utterances over eight phrases means
+    replicas, and a replica is the only thing that separates a measurement from
+    a coincidence (§3.5). Reading one report per phrase reported five clean
+    utterances with eight on disk, and the one it dropped for `pron.th-voiced`
+    was the take that carried the curated `/ð/→/d/` — the single piece of real
+    evidence the gate turns on.
+
+    "Clean" is exactly the criterion: it passed the signal diagnostic and
+    carries no edge warning. A report with a warning does **not** count,
+    because that is how a `/ð ə/` eaten by the lead-in trim nearly entered the
+    table as the student's error.
     """
     if not RECORDING_DIR.is_dir():
-        return None
+        return []
+    found: list[Path] = []
     for report in sorted(RECORDING_DIR.glob("*.json")):
         try:
             data = json.loads(report.read_text())
@@ -1378,8 +1394,50 @@ def _clean_report_for(phrase: str, wrong: bool = False) -> Path | None:
             continue
         if data.get("recusado") or data.get("avisos"):
             continue
-        return report
-    return None
+        found.append(report)
+    return found
+
+
+def _clean_report_for(phrase: str, wrong: bool = False) -> Path | None:
+    """The first clean report, which is all "does this still need recording?"
+    needs: one clean take dispenses the phrase from being recorded again."""
+    reports = _clean_reports_for(phrase, wrong=wrong)
+    return reports[0] if reports else None
+
+
+def _with_signature(
+    recognizer: PhonemeRecognizer, g2p, report: Path, item: Substitution, data: dict
+) -> dict:
+    """Writes the gabarito into a clean report that was measured without one.
+
+    The gabarito is not a measurement: ``_error_signature`` phonemizes the
+    curated phrase, applies the swap to the transcription and aligns the two,
+    so it needs the G2P and the recognizer's vocabulary and **no audio at
+    all**. Reports written before that calculation existed therefore answer
+    ``—`` in the "erro previsto nomeado?" column — the one column the E9 gate
+    reads — over audio that already holds the answer.
+
+    Until now the only way out was ``--redo``, and ``--redo`` records over the
+    take: it spends someone's voice to recover a number nobody had to speak
+    for, and it destroys a clean utterance of a corpus that needs ten. Worse,
+    it cannot reach the two takes whose WAV the next recording of the same rule
+    already overwrote, and those two are evidence that still exists — the
+    report keeps ``esperado`` and ``ouvido``, which is everything the
+    alignment needs.
+
+    So the answer is filled in where it belongs: in the report on disk, at its
+    own path. Not through ``write_report``, which names the file after the
+    audio's md5 and would leave a second copy of a report whose name predates
+    that convention.
+    """
+    if "assinatura" in data:
+        return data
+    said = data.get("dito") or item.phrase
+    signature = _error_signature(recognizer, g2p, said, item.rule_id)
+    filled = data | {"assinatura": sorted(list(op) for op in signature)}
+    report.write_text(json.dumps(filled, ensure_ascii=False, indent=2) + "\n")
+    print(f"   gabarito preenchido no relatório: {len(signature)} operação(ões)")
+    return filled
 
 
 def run_corpus(
@@ -1418,10 +1476,15 @@ def run_corpus(
 
     results: list[dict] = []
     for item in SUBSTITUTIONS:
-        done = None if redo else _clean_report_for(item.phrase, wrong=wrong)
+        # Every clean take of the phrase, and not just the one that dispenses
+        # the recording: the criterion counts utterances, and the replicas are
+        # what make the number a measurement instead of a coincidence.
+        done = [] if redo else _clean_reports_for(item.phrase, wrong=wrong)
         if done:
-            print(f"\n[{item.rule_id}] já medida e limpa em {done.name} — pulando")
-            results.append(json.loads(done.read_text()) | {"regra": item.rule_id})
+            for report in done:
+                print(f"\n[{item.rule_id}] já medida e limpa em {report.name} — pulando")
+                data = json.loads(report.read_text()) | {"regra": item.rule_id}
+                results.append(_with_signature(recognizer, g2p, report, item, data))
             continue
         print(f'\n[{item.rule_id}]  "{item.phrase}"')
         if wrong:
@@ -1485,10 +1548,13 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
     """
     by_rule = {item.rule_id: item for item in SUBSTITUTIONS}
     print("\n## Tabela do corpus" + (" — passada errada" if wrong else ""))
+    # The md5 is a column and not decoration: with replicas in the table two
+    # rows carry the same rule id, and the plan's tables identify a take by the
+    # md5 of its audio.
     if wrong:
-        print(f"   {'regra':<26} {'certo':>6} {'errado':>7}  {'nomeou?':<9} avisos")
+        print(f"   {'regra':<26} {'áudio':<9} {'certo':>6} {'errado':>7}  {'nomeou?':<9} avisos")
     else:
-        print(f"   {'regra':<26} {'PER':>6}  {'previsto?':<10} avisos")
+        print(f"   {'regra':<26} {'áudio':<9} {'PER':>6}  {'previsto?':<10} avisos")
     limpas, nomeados, nomeaveis = 0, 0, 0
     detalhe: list[tuple[str, list[str]]] = []
     for data in results:
@@ -1527,12 +1593,15 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
         nomeaveis += medida_nomeavel
         per = data.get("per")
         per_txt = f"{per:.3f}" if isinstance(per, (int, float)) else "recusada"
+        md5 = str(data.get("md5", ""))[:8] or "—"
         if wrong:
             certo = _per_do_certo(item.phrase) if item else None
             certo_txt = f"{certo:.3f}" if certo is not None else "—"
-            print(f"   {rule_id:<26} {certo_txt:>6} {per_txt:>7}  {named:<9} {avisos or ''}")
+            print(
+                f"   {rule_id:<26} {md5:<9} {certo_txt:>6} {per_txt:>7}  {named:<9} {avisos or ''}"
+            )
         else:
-            print(f"   {rule_id:<26} {per_txt:>6}  {named:<10} {avisos or ''}")
+            print(f"   {rule_id:<26} {md5:<9} {per_txt:>6}  {named:<10} {avisos or ''}")
 
     pers = [d["per"] for d in results if isinstance(d.get("per"), (int, float))]
     print(f"\n   elocuções limpas: {limpas} (o critério da E9 pede 10 no total)")
@@ -1544,9 +1613,14 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
         for rule_id, casadas in detalhe:
             print(f"     {rule_id:<26} {', '.join(casadas)}")
     if nomeaveis < len(pers):
+        # This used to send the reader to `--redo`, which records over the take.
+        # The `--corpus` now fills the gabarito into a clean report by itself, so
+        # what is left here is the report this run did not open: measured outside
+        # the corpus, by `--audio` without `--rule`. Measuring the same WAV again
+        # with the rule answers it, and costs nobody a word.
         print(
-            f"   ({len(pers) - nomeaveis} elocução(ões) sem gabarito no relatório, "
-            "medida(s) antes deste cálculo — remeça com --redo para incluí-la(s))"
+            f"   ({len(pers) - nomeaveis} elocução(ões) sem gabarito no relatório — "
+            'remeça o WAV com `--audio <wav> --rule <rule_id> --say "<frase>"`)'
         )
     if wrong:
         # A leitura é o produto desta passada, e não o número: dito de outro
@@ -1613,6 +1687,14 @@ def main() -> int:
         help="com --corpus, grava a passada em que o erro curado é cometido de propósito",
     )
     parser.add_argument("--say", help="o que foi dito no --audio ou no --record")
+    parser.add_argument(
+        "--rule",
+        # Without this, a WAV measured outside the `--corpus` could never carry a
+        # gabarito: `run_audio` takes the rule, and `main` was the one caller that
+        # never passed it. The column that decides the E9 gate was reachable only
+        # by recording again.
+        help="rule_id curado do --audio/--record, para o relatório levar o gabarito",
+    )
     parser.add_argument("--reps", type=int, default=3)
     parser.add_argument("--threads", type=int, default=0)
     args = parser.parse_args()
@@ -1642,6 +1724,13 @@ def main() -> int:
         raise SystemExit("--corpus precisa de pelo menos 1 segundo por elocução")
     if args.errado and args.corpus is None:
         raise SystemExit("--errado é uma passada do --corpus; use `--corpus --errado`")
+    if args.rule and not (args.audio or args.record):
+        raise SystemExit("--rule é do --audio/--record; o --corpus tira a regra da lista curada")
+    if args.rule and args.rule not in {item.rule_id for item in SUBSTITUTIONS}:
+        raise SystemExit(
+            f"{args.rule}: não é regra curada. São: "
+            + ", ".join(item.rule_id for item in SUBSTITUTIONS)
+        )
     if (args.audio or args.record) and not args.say:
         raise SystemExit("--audio/--record precisam de --say para ter o que comparar")
     if args.audio and not args.audio.is_file():
@@ -1672,7 +1761,7 @@ def main() -> int:
         # Pela recusa e não pela verdade do dicionário: o `run_audio` passou a
         # devolver a recusa como dado para a tabela do `--corpus`, e um `dict`
         # não vazio é verdadeiro. Sem isto, sinal recusado sairia com 0.
-        medida = run_audio(recognizer, g2p, audio_path, args.say)
+        medida = run_audio(recognizer, g2p, audio_path, args.say, rule_id=args.rule)
         return 2 if not medida or medida.get("recusado") else 0
 
     synth = Synth(settings)
