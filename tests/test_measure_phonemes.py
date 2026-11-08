@@ -52,7 +52,7 @@ def test_grava_cada_frase_antes_de_medir(measure_phonemes):
         gravadas.append(out)
         return out
 
-    def fake_run_audio(recognizer, g2p, path, said, rule_id=None):
+    def fake_run_audio(recognizer, g2p, path, said, rule_id=None, wrong=False):
         # O WAV medido é o que acabou de ser gravado, e não um caminho montado
         # por conta própria: é esse descasamento que o teste existe para pegar.
         assert path == gravadas[-1]
@@ -63,9 +63,11 @@ def test_grava_cada_frase_antes_de_medir(measure_phonemes):
         mock.patch.object(mp, "record", fake_record),
         mock.patch.object(mp, "run_audio", fake_run_audio),
         # Sem isto o laço pularia o que já está medido no disco desta máquina.
-        mock.patch.object(mp, "_clean_report_for", lambda phrase: None),
+        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
         mock.patch("builtins.input", side_effect=EOFError),
-        mock.patch.object(mp, "_report_corpus", lambda results: tabela.extend(results) or 0),
+        mock.patch.object(
+            mp, "_report_corpus", lambda results, wrong=False: tabela.extend(results) or 0
+        ),
     ):
         assert mp.run_corpus(object(), object(), 6, redo=True) == 0
 
@@ -92,15 +94,17 @@ def test_recusa_aparece_na_tabela(measure_phonemes):
     mp = measure_phonemes
     tabela: list[dict] = []
 
-    def fake_run_audio(recognizer, g2p, path, said, rule_id=None):
+    def fake_run_audio(recognizer, g2p, path, said, rule_id=None, wrong=False):
         return {"regra": rule_id, "recusado": "silêncio: nada acima do piso"}
 
     with (
         mock.patch.object(mp, "record", lambda seconds, out: out),
         mock.patch.object(mp, "run_audio", fake_run_audio),
-        mock.patch.object(mp, "_clean_report_for", lambda phrase: None),
+        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
         mock.patch("builtins.input", side_effect=EOFError),
-        mock.patch.object(mp, "_report_corpus", lambda results: tabela.extend(results) or 0),
+        mock.patch.object(
+            mp, "_report_corpus", lambda results, wrong=False: tabela.extend(results) or 0
+        ),
     ):
         assert mp.run_corpus(object(), object(), 6, redo=True) == 0
 
@@ -430,3 +434,80 @@ def test_segunda_passada_nao_sobrescreve_o_bruto(measure_phonemes, tmp_path):
         assert src.readframes(src.getnframes()) == original, (
             "a segunda passada sobrescreveu o bruto com o arquivo já cortado"
         )
+
+
+def _relatorio(path, dito: str, *, errado: bool, per: float = 0.1) -> None:
+    import json
+
+    dados = {"dito": dito, "per": per, "esperado": ["a"], "ouvido": ["a"]}
+    if errado:
+        dados["errado"] = True
+    path.write_text(json.dumps(dados))
+
+
+def test_as_duas_passadas_nao_dispensam_uma_a_outra(measure_phonemes, tmp_path, monkeypatch):
+    """A tomada correta e a com erro de propósito são a **mesma frase**.
+
+    Sem separar as passadas, a correta já limpa no disco fazia o `--corpus
+    --errado` pular a regra — e vice-versa —, de modo que a passada que decide
+    o portão nunca seria gravada. O sintoma seria "já medida e limpa", que é
+    exatamente o que ninguém investiga.
+    """
+    mp = measure_phonemes
+    monkeypatch.setattr(mp, "RECORDING_DIR", tmp_path)
+    frase = mp.SUBSTITUTIONS[0].phrase
+    _relatorio(tmp_path / "certo.json", frase, errado=False)
+
+    assert mp._clean_report_for(frase, wrong=False) is not None, "a correta devia dispensar a si"
+    assert mp._clean_report_for(frase, wrong=True) is None, (
+        "a tomada correta dispensou a passada errada, que então nunca é gravada"
+    )
+
+    _relatorio(tmp_path / "errado.json", frase, errado=True)
+    assert mp._clean_report_for(frase, wrong=True) is not None
+
+
+def test_passada_errada_grava_em_arquivo_proprio(measure_phonemes):
+    """O WAV da passada errada não sobrescreve o da correta.
+
+    Mesmo nome de arquivo significaria que gravar a passada errada apaga a
+    elocução correta já medida — e ela é dado que custou alguém falar.
+    """
+    mp = measure_phonemes
+    gravadas: list[str] = []
+
+    def fake_record(seconds, out):
+        gravadas.append(out.name)
+        return out
+
+    def fake_run_audio(recognizer, g2p, path, said, rule_id=None, wrong=False):
+        assert wrong is True, "a passada errada tem de marcar o relatório"
+        return {"regra": rule_id, "per": 0.4, "esperado": ["a"], "ouvido": ["b"]}
+
+    with (
+        mock.patch.object(mp, "record", fake_record),
+        mock.patch.object(mp, "run_audio", fake_run_audio),
+        mock.patch.object(mp, "_clean_report_for", lambda phrase, wrong=False: None),
+        mock.patch("builtins.input", side_effect=EOFError),
+    ):
+        assert mp.run_corpus(object(), object(), 6, redo=True, wrong=True) == 0
+
+    esperados = [f"e9-{item.rule_id.split('.', 1)[-1]}-errado.wav" for item in mp.SUBSTITUTIONS]
+    assert gravadas == esperados
+
+
+def test_passada_errada_sem_medicao_nao_conclui_nada(measure_phonemes, capsys):
+    """Zero medidas não são zero acertos.
+
+    Sem a guarda, uma passada em que tudo foi pulado caía no ramo do "não
+    nomeou em nenhuma" e anunciava que o avaliador não faz o trabalho — uma
+    conclusão sobre o portão da §3.3 tirada de nenhum dado. É o inverso do
+    erro que a própria E8 evita ao recusar sinal ruim em vez de devolver um
+    número que parece medição.
+    """
+    mp = measure_phonemes
+
+    assert mp._report_corpus([], wrong=True) == 0
+    saida = capsys.readouterr().out
+    assert "não há o que concluir" in saida
+    assert "não fazendo o" not in saida, "concluiu sobre o avaliador sem medir nada"
