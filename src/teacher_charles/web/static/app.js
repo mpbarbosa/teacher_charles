@@ -27,6 +27,7 @@ const voice = window.CharlesVoice ?? {
   startTurn() {},
   endTurn() {},
   stopSpeaking() {},
+  stopListening() {},
   wire() {},
 };
 
@@ -117,8 +118,21 @@ function setStatus(text, isError = false) {
 // ligado, entao os outros handlers tambem saem na primeira linha.
 function freeze() {
   document.body.classList.add("stopped");
+  // O microfone tem que fechar aqui, e nao so o alto-falante: o botao de falar
+  // fica desabilitado logo abaixo, mas uma gravacao travada continuaria aberta
+  // atras de uma pagina que ja disse que o Charles parou -- e sem nenhum
+  // /api/stt de pe para onde mandar o audio.
+  voice.stopSpeaking();
+  voice.stopListening();
   for (const control of document.querySelectorAll("button, input, select, textarea")) {
     control.disabled = true;
+  }
+  // `pointer-events: none` nao tira a ancora do Tab: um usuario de teclado
+  // ainda chegaria no link do error log, e o Enter sairia da pagina congelada
+  // para um servidor que parou. Sem `href` ela deixa de ser focavel e de
+  // navegar; a classe no body so cuida da aparencia.
+  for (const link of document.querySelectorAll("a.button")) {
+    link.removeAttribute("href");
   }
   const notice = document.createElement("div");
   notice.className = "notice";
