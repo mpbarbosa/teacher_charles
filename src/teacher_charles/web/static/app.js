@@ -18,6 +18,9 @@ const levelSelect = document.getElementById("level");
 const levelNote = document.getElementById("level-note");
 const nameInput = document.getElementById("student-name");
 const modeButtons = document.querySelectorAll("button.mode");
+// Pode nao existir: a fonetica e desligavel, e sem ela o cabecalho nao
+// desenha o interruptor.
+const ipaToggle = document.getElementById("show-ipa");
 
 // Pode nao existir: a voz e opcional, e sem ela a pagina nem carrega voice.js.
 // Dai o objeto inerte em vez de um `if` em cada ponto de uso.
@@ -33,7 +36,7 @@ const voice = window.CharlesVoice ?? {
 
 let busy = false;
 
-function addTurn(role, text) {
+function addTurn(role, text, ipa = "") {
   const article = document.createElement("article");
   article.className = `turn ${role}`;
 
@@ -48,8 +51,33 @@ function addTurn(role, text) {
 
   article.append(who, what);
   transcript.append(article);
+  const bundle = { article, what };
+  if (ipa) setIpa(bundle, ipa);
   scrollToEnd();
-  return { article, what };
+  return bundle;
+}
+
+/**
+ * Pendura (ou atualiza) a linha de pronuncia desta bolha.
+ *
+ * Criada so quando ha IPA de verdade: uma linha vazia embaixo de cada fala
+ * seria um espaco em branco que o aluno nao sabe ler. E ela entra DEPOIS da
+ * fala e ANTES das correcoes -- a correcao anota o que o aluno disse, e ficaria
+ * longe demais do texto com o IPA no meio.
+ */
+function setIpa(bundle, ipa) {
+  if (!ipa) return;
+  if (!bundle.ipa) {
+    bundle.ipa = document.createElement("div");
+    bundle.ipa.className = "ipa";
+    // `en-fonipa`: diz ao navegador (e ao leitor de tela) que isto e notacao
+    // fonetica, nao ingles para ser lido em voz alta.
+    bundle.ipa.lang = "en-fonipa";
+    bundle.ipa.setAttribute("aria-label", "Pronunciation");
+    bundle.what.after(bundle.ipa);
+  }
+  bundle.ipa.textContent = ipa;
+  scrollToEnd();
 }
 
 /**
@@ -192,7 +220,8 @@ async function readFrames(response, onFrame) {
 
 async function sendMessage(text) {
   const student = addTurn("student", text);
-  const { what: target } = addTurn("teacher", "");
+  const teacher = addTurn("teacher", "");
+  const target = teacher.what;
   target.classList.add("streaming");
   setStatus("Charles is thinking…");
 
@@ -219,6 +248,12 @@ async function sendMessage(text) {
         }
         target.textContent += frame.text;
         scrollToEnd();
+      } else if (frame.type === "phonetics") {
+        // Duas por turno: a do aluno chega antes do primeiro pedaco do
+        // professor (o G2P nao espera modelo nenhum), a do professor depois do
+        // ultimo. O papel diz em qual bolha pendurar -- a ordem nao serve,
+        // porque a analise pode entrar entre as duas.
+        setIpa(frame.role === "student" ? student : teacher, frame.ipa);
       } else if (frame.type === "analysis") {
         // Chega em geral antes de o professor terminar de falar: as duas
         // etapas do turno rodam em paralelo.
@@ -343,6 +378,39 @@ for (const button of modeButtons) {
   });
 }
 
+// --- O interruptor da pronuncia -------------------------------------------- //
+//
+// So esconde: o IPA ja veio com a pagina e com o turno, entao voltar a
+// mostra-lo nao custa pedido nenhum. A escolha fica no navegador porque e
+// preferencia de leitura desta tela, nao dado do aluno -- nao tem por que
+// ocupar uma coluna no banco nem viajar pela rede.
+const IPA_PREFERENCE = "charles:show-ipa";
+
+function applyIpaPreference(show) {
+  document.body.classList.toggle("no-ipa", !show);
+}
+
+if (ipaToggle) {
+  let stored = null;
+  try {
+    stored = window.localStorage.getItem(IPA_PREFERENCE);
+  } catch {
+    // Navegador com armazenamento bloqueado: segue no default, que e mostrar.
+  }
+  ipaToggle.checked = stored !== "off";
+  applyIpaPreference(ipaToggle.checked);
+
+  ipaToggle.addEventListener("change", () => {
+    applyIpaPreference(ipaToggle.checked);
+    try {
+      window.localStorage.setItem(IPA_PREFERENCE, ipaToggle.checked ? "on" : "off");
+    } catch {
+      // Sem armazenamento a escolha vale so para esta visita. Melhor que
+      // derrubar o manipulador inteiro.
+    }
+  });
+}
+
 voice.wire({
   status: setStatus,
   transcript: (text) => {
@@ -383,7 +451,9 @@ resetButton.addEventListener("click", async () => {
   try {
     await fetch("/api/reset", { method: "POST" });
     transcript.replaceChildren();
-    addTurn("teacher", "Hello! I'm Charles. Tell me about your day — in English.");
+    // A saudacao e o IPA dela vem do servidor pelos `data-` do <main>: o
+    // espeak roda la, e repetir a frase aqui a deixaria sem transcricao.
+    addTurn("teacher", transcript.dataset.greeting ?? "", transcript.dataset.greetingIpa ?? "");
     setStatus("");
   } catch (error) {
     setStatus(`Could not start a new conversation: ${error.message}`, true);

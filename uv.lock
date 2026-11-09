@@ -670,9 +670,11 @@ name = "teacher-charles"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "espeakng-loader" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "phonemizer" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -695,12 +697,14 @@ voice = [
 [package.metadata]
 requires-dist = [
     { name = "av", marker = "extra == 'voice'", specifier = "<19" },
+    { name = "espeakng-loader", specifier = ">=0.2.4" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = ">=1.1" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "kokoro-onnx", marker = "extra == 'voice'", specifier = ">=0.4" },
     { name = "numpy", marker = "extra == 'voice'", specifier = ">=1.26" },
+    { name = "phonemizer", specifier = ">=3.4" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },

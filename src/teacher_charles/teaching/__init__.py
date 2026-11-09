@@ -22,6 +22,7 @@ from .level import (
     partial_name,
 )
 from .modes import DrillPlanner, DrillTarget, drill_block
+from .phonetics import Phonetics, PhoneticsUnavailable, build_phonetics
 from .schedule import (
     GRADUATED_STREAK,
     INTERVALS_DAYS,
@@ -32,7 +33,7 @@ from .schedule import (
     interval_for,
     is_graduated,
 )
-from .turn import Analyzed, Chunk, Done, Failed, Leveled, TurnEvent, TurnRunner
+from .turn import Analyzed, Chunk, Done, Failed, Leveled, Phonemized, TurnEvent, TurnRunner
 
 __all__ = [
     "Analysis",
@@ -54,12 +55,16 @@ __all__ = [
     "LevelTracker",
     "Leveled",
     "Match",
+    "Phonemized",
+    "Phonetics",
+    "PhoneticsUnavailable",
     "Queued",
     "Review",
     "Scheduler",
     "Signals",
     "TurnEvent",
     "TurnRunner",
+    "build_phonetics",
     "drill_block",
     "estimate_level",
     "get_base",

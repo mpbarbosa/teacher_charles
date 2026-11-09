@@ -388,17 +388,27 @@ def test_index_renders_the_chat(client_and_provider):
 
 def test_index_shows_the_empty_state_first(client_and_provider):
     client, _ = client_and_provider
-    assert "Tell me about your day" in client.get("/").text
+    page = client.get("/").text
+    assert "empty-state" in page
+    assert "Tell me about your day" in page
 
 
 def test_index_replays_history_after_a_reload(client_and_provider):
+    """Com conversa na mesa, a bolha de abertura sai da tela.
+
+    A asserção é sobre a bolha (``empty-state``), não sobre a frase: desde que
+    a saudação ganhou IPA ela viaja também no ``data-greeting`` do ``<main>``,
+    porque a conversa nova precisa dela com a transcrição e o ``app.js`` não
+    tem espeak para gerá-la. A frase estar no HTML não é a mesma coisa que ela
+    estar desenhada.
+    """
     client, _ = client_and_provider
     client.post("/api/chat", json={"message": "I have 30 years"})
 
     page = client.get("/").text
     assert "I have 30 years" in page
     assert "I am 30 years old." in page
-    assert "Tell me about your day" not in page
+    assert "empty-state" not in page
 
 
 def test_index_escapes_student_text(client_and_provider):
@@ -846,3 +856,98 @@ def test_the_warmup_carries_the_capabilities_too(tmp_path):
 
     assert [m.content for m in warm.messages[:-1]] == [m.content for m in expected]
     assert "Hold to talk" in " ".join(expected[1].content.split())
+
+
+# --- A pronúncia na página ------------------------------------------------- #
+
+
+def test_chat_envia_fonetica_dos_dois_lados(client_and_provider):
+    client, _ = client_and_provider
+    frames = frames_from(client.post("/api/chat", json={"message": "I have 30 years"}))
+
+    spelled = [f for f in frames if f["type"] == "phonetics"]
+    assert [f["role"] for f in spelled] == ["student", "teacher"]
+    assert all(f["ipa"] for f in spelled)
+
+
+def test_a_fonetica_do_aluno_chega_antes_do_texto_do_professor(client_and_provider):
+    """A bolha do aluno não espera o professor para ganhar a linha dela."""
+    client, _ = client_and_provider
+    frames = frames_from(client.post("/api/chat", json={"message": "I have 30 years"}))
+    types = [f["type"] for f in frames]
+
+    assert types.index("phonetics") < types.index("chunk")
+
+
+def test_sem_fonetica_nao_ha_quadro_nenhum(tmp_path):
+    provider = FakeProvider(
+        replies="Nice.",
+        replies_by_system={"You find mistakes": NO_ERRORS_JSON},
+    )
+    settings = settings_for(tmp_path, phonetics_enabled=False)
+    with TestClient(create_app(settings, provider=provider)) as client:
+        frames = frames_from(client.post("/api/chat", json={"message": "Hello"}))
+
+    assert not [f for f in frames if f["type"] == "phonetics"]
+
+
+def test_a_pagina_mostra_a_saudacao_com_a_pronuncia(client_and_provider):
+    client, _ = client_and_provider
+    page = client.get("/").text
+
+    assert 'class="ipa"' in page
+    assert 'id="show-ipa"' in page
+
+
+def test_o_historico_volta_com_a_pronuncia(client_and_provider):
+    """O IPA não é guardado no banco: é função determinística do texto.
+
+    Guardá-lo criaria uma coluna que pode discordar do que o espeak diz hoje —
+    e a releitura da página é justamente onde isso apareceria.
+    """
+    client, _ = client_and_provider
+    client.post("/api/chat", json={"message": "I have 30 years"})
+
+    page = client.get("/").text
+    assert page.count('class="ipa"') >= 2
+
+
+def test_sem_fonetica_a_pagina_nao_desenha_linha_nem_interruptor(tmp_path):
+    provider = FakeProvider(replies="Nice.")
+    settings = settings_for(tmp_path, phonetics_enabled=False)
+    with TestClient(create_app(settings, provider=provider)) as client:
+        page = client.get("/").text
+
+    assert 'class="ipa"' not in page
+    assert 'id="show-ipa"' not in page
+
+
+def test_health_reporta_a_fonetica(client_and_provider):
+    client, _ = client_and_provider
+    body = client.get("/health").json()
+
+    assert body["phonetics"]["enabled"] is True
+    assert body["phonetics"]["language"] == "en-us"
+    assert body["phonetics"]["detail"] is None
+
+
+def test_fonetica_quebrada_nao_deixa_o_health_vermelho(tmp_path, monkeypatch):
+    """A aula funciona inteira sem a linha; banco, modelo e base é que não."""
+    from teacher_charles.teaching.phonetics import Phonetics, PhoneticsUnavailable
+
+    monkeypatch.setattr(
+        Phonetics,
+        "_load",
+        lambda self: (_ for _ in ()).throw(PhoneticsUnavailable("espeak sumiu")),
+    )
+
+    provider = FakeProvider(replies="Nice.")
+    with TestClient(create_app(settings_for(tmp_path), provider=provider)) as client:
+        client.post("/api/chat", json={"message": "Hello"})
+        body = client.get("/health").json()
+
+    assert body["phonetics"]["ok"] is False
+    assert "espeak sumiu" in body["phonetics"]["detail"]
+    # O motivo aparece, mas não entra na conta do status: só banco, modelo,
+    # base contrastiva e voz pedida decidem "pronto para ensinar".
+    assert body["status"] == "ok"
