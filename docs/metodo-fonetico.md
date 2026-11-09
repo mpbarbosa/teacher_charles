@@ -2,10 +2,15 @@
 
 > **Status: method, not deliverable.** The only part of this that is in the
 > product today is the IPA line (`teaching/phonetics.py`). Everything that
-> touches the student's **voice** sits behind E9's gate, and E9 still owes the
-> written decision (§5 of `docs/plano-fase-2.md`). What follows is the pedagogy
+> touches the student's **voice** sits behind E9's gate, and **that gate is now
+> decided: it opens** — median 0.154 against the proxy's 0.676, the curated
+> operation named for **all eight** rules on human speech, and the decision
+> written with what it does not decide (plan §3.7; the evidence is in plan §3.5
+> and plan §5's E9 row). What follows is the pedagogy
 > that E10–E12 would implement, derived from the measurement E8 and E9 already
-> ran — it asks for no new instrument.
+> ran. One thing in it is code and not pedagogy: `--rescore`, which answers the
+> gabarito column again over the reports already on disk, and §7 reports what it
+> answered.
 
 `scripts/measure_phonemes.py --corpus [--errado]` was built to answer one
 question: *does this stack hear a Brazilian's English?* In answering it, it
@@ -50,8 +55,9 @@ defined as "this phoneme" would be a unit the evaluator cannot resolve.
 Three fields the measurement showed are missing, and E10 owes them:
 
 * **`signature`** — the *set* of alignment operations that count as this error
-  (plan §3.4). Not one operation. §7 shows two items that fail today on one symbol
-  and pass as a set, on data already on disk.
+  (plan §3.4). Not one operation. §7 measures it: two items fail on one symbol
+  and pass as a class, on evidence already on disk, and no correct take matched
+  a widened signature.
 * **`equivalences`** — what counts as correct English besides the gabarito,
   conditioned on context where it has to be (plan §3.5: `/ɔː/ ≡ /ɑː/`, `/ðɪ/ ≡
   /ðə/`, and `/s/ → /z/` between vowels, which is not a pair but a rule).
@@ -319,14 +325,22 @@ What this does **not** fix is the same thing read-aloud never fixes: see §10.
 ## 7. The curation protocol for `pronunciation.yaml`, and what the reports already decide
 
 E10's rule from §3.2 of the plan is that no item enters the base without
-surviving `--discriminate`. The human passes add a second source of evidence,
-and where the two disagree the item is not rejected — it is **sorted**:
+surviving `--discriminate`, and plan §3.7 adds the second half: the operation has
+to be named **by human speech, in a take the diagnostic did not warn about**.
+Three rules pass that today. The human passes are therefore a second source of
+evidence, and where the two disagree the item is not rejected — it is **sorted**:
 
 | status | means | what the student gets |
 |---|---|---|
-| **graded** | the operation, or the signature set, was named on human speech | all six steps of §2 |
+| **graded** | the operation, or the signature set, was named on a **clean** human take | all six steps of §2 |
+| **named, not clean** | the operation was named, only on a take the diagnostic warned about — five of the eight | the §2 steps that need no verdict, until a clean take arrives |
 | **heard only** | the contrast is real and documented, the alignment does not resolve it | §2.1, §2.2 and §2.3 — never a verdict |
 | **rejected** | no evidence the deviation exists, or the phrase does not load it | not in the base |
+
+The second row is the one this corpus mostly produces, and it is a statement
+about the **room** rather than about the stack: fourteen usable takes out of
+sixty-four, and ten of the eleven refusals in the deliberate pass are speech
+contrast. A rule in that row is one quiet recording away from the first.
 
 ### What the reports on disk say, read item by item
 
@@ -337,39 +351,80 @@ of its rows disagree with what the synthetic measurement of §2.3 concluded.
 
 Only three deliberate takes are clean by the criterion E9 counts with
 (`th-voiced`, `h-dropping`, `ing-alveolar`); the ones marked *warned* were
-recorded below the level the diagnostic wants, and the plan's rule is that a
-warned report does not count. They are in the table because their alignments
+recorded below the level the diagnostic wants — two of them also with the head
+cut, and in both the matched operation sits downstream of it — and the plan's
+rule is that a warned report does not count. They are in the table because their alignments
 are informative about the **class** of what was heard, which is the question
 plan §3.4 asks — not because they close anything.
 
 | rule | unmonitored | deliberate | named? | the cell of §2.4 |
 |---|---|---|---|---|
-| `pron.th-unvoiced` | 0.053 twice, `/θ/` right | 0.105 (warned), `/θ/→/t/` | **yes** | control |
+| `pron.th-unvoiced` | 0.053 twice, `/θ/` right | 0.105 and 0.789, both warned, `/θ/→/t/`; a third take came out `/θ/` right | **yes** | control |
 | `pron.th-voiced` | 0.188 with `/ð/→/d/`; 0.125 all four right | 0.438, `/ð/→/d/` ×3 | **yes** | habit |
 | `pron.h-dropping` | 0.364, all four `/h/` produced | 0.818, three of the four `/h/` gone | **yes** | control |
-| `pron.epenthesis-initial` | 0.312, no epenthesis | 0.438 (warned), **`+/i/` twice** | no — one symbol off | control, after the widening below |
-| `pron.vowel-length` | 0.059, both `/iː/` long | 0.706 (warned), **`/iː/→/i/` twice** | no — one symbol off | control, after the widening below |
+| `pron.epenthesis-initial` | 0.312, no epenthesis | three warned takes: 0.438 **`+/i/`**, 0.438 **`+/ɪ/` ×2**, 0.250 **`+/ɪ/` ×2** — the gabarito's own symbol | **yes**, and by class | control |
+| `pron.vowel-length` | 0.059, both `/iː/` long | 0.706 (warned), **`/iː/→/i/` twice**; a later take matched the class at PER 1.000, which is an accident | **by class** | control |
 | `pron.ing-alveolar` | 0.529, **`/ŋ/→/n/` twice** | 0.235, `/ŋ/` produced in both | no | **awareness** |
-| `pron.epenthesis-final` | 0.312, `/ɡ/→/iː/` in place of the epenthesis | three takes, none usable: one refused, two warned (2.500, 0.875) | — | unmeasured |
-| `pron.r-initial` | **0.000**, and 0.154 | refused, speech contrast 1.8× | — | unmeasured |
+| `pron.epenthesis-final` | 0.312, `/ɡ/→/iː/` in place of the epenthesis | five takes, none clean: 0.250 (warned) with **`+/i/` and `+/ɪ/`**; before it two refused and two warned (2.500, 0.875) | **yes**, and by class | control |
+| `pron.r-initial` | **0.000**, and 0.154 | 0.615 and 0.308, both warned, **`/ɹ/→/h/` named on each**; one earlier take refused at 1.8× | **yes**, twice | control |
 
-Four findings, and the first two are worth code:
+**What `--rescore` answers over the 64 reports on disk**, and the column that
+decides anything is the last one:
 
-**Epenthesis is graded today, by widening the signature and writing no new
-code.** The deliberate take `e9-epenthesis-initial-errado-454a1ff6` heard
-`/i s p ɔ ɾ t … f ɔ i s t ɹ ɛ s/`: the inserted vowel is there, twice, before
-both `/sp/` and `/st/`. The gabarito asks for `ins /ɪ/` because espeak renders
+| pass | reports | with a gabarito | named | clean | named among the clean |
+|---|---|---|---|---|---|
+| unmonitored | 37 | 30 | 4, all exact | 11 | **2** |
+| deliberate | 27 | 16 | 13 — 10 exact, **3 by class** | 3 | **2** |
+
+The deliberate row keeps growing — the recording session was still running as
+this was written — and the two columns on the right have not moved through any of
+it. That is the point of reading them: `--rescore` re-answers the whole table
+with no microphone and no model, and only a clean take changes what the criterion
+sees.
+
+The widening added two named errors and moved **neither** gate-relevant number:
+both class matches sit on takes the diagnostic warned about, and a warned report
+does not count. The two items are therefore not closed — they are one clean
+deliberate take away, which is the cheapest thing left in E9.
+
+Five findings. The first two have been applied and re-scored, and the fourth is
+what applying them exposed.
+
+**Epenthesis is named by class, and it took no new recording.** The deliberate
+take `e9-epenthesis-initial-errado-454a1ff6` heard
+`/i s p ɔ ɾ t … f ɔ i s t ɹ ɛ s/`: the inserted vowel is audible before **both**
+`/sp/` and `/st/`, though the alignment books only the first as an insertion and
+charges the second to the vowel of *for* next door — plan §3.5 reads that as an
+attribution caveat for E11, and it is why the student is shown the rule and
+never a count of occurrences. The gabarito asks for `ins /ɪ/` because espeak renders
 the swap that way; the recognizer heard `ins /i/`, which is arguably the better
-transcription of what a Brazilian inserts. §3.4 of the plan already prescribes
-the fix — the signature is a *set* — and this is the data that makes it
-concrete: `{ins /ɪ/, ins /i/, ins /ɐ/, ins /ə/}` turns a "não" into a named
-error. The synthetic pass missed this item for the same reason (`+/ɐ/` against
-`+/ɪ/`), which means **one widening fixes both sources.**
+transcription of what a Brazilian inserts. §3.4 of the plan prescribes the fix
+— the signature is a *set* — and `scripts/measure_phonemes.py` now applies it:
+`widen()` opens the **heard side** of each gabarito operation to the class
+`{ɪ, i, ɐ, ə}`, and `--rescore` answers the column again over the reports on
+disk, with no microphone and without loading the 318 MB recognizer. The take
+now reads `classe`, naming `ins /i/`. The synthetic pass missed this item for
+the same reason (`+/ɐ/` against `+/ɪ/`), so one class fixes both sources.
 
-**`pron.vowel-length` is the same story, in substitution.** The deliberate take
-heard `/iː/→/i/` in both *beach* and *people* where the gabarito says
-`/iː/→/ɪ/`. The class — the long vowel came out short — is exactly what the
-item describes. `{sub /iː/→/ɪ/, sub /iː/→/i/}` grades it.
+**`pron.vowel-length` is the same story, in substitution**, and it re-scored
+the same way. The deliberate take heard `/iː/→/i/` in both *beach* and *people*
+where the gabarito says `/iː/→/ɪ/`. The class — the long vowel came out short —
+is what the item describes, and the row now reads `classe`, naming
+`sub /iː/→/i/`.
+
+Three properties of that widening, and the third is the one that matters:
+
+* **It changes nothing about correctness.** Only which operations count as the
+  **curated error** move. The alignment, the PER and what counts as correct
+  English are untouched — the equivalence sets of §3.5 of the plan
+  (`/ɔː/ ≡ /ɑː/`) are a different table, for a different question, and E10's.
+* **It is kept out of `run_pairs`.** The floor, signal and accent numbers of §2
+  of the plan were measured with the strict intersection; widening there would
+  redefine those tables in silence.
+* **It did not misfire.** Across the 37 reports of the correct pass — 30 with a
+  gabarito, 11 of them clean — **no take matched by class at all.** That is the
+  falsification test §9 names for this change, run on the only speech there is,
+  and it came back clean.
 
 **`pron.ing-alveolar` inverts, and the synthetic blind spot was synthetic.**
 §2.3 of the plan reports the recognizer hearing `/ŋ/` on both sides of the
@@ -385,10 +440,38 @@ cell is what matters, and the cell is *awareness*: this speaker produces the
 alveolar when not watching and the velar when asked for the alveolar. That is a
 lesson, and it is not the lesson the other seven items get.
 
-**Half the takes are not usable, and that is a product constraint, not a corpus
-detail.** The deliberate pass recorded 17 takes at the operating point of plan §3.5:
-**9 refused** on speech contrast (1.8× to 3.3× against a minimum of 4), **5
-warned**, **3 clean**. One usable judgment in six attempts is a price a corpus
+**Applying it exposed a false positive that was already there, and a second one
+followed.** The deliberate take `e9-epenthesis-final-errado-d2d3b42e` — 44
+phonemes of salad against 16 expected, PER 2.500, three warnings — matched
+`ins /i/` and read `sim`; a later `pron.vowel-length` take matched the class at
+PER 1.000, where nothing aligned at all. In an
+alignment that wrong a one-operation gabarito matches by accident: the "sim"
+looks like a measurement and is a coin toss. The aggregate column had been
+mixing the countable takes with the excluded ones since it existed, which is the
+same confusion the median fix of §3.5 of the plan corrected one column over. The
+table now also prints the named fraction **over the clean takes**, and that is
+the line to read — 2 of 3 in the deliberate pass, 2 of 11 in the unmonitored
+one. The method inherits the rule directly: **a verdict never comes from a take
+the diagnostic warned about**, however well the operation matches.
+
+**And the unmonitored pass has one of its own, which names the vulnerable shape
+of gabarito.** `e9-h-dropping-13008743` transcribes as six phonemes against
+eleven — the take ends after *He has a* — and `del /h/` matched because the last
+two `/h/` are not there to be dropped. A take that stops early deletes
+everything after it, so **a deletion signature is the one shape that a truncated
+take can satisfy for free**, and h-dropping is the only curated rule whose
+signature is a deletion. For E11 that is not a new gate — **gate 1 had already
+named the cause**: the second of this take's two warnings is *"a fala vai até
+6.9s de 7.0s, encostada no fim do arquivo: o último fonema pode ter ficado
+fora"*. The diagnostic said the end was cut, and the verdict would have been
+suppressed before the gabarito was consulted. What it does ask of E10 is that a
+deletion item be curated knowing this, and the clean take of the same phrase is
+the reassurance: all four `/h/` produced, and "não".
+
+**Most takes are not usable, and that is a product constraint, not a corpus
+detail.** The deliberate pass recorded 27 takes at the operating point of plan §3.5:
+**11 refused**, ten of them on speech contrast (1.8× to 3.3× against a minimum
+of 4), **13 warned**, **3 clean**. One usable judgment in eight attempts is a price a corpus
 can pay and a student cannot. Two consequences for E12, and both are cheap:
 
 * **Gate 1 runs before the student reads, not after.** The five questions need
@@ -410,8 +493,10 @@ can pay and a student cannot. Two consequences for E12, and both are cheap:
    `/s/ → /z/` between vowels — which appeared in *this is* in three separate
    takes, including one deliberate one, and is therefore systematic in this
    speaker rather than a lapse.
-4. `discrimination`: the status from both sources, with the md5 of the takes
-   that decided it.
+4. `discrimination`: the status from both sources — one of the four in the table
+   above — with the md5 of the takes that decided it, and the warning each one
+   carried if it carried any. A status that does not name its take cannot be
+   re-checked when a threshold moves, which is §8's whole point.
 5. `explanation`, in English, worded by §4's line between phoneme and class.
 
 ---
@@ -440,8 +525,8 @@ run on the corpus that exists.
 
 | claim | breaks if |
 |---|---|
-| The deliberate pass separates "the evaluator is blind" from "the error was absent" | the named fraction stays at the correct pass's level. **Currently 3 of the 7 measured deliberate takes against 2 of the 11 clean unmonitored ones — and 2 of the deliberate pass's own 3 clean takes. Different bases, and §7 argues two more items are one signature-widening away** |
-| Widening the signature to a class grades epenthesis and vowel length without false positives | a clean, correct take matches a widened signature. `/ɐ/` is one of the three phonemes the floor of plan §2.2 is made of, so `ins /ɐ/` is the term most likely to misfire, and the eleven clean unmonitored takes are where to check it |
+| The deliberate pass separates "the evaluator is blind" from "the error was absent" | the named fraction stays at the correct pass's level. **Re-scored: 13 of 16 measured deliberate takes against 4 of 30 unmonitored, and 2 of 3 clean against 2 of 11 clean. The separation holds on both bases, and the clean one rests on three takes** |
+| Widening the signature to a class grades epenthesis and vowel length without false positives | a clean, correct take matches a widened signature. `/ɐ/` is one of the three phonemes the floor of plan §2.2 is made of, so `ins /ɐ/` is the term most likely to misfire. **Run: zero class matches across the 30 gabarito-carrying takes of the correct pass, 11 of them clean** |
 | Consonant identity can be named and vowel identity cannot | a vowel item gets named by symbol on human speech across replicas, or a consonant naming fails to replicate |
 | Gate 2 separates "did not try" from "did not err" | a read-aloud of something else passes gate 2 and records a success |
 | A clean read-aloud is evidence about the student's pronunciation **in conversation** | it is not tested at all, and §10 says so first |
@@ -466,10 +551,16 @@ run on the corpus that exists.
   may make `/s/ → /z/` an error rather than a variant, and the method would then
   be forgiving a real deviation. Equivalences are an item field for that
   reason, not a global table.
-* **`pron.epenthesis-final` and `pron.r-initial` have no usable deliberate
-  take**, and `pron.r-initial` has the cleanest unmonitored take in the set
-  (0.000). Until the deliberate pass exists for them, their column means
-  nothing, which is the whole point §2.4 makes.
+* **Five of the eight rules are named only on a take the criterion excludes.**
+  `th-voiced`, `h-dropping` and `ing-alveolar` have a clean deliberate take; the
+  other five — `th-unvoiced`, `epenthesis-initial`, `epenthesis-final`,
+  `vowel-length`, `r-initial` — name their operation on a warned one, and in
+  every case the warning is about the recording and not the transcription. Two
+  of the five earned their row late and cheaply: `r-initial` names `/ɹ/→/h/`
+  twice over the cleanest unmonitored take in the set (0.000), and
+  `epenthesis-final` names `+/i/` and `+/ɪ/` in one take after three unusable
+  ones. What they owe is a quiet room, which is the finding below, not a
+  different stack.
 * **No prosody, no rhythm, no stress.** §4 of the plan, unchanged. The
   alignment is of phonemes, and the student who gets every phoneme right can
   still be unintelligible for reasons this method cannot see.

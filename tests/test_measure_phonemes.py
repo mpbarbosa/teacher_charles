@@ -777,3 +777,137 @@ def test_no_clean_take_means_no_median(measure_phonemes, capsys):
     saida = capsys.readouterr().out
     assert "não há mediana que o critério aceite" in saida
     assert "mediano das limpas" not in saida, "inventou uma mediana sem elocução limpa"
+
+
+def test_a_classe_nomeia_a_epentese_de_outra_vogal(measure_phonemes, capsys):
+    """`ins /i/` é o gabarito `ins /ɪ/`, e a coluna diz que foi por classe.
+
+    A §3.4 do plano prescreve a assinatura como **conjunto** de operações
+    aceitáveis, e o mesmo item errou o símbolo duas vezes de fontes
+    independentes: o par sintético da §2.3 ouviu `+/ɐ/` onde o gabarito dizia
+    `+/ɪ/`, e a elocução humana deliberada ouviu `+/i/`, nas duas sílabas. A
+    classe do erro está certa nas duas; a identidade da vogal, errada — que é
+    precisamente o que a §2.2 mede como não confiável nesta pilha.
+
+    A coluna não diz "sim": diz "classe". Os números da §2 do plano foram
+    medidos com a interseção estrita, e um "sim" por classe anunciado como
+    aquele redefiniria aquelas tabelas em silêncio.
+    """
+    mp = measure_phonemes
+    regra = "pron.epenthesis-initial"
+    dados = {
+        "regra": regra,
+        "per": 0.438,
+        "esperado": ["s", "p"],
+        "ouvido": ["i", "s", "p"],
+        "assinatura": [["ins", "ɪ"]],
+    }
+
+    assert mp._report_corpus([dados], wrong=True) == 0
+    saida = capsys.readouterr().out
+    linha = next(line for line in saida.splitlines() if regra in line)
+    assert "classe" in linha, f"a vogal vizinha não casou por classe: {linha!r}"
+    assert "por classe de fonema" in saida, "não disse que o 'sim' foi por classe"
+    assert "ins/i (classe)" in saida, "não disse qual operação casou por classe"
+
+
+def test_a_classe_nao_promove_fonema_de_fora_dela(measure_phonemes, capsys):
+    """Vogal de fora da classe continua sendo "não".
+
+    A classe existe para a vogal que esta pilha não resolve — `/ɪ/`, `/i/`,
+    `/ɐ/`, `/ə/` —, e não para qualquer inserção. Sem este limite, "inseriu
+    alguma coisa" viraria epêntese, e o avaliador acusaria erro curado em
+    cima de ruído de alinhamento, que é a falha da §3.2.
+    """
+    mp = measure_phonemes
+    regra = "pron.epenthesis-initial"
+    dados = {
+        "regra": regra,
+        "per": 0.5,
+        "esperado": ["s", "p"],
+        "ouvido": ["u", "s", "p"],
+        "assinatura": [["ins", "ɪ"]],
+    }
+
+    assert mp._report_corpus([dados], wrong=True) == 0
+    saida = capsys.readouterr().out
+    linha = next(line for line in saida.splitlines() if regra in line)
+    assert "classe" not in linha, f"/u/ entrou na classe de /ɪ/: {linha!r}"
+    assert "nomeados: 0 de 1" in saida
+
+
+def test_a_fracao_nomeada_tambem_sai_sobre_as_limpas(measure_phonemes, capsys):
+    """O "nomeou?" agregado mistura o que conta com o que o aviso exclui.
+
+    O re-score dos relatórios no disco anunciou "6 de 8" com uma das tomadas
+    sendo as 44 fonemas de salada do `d2d3b42e` — PER 2,500, três avisos —, onde
+    um `ins /i/` aparece por acidente e o gabarito casa por sorte. É a mesma
+    confusão entre "o que foi medido" e "o que conta" que a mediana já
+    resolveu, e ela chega onde dói mais: a coluna que decide o portão.
+    """
+    mp = measure_phonemes
+    regra = "pron.h-dropping"
+    # `ouvido` não vazio de propósito: transcrição vazia não é nomeável, e o
+    # bloco que decide a coluna já a deixa de fora.
+    base = {
+        "regra": regra,
+        "esperado": ["h", "iː"],
+        "ouvido": ["iː"],
+        "assinatura": [["del", "h"]],
+    }
+    results = [
+        base | {"per": 2.5, "avisos": ["nível baixo", "a fala começa em 0,0s"]},
+        base | {"per": 0.8, "avisos": []},
+    ]
+
+    assert mp._report_corpus(results, wrong=True) == 0
+    saida = capsys.readouterr().out
+    assert "nomeados: 2 de 2" in saida
+    assert "nas limpas, que são as que o critério conta: 1 de 1" in saida, (
+        f"a fração só saiu sobre tudo o que foi medido: {saida!r}"
+    )
+
+
+def test_o_rescore_responde_sem_microfone_e_sem_modelo(measure_phonemes, tmp_path, monkeypatch):
+    """Re-scorar é ler o disco: nada de gravar, nada de carregar 318 MB.
+
+    A assinatura não é medição — o `_with_signature` já estabeleceu isso quando
+    a única rota para a coluna do portão era o `--redo` gravar por cima de
+    elocução limpa. Daí decorre o modo inteiro: mudar o que conta como erro
+    curado não pede gravação nova, porque `esperado` e `ouvido` já estão no
+    relatório.
+
+    Dois detalhes que o teste prende. O relatório **com aviso** também recebe
+    gabarito, ao contrário do que o `--corpus` faz: o aviso exclui a elocução
+    da contagem da E9, não a transcrição que ela carrega. E o relatório sem o
+    campo `regra` entra pela frase dita — são cinco deles no disco desta
+    máquina, elocuções limpas que o critério conta.
+    """
+    mp = measure_phonemes
+    item = mp.SUBSTITUTIONS[0]
+    monkeypatch.setattr(mp, "RECORDING_DIR", tmp_path)
+    com_aviso = tmp_path / "e9-com-aviso.json"
+    com_aviso.write_text(
+        json.dumps(
+            {
+                "dito": item.phrase,
+                "per": 0.4,
+                "esperado": ["θ"],
+                "ouvido": ["t"],
+                "avisos": ["nível baixo"],
+            }
+        )
+    )
+
+    def nunca_grava(seconds, out):
+        raise AssertionError("o re-score abriu o microfone")
+
+    with (
+        mock.patch.object(mp, "record", nunca_grava),
+        mock.patch.object(mp, "_error_signature", lambda r, g, said, rule: {("sub", "θ", "t")}),
+    ):
+        assert mp.run_rescore(object(), object()) == 0
+
+    gravado = json.loads(com_aviso.read_text())
+    assert gravado["assinatura"] == [["sub", "θ", "t"]], "não preencheu o relatório com aviso"
+    assert gravado["regra"] == item.rule_id, "não reconheceu a regra pela frase dita"
