@@ -937,6 +937,64 @@ CPU, continuam serializando com lock próprio.
 
 ---
 
+### 3.7 A decisão da E9: segue, e mais estreita
+
+A entrega pede a decisão escrita com o número na mão. São dois números, e eles
+não dizem a mesma coisa.
+
+**O primeiro é o que abriu a fase, e ele passa.** Onze elocuções humanas limpas,
+mediana de PER **0,154** — 2,5× o piso de 0,061 e bem longe do proxy de 0,676
+da §2.4, onde o alinhamento desaba e nada é *o* erro. O risco da §6 que podia
+cancelar as outras entregas não se realizou: esta pilha ouve este falante. A
+alternativa que a §5 previa para o caso ruim — `small` em vez de `large`,
+*forced alignment* em vez de reconhecimento livre, ou pronúncia fora do escopo —
+não precisa ser acionada por causa do PER.
+
+**O segundo é o que decide o escopo, e ele reprova metade da base.** Com o erro
+curado cometido de propósito, o avaliador nomeou a operação certa em **3 de 7**:
+`sub /θ/→/t/`, `sub /ð/→/d/` e `del /h/`. As outras quatro — `epenthesis-initial`,
+`epenthesis-final`, `vowel-length`, `ing-alveolar` — não produziram a operação
+curada nem com o erro na fala. Pela §3.2 isso não é um limiar mal calibrado que
+se conserte depois: operação sem `rule_id` não chega ao aluno, então essas
+quatro regras são silêncio no produto por construção.
+
+**A decisão: seguir, com a base admitida pelo teste humano e não pelo
+sintético.** Em concreto:
+
+1. **A E10 muda de critério de entrada.** A §3.2 exigia passar no
+   `--discriminate`; passa a exigir também **ser nomeada na passada `--errado`
+   por voz humana**. O sintético continua valendo como primeiro filtro barato —
+   ele reprova cedo o que nem no caso ideal funciona —, mas quem decide é o
+   humano, porque é ele que mede o que o aluno vai receber. A §2.3 deu 6 de 8;
+   esta passada deu 3 de 7 nas mesmas regras.
+2. **A E10 nasce pequena, e o plano para de prometer ~15 itens.** Três regras
+   passam hoje. A base admitida é a que passar no teste, e o número sai da
+   medição, não do alvo.
+3. **As quatro regras cegas ficam documentadas como ponto cego**, como a §6 já
+   faz com `pron.ing-alveolar`, e não entram na base. Não viram falso negativo
+   silencioso, e não viram item "a revisar depois".
+4. **A E11 e a E12 seguem como escritas.** Nada nelas depende do tamanho da
+   base: o contrato é devolver só erro com `rule_id` e calar acima do portão, e
+   isso é igual com três regras ou com quinze.
+5. **O `pron.r-initial` fica indeciso.** A tomada errada foi recusada por
+   contraste de fala, então a regra com a melhor tomada certa (PER 0,000) é a
+   única sem par. Uma regravação decide se ela entra — e ela é a primeira
+   candidata a crescer a base.
+
+**O que reverteria esta decisão.** Se o conjunto admitido não passar de três ou
+quatro regras depois de o `r-initial` ser regravado e de a E10 testar os itens
+novos, o produto de pronúncia é fino demais para o custo dos 318 MB e do
+terceiro modelo nativo no processo, e a §4 volta a valer com "pronúncia fora do
+escopo". O número que decide isso é o mesmo desta subseção, medido do mesmo
+jeito; não é preciso instrumento novo.
+
+**O que esta decisão não autoriza.** Ela não calibra teto de PER — a §3.3
+continua valendo, e o portão continua sendo por operação de alinhamento. E ela
+vale para **um** falante: a §2.5 já dizia que uma voz não é a população, e a
+primeira coisa que uma segunda voz pode derrubar é justamente o 3 de 7.
+
+---
+
 ## 4. Escopo
 
 ### Dentro
@@ -981,8 +1039,8 @@ entregas numeradas.
 | | Entrega | Pronto quando |
 |---|---|---|
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
-| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Onze elocuções limpas, mediana 0,154, dois gabaritos nomeados; passada `--errado` feita, 3 de 7 nomeados** (§3.5) — os dois números que a entrega pede existem; falta a decisão escrita, e a medição aponta para uma fase mais estreita, não para seguir ou parar inteiro |
-| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; ~15 itens, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate`** (§3.2) |
+| **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com 3 de 7 nomeados (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada e nasce com três regras |
+| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado na passada `--errado` por voz humana** (§3.7). O número de itens sai da medição, não do alvo |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
