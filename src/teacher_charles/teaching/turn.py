@@ -60,6 +60,8 @@ from .modes import (
     max_findings,
 )
 from .modes import partial_name as mode_partial_name
+from .phonetics import Phonetics
+from .phonetics import partial_name as phonetics_partial_name
 from .schedule import Review, Scheduler
 
 log = logging.getLogger(__name__)
@@ -88,6 +90,27 @@ class Chunk:
 
     text: str
     kind: Literal["chunk"] = "chunk"
+
+
+@dataclass(frozen=True, slots=True)
+class Phonemized:
+    """A pronúncia de uma fala, em IPA, para a tela mostrar embaixo dela.
+
+    Sai duas vezes por turno: a do aluno logo depois de a fala ser gravada —
+    antes de o modelo ser chamado, porque o G2P é determinístico e custa ~0,3
+    ms, então não há por que fazer o aluno esperar — e a do professor assim que
+    a resposta fecha.
+
+    ``role`` diz a qual bolha ela pertence. Sem ele a página teria que adivinhar
+    pela ordem de chegada, e a ordem muda conforme a análise sai antes ou
+    depois.
+    """
+
+    role: Literal["student", "teacher"]
+    text: str
+    ipa: str
+    turn_id: int
+    kind: Literal["phonetics"] = "phonetics"
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +161,7 @@ class Failed:
     kind: Literal["failed"] = "failed"
 
 
-TurnEvent = Chunk | Analyzed | Leveled | Done | Failed
+TurnEvent = Chunk | Phonemized | Analyzed | Leveled | Done | Failed
 
 
 async def _settle(task: asyncio.Task[Analysis]) -> None:
@@ -190,6 +213,7 @@ class TurnRunner:
         tracker: LevelTracker | None = None,
         planner: DrillPlanner | None = None,
         voice_enabled: bool = False,
+        phonetics: Phonetics | None = None,
     ) -> None:
         self._provider = provider
         self._prompts = prompts
@@ -217,6 +241,10 @@ class TurnRunner:
         # Decide qual partial de capacidades entra no prefixo — ver
         # ``teaching/capabilities.py``.
         self._voice_enabled = voice_enabled
+        # Sem G2P o turno não emite IPA e a página não desenha a linha. É o
+        # mesmo estado de primeira classe do ``voice=None``: a aula funciona
+        # inteira sem, e é assim que os testes de conversa seguem simples.
+        self._phonetics = phonetics
 
     # --- prompt da resposta ---------------------------------------------- #
 
@@ -254,8 +282,24 @@ class TurnRunner:
         não tinha microfone com o push-to-talk na tela do aluno.
 
         Partial ausente não é erro, mesma regra do nível e do modo.
+
+        ## Por que a fonética entra aqui dentro, e não como mensagem própria
+
+        Porque é a mesma coisa: verdade sobre o produto, decidida na subida e
+        imóvel enquanto o servidor está de pé. Juntar os dois num bloco só é o
+        que mantém o prefixo com o mesmo número de mensagens — e o que o
+        professor precisa saber sobre o IPA é curto demais para merecer uma.
         """
-        return self._optional_prompt(app_partial_name(self._voice_enabled))
+        blocks = [self._optional_prompt(app_partial_name(self._voice_enabled))]
+
+        # O IPA aparece sozinho embaixo de toda fala. Sem contar isso ao
+        # modelo ele escreve os símbolos na prosa — e já foi medido escrevendo
+        # errado (CLAUDE.md: *pat* contra *bat* como contraste de vogal).
+        phonetics_partial = phonetics_partial_name(self._phonetics is not None)
+        if phonetics_partial is not None:
+            blocks.append(self._optional_prompt(phonetics_partial))
+
+        return "\n\n".join(block for block in blocks if block)
 
     def level_prompt(self, level: str) -> str:
         """O ajuste de registro deste nível, ou string vazia.
@@ -567,6 +611,20 @@ class TurnRunner:
             log.exception("agenda de revisão falhou (turno segue)")
             return ()
 
+    def _spell(self, text: str) -> str | None:
+        """O IPA deste texto, ou ``None`` quando não há evento para emitir.
+
+        Dois ``None`` diferentes caem no mesmo lugar de propósito: IPA
+        desligado e IPA que não saiu (espeak que não carregou, texto só com
+        pontuação). Nos dois casos a página não tem linha para desenhar, e
+        mandar um evento com ``ipa`` vazio só a faria desenhar uma linha em
+        branco.
+        """
+        if self._phonetics is None:
+            return None
+        ipa = self._phonetics.transcribe(text)
+        return ipa or None
+
     # --- o turno ---------------------------------------------------------- #
 
     async def run(
@@ -586,6 +644,18 @@ class TurnRunner:
         # Grava a fala do aluno ANTES de chamar o modelo. Se a geração falhar,
         # o que o aluno disse não se perde.
         student_turn_id = self._turns.append(session_id, "student", text)
+
+        # Antes de chamar o modelo, de propósito: o G2P é determinístico e
+        # custa ~0,3 ms, então a linha de IPA do aluno aparece junto com a
+        # bolha dele em vez de esperar o professor responder.
+        student_ipa = self._spell(text)
+        if student_ipa is not None:
+            yield Phonemized(
+                role="student",
+                text=text,
+                ipa=student_ipa,
+                turn_id=student_turn_id,
+            )
 
         messages = self.build_messages(session_id, text, level, mode, drill)
 
@@ -639,6 +709,22 @@ class TurnRunner:
             return
 
         teacher_turn_id = self._turns.append(session_id, "teacher", reply)
+
+        # A resposta inteira de uma vez, e não sentença a sentença como o TTS
+        # faz. O motivo é o oposto do que move a voz: ali a segmentação existe
+        # para a síntese da sentença 1 correr enquanto o modelo escreve a 2 —
+        # aqui não há o que adiantar, porque o G2P já terminou antes de o
+        # primeiro quadro chegar à página. Transcrever por sentença só
+        # produziria uma linha de IPA remendada, em que a última palavra de uma
+        # sentença e a primeira da seguinte nunca se encontram.
+        teacher_ipa = self._spell(reply)
+        if teacher_ipa is not None:
+            yield Phonemized(
+                role="teacher",
+                text=reply,
+                ipa=teacher_ipa,
+                turn_id=teacher_turn_id,
+            )
 
         # A resposta saiu inteira; agora a análise tem o modelo para si. O
         # aluno está lendo, então este tempo não é tela parada.

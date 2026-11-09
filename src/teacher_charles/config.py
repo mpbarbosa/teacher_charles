@@ -92,6 +92,27 @@ class Settings(BaseSettings):
     # pedidos ao mesmo tempo, `false` volta a ser melhor.
     analysis_after_reply: bool = True
 
+    # --- Fonética --------------------------------------------------------
+    # A linha de IPA embaixo de toda fala, a do aluno e a do professor.
+    #
+    # **Ligada** por default, ao contrário da voz, e a diferença é de custo:
+    # aqui não há modelo nem peso baixado — é o espeak-ng do wheel, ~0,3 ms
+    # por sentença e ~0,25s de carga na subida. Desligar é para quem acha a
+    # linha ruidosa, não para quem não tem máquina.
+    phonetics_enabled: bool = True
+
+    # Americano por default. É o sotaque que o aluno brasileiro encontra em
+    # todo lugar, e é o inventário que a medição da Fase 2 usou para o
+    # gabarito. Qualquer língua que o espeak-ng conheça serve (`en-gb`...).
+    phonetics_language: str = "en-us"
+
+    # Marca de tônica (ˈ, ˌ) na transcrição. Default ligada: `ˈrecord` e
+    # `reˈcord` são palavras diferentes, e esconder isso tiraria metade da
+    # lição. O gabarito do `scripts/measure_phonemes.py` faz o oposto, e por
+    # motivo oposto — lá a tônica inventaria erro contra um reconhecedor que
+    # não a emite.
+    phonetics_stress: bool = True
+
     # --- Voz (Fase 1.5) --------------------------------------------------
     # Desligada por default. Ligar baixa dois modelos e carrega dois runtimes
     # (ctranslate2 e onnxruntime) na memória do processo; quem só quer o chat

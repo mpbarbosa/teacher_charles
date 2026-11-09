@@ -925,6 +925,21 @@ livre, ou pronúncia fora do escopo). Escrever E10–E12 antes disso é escrever
 código que a medição pode jogar fora — exatamente o que a abertura por medição
 existe para evitar.
 
+**O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
+no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer
+para outra coisa. É `teaching/phonetics.py`, e o que ele faz é escrever a
+transcrição fonética embaixo de toda fala — a do aluno e a do professor.
+
+Ele **não depende da E9**, e a distinção é a mesma que o portão protege: a linha
+mostra como a palavra **escrita** se pronuncia, que é tabela; a E11 julgaria
+como o aluno a **falou**, que é medição sobre áudio. A primeira não corre
+nenhum dos riscos da segunda. O G2P é o mesmo que a §2 usou para o gabarito e o
+mesmo que o Kokoro usa para falar — daí a propriedade que nenhum outro daria de
+graça: o símbolo que o aluno lê é o som que ele ouve. O `phonemizer` e o
+`espeakng_loader` saíram do extra `voice` e viraram dependência base, porque
+nada ali é áudio. E o partial `partials/app/phonetics.md` mantém explícito para
+o modelo que a linha é do texto, não uma leitura do aluno.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte

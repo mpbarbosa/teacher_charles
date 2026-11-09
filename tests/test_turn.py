@@ -21,6 +21,9 @@ from teacher_charles.teaching import (
     Done,
     Failed,
     Leveled,
+    Phonemized,
+    Phonetics,
+    PhoneticsUnavailable,
     TurnRunner,
 )
 from teacher_charles.teaching.capabilities import partial_name as app_partial_name
@@ -901,3 +904,114 @@ async def test_a_missing_capability_partial_does_not_break_the_turn(
 
     events = await collect(runner, session_id, "hello there")
     assert isinstance(events[-1], Done)
+
+
+# --- A pronúncia embaixo de cada fala ------------------------------------- #
+#
+# O G2P é determinístico e de graça (o espeak, não o modelo), então estes
+# testes usam o de verdade: o que está sob teste é o arranjo do turno — quantos
+# eventos, de quem, e em que ponto —, não a tabela do espeak, que
+# ``test_phonetics.py`` cobre.
+
+
+def test_sem_g2p_o_turno_nao_emite_fonetica(prompts, conn, session_id):
+    """``None`` é estado de primeira classe: a aula roda inteira sem IPA."""
+    provider = FakeProvider(replies="Nice.")
+    runner = runner_for(provider, prompts, conn)
+
+    events = asyncio.run(collect(runner, session_id, "I have 30 years"))
+
+    assert not [e for e in events if isinstance(e, Phonemized)]
+
+
+def test_o_turno_transcreve_os_dois_lados(prompts, conn, session_id):
+    provider = FakeProvider(replies="I am 30 years old.")
+    runner = runner_for(provider, prompts, conn, phonetics=Phonetics())
+
+    events = asyncio.run(collect(runner, session_id, "I have 30 years"))
+    spelled = [e for e in events if isinstance(e, Phonemized)]
+
+    assert [e.role for e in spelled] == ["student", "teacher"]
+    assert all(e.ipa for e in spelled)
+    # IPA, e não a ortografia de volta.
+    assert "30 years" not in spelled[0].ipa
+
+
+def test_a_fonetica_do_aluno_vem_antes_do_primeiro_pedaco(prompts, conn, session_id):
+    """O G2P não espera modelo nenhum, então a linha dele não espera também.
+
+    Se ela saísse depois, a bolha do aluno ficaria segundos sem transcrição
+    enquanto o professor escreve — e é a fala do aluno que ele quer conferir.
+    """
+    provider = FakeProvider(replies="I am 30 years old.", chunk_size=4)
+    runner = runner_for(provider, prompts, conn, phonetics=Phonetics())
+
+    events = asyncio.run(collect(runner, session_id, "I have 30 years"))
+    kinds = [type(e) for e in events]
+
+    assert kinds.index(Phonemized) < kinds.index(Chunk)
+
+
+def test_a_fonetica_do_professor_cobre_a_resposta_inteira(prompts, conn, session_id):
+    """Uma linha por bolha, não uma por sentença.
+
+    Transcrever por sentença produziria uma linha remendada em que a última
+    palavra de uma e a primeira da seguinte nunca se encontram — e aqui não há
+    o que adiantar: o G2P já terminou antes de o quadro chegar à página.
+    """
+    provider = FakeProvider(replies="Good. How old are you?", chunk_size=3)
+    runner = runner_for(provider, prompts, conn, phonetics=Phonetics())
+
+    events = asyncio.run(collect(runner, session_id, "I have 30 years"))
+    teacher = [e for e in events if isinstance(e, Phonemized) and e.role == "teacher"]
+
+    assert len(teacher) == 1
+    assert teacher[0].text == "Good. How old are you?"
+
+
+def test_o_turno_nao_cai_com_o_g2p_quebrado(prompts, conn, session_id):
+    """Pronúncia ausente é funcionalidade degradada; turno perdido seria aula parada."""
+
+    class Broken(Phonetics):
+        def _load(self):
+            raise PhoneticsUnavailable("espeak não carregou")
+
+    provider = FakeProvider(replies="Nice.")
+    runner = runner_for(provider, prompts, conn, phonetics=Broken())
+
+    events = asyncio.run(collect(runner, session_id, "I have 30 years"))
+
+    assert not [e for e in events if isinstance(e, Phonemized)]
+    assert isinstance(events[-1], Done)
+
+
+def test_com_ipa_ligado_o_professor_sabe_que_a_linha_existe(real_prompts, conn):
+    """Senão ele escreve os símbolos na prosa — e já foi medido escrevendo errado.
+
+    O CLAUDE.md registra o caso: perguntado pelo IPA, ofereceu *pat* contra
+    *bat* como contraste de vogal, que é a mesma nas duas.
+    """
+    runner = runner_for(FakeProvider(), real_prompts, conn, phonetics=Phonetics())
+    text = prefix_text(runner)
+
+    assert "Do not type IPA yourself" in text
+    # E segue sem alegar que ouve: a E9 é um portão aberto.
+    assert "not a reading of the student" in text
+
+
+def test_sem_ipa_o_prefixo_nao_promete_linha_nenhuma(real_prompts, conn):
+    runner = runner_for(FakeProvider(), real_prompts, conn)
+    assert "Do not type IPA yourself" not in prefix_text(runner)
+
+
+def test_a_fonetica_nao_acrescenta_mensagem_de_sistema(real_prompts, conn):
+    """Vai junto com as capacidades do aplicativo, no mesmo bloco.
+
+    As duas coisas são verdade sobre o produto, decididas na subida e imóveis
+    enquanto o servidor está de pé. Mensagem a mais seria prefixo a mais sem
+    estabilidade a mais.
+    """
+    com = runner_for(FakeProvider(), real_prompts, conn, phonetics=Phonetics())
+    sem = runner_for(FakeProvider(), real_prompts, conn)
+
+    assert len(com.stable_prefix()) == len(sem.stable_prefix())

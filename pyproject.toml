@@ -14,6 +14,18 @@ dependencies = [
     "pydantic-settings>=2.6",
     "jinja2>=3.1",
     "pyyaml>=6.0",
+    # O G2P da linha de IPA que corre embaixo de toda fala (teaching/phonetics.py).
+    #
+    # Dependencia base, e nao do extra `voice`, porque nao e voz: entra texto,
+    # sai texto, e nenhum byte de audio passa por aqui. Pendurar no extra faria
+    # a transcricao sumir na instalacao que todo mundo faz -- a voz e desligada
+    # por default. Sao ~21 MB (quase tudo o espeak-ng empacotado no
+    # `espeakng_loader`) contra os ~400 MB do extra.
+    #
+    # O `kokoro-onnx` tambem depende dos dois, e isso e o que da a propriedade
+    # que importa: o IPA na tela e o mesmo que a voz pronuncia.
+    "phonemizer>=3.4",
+    "espeakng-loader>=0.2.4",
 ]
 
 [project.optional-dependencies]

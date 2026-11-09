@@ -41,12 +41,22 @@ from .store.repo import (
     StudentRepo,
     TurnRepo,
 )
-from .teaching import Analyzed, Analyzer, Chunk, Done, Failed, Leveled, TurnRunner
+from .teaching import (
+    Analyzed,
+    Analyzer,
+    Chunk,
+    Done,
+    Failed,
+    Leveled,
+    Phonemized,
+    TurnRunner,
+)
 from .teaching.contrastive import ContrastiveError, load_base
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
+from .teaching.phonetics import Phonetics, build_phonetics
 from .teaching.schedule import is_graduated
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice
@@ -59,6 +69,14 @@ WEB_DIR = PACKAGE_ROOT / "web"
 # vários perfis numa máquina — o ativo é o visto por último —, mas não há login:
 # multiusuário fica fora da Fase 1 (plano §4).
 DEFAULT_STUDENT = "student"
+
+# A primeira coisa que o aluno lê na tela, antes de existir conversa nenhuma.
+#
+# Mora aqui, e não solta no template, desde que a linha de IPA passou a correr
+# embaixo de toda fala: o template não tem como chamar o G2P, e uma saudação
+# sem transcrição seria o único texto inglês da página sem ela — exatamente a
+# exceção que a funcionalidade existe para não ter.
+GREETING = "Hello! I'm Charles. Tell me about your day — in English."
 
 
 def request_stop() -> None:
@@ -214,6 +232,12 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         if voice is not None:
             log.info("voz ligada: STT %s, TTS %s", voice.stt.model, voice.tts.model)
 
+        # ``None`` quando o IPA está desligado — mesmo estado de primeira
+        # classe da voz. Construir também não carrega nada: o espeak sobe no
+        # aquecimento, e um espeak que não sobe degrada o ``/health`` em vez de
+        # derrubar a aula.
+        phonetics = build_phonetics(settings)
+
         app.state.settings = settings
         app.state.db = conn
         # Em app.state, e não fechado na rota: é aqui que o teste troca o
@@ -221,6 +245,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.stop = request_stop
         app.state.provider = chat
         app.state.voice = voice
+        app.state.phonetics = phonetics
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.base = base if analyzer is not None else None
@@ -240,6 +265,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # importa `voice/` (ver ``teaching/capabilities.py``), e o que o
             # prompt descreve é o produto, não o motor carregado.
             voice_enabled=settings.voice_enabled,
+            # O G2P vai inteiro, e não um flag como a voz: aqui `teaching/` é
+            # o dono do módulo — IPA é texto virando texto, não áudio (ver
+            # ``teaching/phonetics.py``).
+            phonetics=phonetics,
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
@@ -267,10 +296,17 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # política do aquecimento do modelo (ver ``base.SpeechToText.warm_up``).
         app.state.voice_warmup = asyncio.create_task(voice.warm_up()) if voice is not None else None
 
+        # O espeak custa ~0,25s para subir, e esse quarto de segundo cairia
+        # inteiro no primeiro turno do aluno. Mesma política dos outros dois
+        # aquecimentos: em segundo plano, e sem propagar erro.
+        app.state.phonetics_warmup = (
+            asyncio.create_task(phonetics.warm_up()) if phonetics is not None else None
+        )
+
         try:
             yield
         finally:
-            for task in (warmup, app.state.voice_warmup):
+            for task in (warmup, app.state.voice_warmup, app.state.phonetics_warmup):
                 if task is not None and not task.done():
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -421,6 +457,35 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "ready": voice.stt.ready and voice.tts.ready,
         }
 
+    def spell(text: str) -> str:
+        """O IPA deste texto para a página, ou string vazia.
+
+        Vazia cobre os dois casos em que não há linha para desenhar — IPA
+        desligado e espeak que não carregou — e o template trata os dois do
+        mesmo jeito, que é não desenhando nada.
+        """
+        phonetics: Phonetics | None = app.state.phonetics
+        return phonetics.transcribe(text) if phonetics is not None else ""
+
+    def phonetics_payload() -> dict[str, Any]:
+        """O que a página precisa saber antes de mostrar a linha de IPA.
+
+        Existe como função pela mesma razão do ``voice_payload``: a página e o
+        ``/health`` têm que concordar, e montar o dicionário duas vezes é o
+        jeito de eles divergirem.
+        """
+        phonetics: Phonetics | None = app.state.phonetics
+        if phonetics is None:
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "language": phonetics.language,
+            "stress": phonetics.with_stress,
+            # Falso até a primeira transcrição ou o fim do aquecimento: a
+            # carga é preguiçosa de propósito, e `ready` nunca a dispara.
+            "ready": phonetics.ready,
+        }
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -465,10 +530,20 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "profile": profile_payload(conn),
                 "session": session_payload(conn),
                 "voice": voice_payload(),
+                "phonetics": phonetics_payload(),
+                # A saudação com a transcrição junto: a tela vazia também é
+                # inglês escrito, e a linha vale ali como em qualquer outra.
+                "greeting": {"content": GREETING, "ipa": spell(GREETING)},
+                # O IPA volta com o histórico pelo mesmo motivo que as
+                # correções voltam: o que o aluno leu ontem continua na tela
+                # quando ele reabre a página. Não é consultado do banco — é
+                # função determinística do texto, e guardá-lo criaria uma
+                # coluna que pode discordar do que o espeak diz hoje.
                 "history": [
                     {
                         "role": t.role,
                         "content": t.content,
+                        "ipa": spell(t.content),
                         "corrections": by_turn.get(t.id, []),
                     }
                     for t in history
@@ -548,6 +623,19 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                         frames.append({"type": "chunk", "text": event.text})
                         if assembler is not None:
                             frames += sentence_frames(assembler.push(event.text))
+                    elif isinstance(event, Phonemized):
+                        # A pronúncia é dado derivado do texto, não prosa do
+                        # professor: vai em quadro próprio, com o papel, para
+                        # a página saber embaixo de qual bolha pendurá-la. A
+                        # do aluno chega antes do primeiro `chunk`; a do
+                        # professor, depois do último.
+                        frames.append(
+                            {
+                                "type": "phonetics",
+                                "role": event.role,
+                                "ipa": event.ipa,
+                            }
+                        )
                     elif isinstance(event, Analyzed):
                         # A correção é dado, não prosa: vai num frame próprio,
                         # para a UI anotar o que o aluno disse em vez de
@@ -898,6 +986,23 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 },
             }
 
+        # O IPA não conta para o status, e isso é escolha: a aula funciona
+        # inteira sem a linha de pronúncia, enquanto sem banco, modelo ou base
+        # ela não funciona. Mas aparece com o motivo — o aquecimento engole o
+        # erro, e sem isto um espeak que não carregou sumiria em silêncio.
+        phonetics: Phonetics | None = app.state.phonetics
+        if phonetics is None:
+            phonetics_info: dict[str, Any] = {"ok": True, "enabled": False}
+        else:
+            phonetics_info = {
+                "ok": phonetics.last_error is None,
+                "enabled": True,
+                "language": phonetics.language,
+                "stress": phonetics.with_stress,
+                "ready": phonetics.ready,
+                "detail": phonetics.last_error,
+            }
+
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
             # modelo e base contrastiva. Separar os três evita um health verde
@@ -919,6 +1024,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             },
             "provider": type(app.state.provider).__name__,
             "voice": voice_info,
+            "phonetics": phonetics_info,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
 

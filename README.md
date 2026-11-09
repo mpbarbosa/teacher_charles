@@ -25,6 +25,12 @@ português — mas explica em inglês.
 > palavra falada, contra 1–2 s projetados, e a maior fatia é o modelo de
 > linguagem, não o áudio. Os números e o que eles mudaram no desenho estão em
 > [docs/plano-fase-1-5.md](docs/plano-fase-1-5.md).
+>
+> **Pronúncia na tela.** Toda fala escrita — a do aluno e a do Charles — sai com
+> a transcrição fonética em IPA embaixo dela. Vem do espeak-ng, não do modelo: é
+> o mesmo G2P que a voz usa para falar, então o símbolo que o aluno lê é o som
+> que ele ouve. Desligável no cabeçalho, e por configuração em
+> `TC_PHONETICS_ENABLED`.
 
 ## Decisões que moldam o projeto
 
@@ -48,6 +54,8 @@ não prosa que o modelo improvisa.
 - [uv](https://docs.astral.sh/uv/)
 - [Ollama](https://ollama.com) rodando localmente
 - ~8 GB de RAM e ~3 GB de disco para o modelo
+- O IPA embaixo de cada fala já vem na instalação base: são ~21 MB de wheels
+  (`phonemizer` e o espeak-ng do `espeakng_loader`), sem peso para baixar
 - Para a voz (opcional): mais ~400 MB de wheels e ~120 MB de pesos, e um
   microfone
 
@@ -560,6 +568,7 @@ Vulkan — ele diz o comando quando não encontra o segundo.
 | Primeira palavra demora ~3s, as seguintes também | É o esperado nesta classe de hardware com um 3B (§5.5). Se o primeiro turno demorar muito mais, o aquecimento não rodou: veja `TC_LLM_WARMUP`. |
 | Turno de 15s em frase com erro | A análise custa ~8-10s e roda **depois** da resposta. O aluno lê enquanto ela corre; a anotação aparece quando fica pronta. |
 | A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
+| A linha de IPA não aparece embaixo das falas | Veja o interruptor **Phonetics** no cabeçalho; se ele nem existe, o `/health` diz por quê no bloco `phonetics` (espeak que não carregou, ou `TC_PHONETICS_ENABLED=false`). |
 | O microfone não aparece na página | A voz vem desligada. `uv sync --extra voice`, baixe os pesos e suba com `TC_VOICE_ENABLED=true`. |
 | A voz está ligada mas o Charles não fala | Veja `/health`: o bloco `voice` diz qual motor não carregou e por quê. Peso ausente é o caso comum. |
 | O Charles escreve mas o navegador não toca som | O navegador bloqueia áudio sem gesto do usuário. Clique em qualquer lugar da página e mande outro turno. |
@@ -582,6 +591,7 @@ src/         o código
     contrastive.py  carrega e consulta as regras curadas
     level.py     fala do aluno -> nível CEFR estimado, com histerese
     modes.py     os três modos; o drill escolhe a regra no error log do aluno
+    phonetics.py texto -> IPA do espeak: a linha de pronúncia de cada fala
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única (conversa) e a tela /progress; JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

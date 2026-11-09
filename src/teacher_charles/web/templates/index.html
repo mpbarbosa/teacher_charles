@@ -31,6 +31,15 @@
         <span class="label">Charles speaks</span>
       </label>
       {% endif %}
+      {% if phonetics.enabled %}
+      {# A linha de IPA embaixo de cada fala dobra a altura da bolha, e nem
+         toda aula e sobre pronuncia. O interruptor so esconde: o dado ja veio
+         com a pagina, entao reaparecer nao custa pedido nenhum. #}
+      <label class="field ipa-toggle" title="The IPA line under every message">
+        <input id="show-ipa" type="checkbox" checked aria-label="Show phonetics">
+        <span class="label">Phonetics</span>
+      </label>
+      {% endif %}
       <a class="button" href="/progress" title="No que o aluno mais erra">Your mistakes</a>
       <button id="reset" type="button" title="Começar uma conversa nova">New conversation</button>
       {# Desligar daqui existe porque quem sobe o Charles por `scripts/run.sh` e
@@ -62,11 +71,16 @@
     {% endif %}
   </nav>
 
-  <main id="transcript" aria-live="polite" aria-label="Conversation">
+  {# A saudacao vem em `data-`, e nao escrita no app.js, porque ela tem IPA:
+     a transcricao sai do espeak no servidor, e a conversa nova precisa dela
+     sem ter a bolha de abertura na tela para copiar. #}
+  <main id="transcript" aria-live="polite" aria-label="Conversation"
+        data-greeting="{{ greeting.content }}" data-greeting-ipa="{{ greeting.ipa }}">
     {% for turn in history %}
     <article class="turn {{ turn.role }}">
       <div class="who">{{ "You" if turn.role == "student" else "Charles" }}</div>
       <div class="what">{{ turn.content }}</div>
+      {% if turn.ipa %}<div class="ipa" lang="en-fonipa" aria-label="Pronunciation">{{ turn.ipa }}</div>{% endif %}
       {% if turn.corrections %}
       <div class="corrections">
         {% for c in turn.corrections %}
@@ -84,7 +98,8 @@
     {% if not history %}
     <article class="turn teacher empty-state">
       <div class="who">Charles</div>
-      <div class="what">Hello! I'm Charles. Tell me about your day — in English.</div>
+      <div class="what">{{ greeting.content }}</div>
+      {% if greeting.ipa %}<div class="ipa" lang="en-fonipa" aria-label="Pronunciation">{{ greeting.ipa }}</div>{% endif %}
     </article>
     {% endif %}
   </main>

@@ -149,6 +149,28 @@ main {
 
 .empty-state .what { color: var(--muted); }
 
+/* --- A pronuncia embaixo da fala ----------------------------------------- */
+/*
+ * IPA do espeak, a mesma transcricao que a voz pronuncia. Fonte monoespacada
+ * pelo motivo de sempre com simbolo fonetico: `ɪ` e `i`, `ʊ` e `u` so se
+ * distinguem com folga entre os caracteres. Menor e mais apagada que a fala
+ * porque e apoio -- quem le a bolha le o ingles, nao o IPA.
+ */
+.ipa {
+  margin-top: 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* O interruptor do cabecalho so esconde. O dado ja veio com a pagina ou com o
+   turno, entao reaparecer nao custa pedido nenhum -- e por isso e `display`,
+   nao remocao do elemento. */
+body.no-ipa .ipa { display: none; }
+
 form {
   display: flex;
   gap: 0.6rem;
@@ -216,7 +238,9 @@ button.talk.latched { box-shadow: 0 0 0 2px var(--danger); }
   button.talk.recording .dot { animation: none; }
 }
 
-.field.speak input { width: auto; }
+/* Caixa de marcar nao herda a largura de 8rem dos campos de texto. */
+.field.speak input,
+.field.ipa-toggle input { width: auto; }
 
 @media (max-width: 560px) {
   /* Em tela estreita o rotulo vai embora e sobra a bolinha: o botao continua

@@ -74,6 +74,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/` | The product. **Agnostic about where the text came from** — it takes a string and returns `Chunk`/`Analyzed`/`Leveled`/`Done`/`Failed` events. That is what allows STT/TTS to be attached in Phase 1.5 without rewriting the middle. |
 | `voice/` | The two ends of Phase 1.5 — STT and TTS — behind `base.SpeechToText` / `base.TextToSpeech`, in the same arrangement as `llm/`. **It does not import `teaching/`**: it takes bytes and returns text; it takes text and returns PCM. |
 | `store/` | SQLite through the stdlib's `sqlite3`. Schema in numbered `.sql` files, no ORM; the dataclasses in `models.py` only give the rows names. |
+| `teaching/phonetics.py` | The G2P behind the IPA line that runs under every message. Text in, text out — no audio anywhere, which is why it is here and not in `voice/`. Lazy, and a failure costs the line, never the turn. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
@@ -170,6 +171,26 @@ and the contrast is the initial consonant he had himself proposed a turn
 earlier. Phase 2's phoneme evaluator does not exist (E9 is an unpassed gate),
 and what reaches him is the transcript and never the sound, so **neither voice
 state lets him claim to hear or score pronunciation.**
+
+**The IPA on screen comes from espeak, never from the model** — same rule as
+grammar, one layer down. `teaching/phonetics.py` runs the `phonemizer` that
+`kokoro-onnx` already brings, so the symbol the student reads is the symbol the
+voice pronounces; a second G2P would have the screen teaching against the
+loudspeaker. It lives in `teaching/` and its two wheels are **base
+dependencies**, not part of the `voice` extra, because nothing here is audio:
+text goes in, text comes out, and hanging it off the extra would make the line
+vanish in the install everybody does — voice is off by default. The partial
+`prompts/partials/app/phonetics.md` tells Charles the line is there so he stops
+typing symbols himself, and it rides inside the app-capabilities message rather
+than adding one: both are truths about the product, fixed at startup, so the
+prefix keeps its message count. The transcription is still of the **written
+words** — nobody heard the student — and E9's gate is what would change that.
+
+**One IPA line per bubble, not per sentence**, which is the opposite of the TTS
+next to it. The segmenter exists so synthesis of sentence 1 runs while the model
+writes sentence 2; here there is nothing to bring forward, because the G2P
+finished before the frame reached the page. Per sentence it would only produce a
+patched line where the last word of one and the first of the next never meet.
 
 **The student's level is decided by code, not by the model.** `teaching/level.py`
 has a deterministic rubric (sentence length, long words, connectives,
@@ -330,6 +351,13 @@ analysis that gave rise to the project.
 Phase 2 plan says it does not depend on E9's gate, and it was the path taken
 while E9 stays open. What it swapped out is in §7 of `docs/plano-fase-2.md`, and
 the two debts it opened are in §6 there.
+
+**The IPA line is delivered too, and it has no deliverable number**: it was not
+in any plan, so numbering it would take a label the Phase 2 author may want for
+something else. §5 of `docs/plano-fase-2.md` records it under the table. It
+does not depend on E9 either, and for the reason the gate exists: the line says
+how the written word is pronounced, which is a table; E11 would judge how the
+student said it, which is measurement over audio.
 
 Phase 1 is complete, and so is **Phase 1.5 (voice)** —
 `docs/plano-fase-1-5.md`. The student speaks via push-to-talk, Charles answers
