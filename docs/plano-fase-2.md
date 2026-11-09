@@ -848,6 +848,77 @@ names an error when the error is there, but it is the wrong pass that says
 whether the nine remaining "não" are absent errors or a blind evaluator. That
 is what is left of the deliverable.
 
+#### The wrong pass, and the half of the base that stays silent
+
+Eight takes with the curated error committed on purpose, at the same operating
+point as the correct pass — capture at 70% (+15,75 dB), close to the
+microphone, one phrase per take. Seven measured, one refused. The column that
+decides here is `nomeou?`, not the PER: what the pass asks is whether the
+evaluator names the curated substitution **when the substitution is really
+there**.
+
+| regra | áudio (md5) | PER certo | PER errado | nomeou? |
+|---|---|---|---|---|
+| `pron.th-unvoiced` | `89bc4375` | 0,053 | 0,105 | **sim** — `sub /θ/→/t/` |
+| `pron.th-voiced` | `eaa0d509` | 0,125 | 0,438 | **sim** — `sub /ð/→/d/` |
+| `pron.epenthesis-initial` | `454a1ff6` | 0,312 | 0,438 | não |
+| `pron.epenthesis-final` | `dce38bbc` | 0,312 | 0,875 | não |
+| `pron.vowel-length` | `e2841d24` | 0,059 | 0,706 | não |
+| `pron.h-dropping` | `c3e16004` | 0,364 | 0,818 | **sim** — `del /h/` |
+| `pron.ing-alveolar` | `690c26c7` | 0,529 | 0,235 | não |
+| `pron.r-initial` | `4e427a30` | 0,000 | recusada | — |
+
+**Três de sete nomeados.** Four of the seven measured takes carry warnings
+(level or edge), so they are worth less as PER; the naming column does not
+depend on the level in the same way, and it is the column this pass exists for.
+
+**The ambiguity of §6 is resolved, and only for three rules.** The correct pass
+left "previsto? não" summing two opposite things — the evaluator did not find
+the error, and the error was not there. For `th-unvoiced`, `th-voiced` and
+`h-dropping` the answer is now the first one: deliberately said *tink*, *de
+udder brudder* and *e as a ouse*, the alignment carried exactly the operation
+the rule describes. Their "não" in the correct pass means the speaker did not
+make the error.
+
+**For the other four the evaluator is blind, and that is the finding.**
+`epenthesis-initial`, `epenthesis-final`, `vowel-length` and `ing-alveolar` did
+**not** produce their curated operation even with the error committed on
+purpose. It is not that nothing changed: `epenthesis-final` went from 0,312 to
+0,875 and `vowel-length` from 0,059 to 0,706, so the recognizer heard something
+very different. It just did not name it as the curated substitution. Under
+§3.2 an operation without a `rule_id` never reaches the student, so these four
+would be **silent in the product** no matter how plainly the student made the
+error — a false negative by construction, not by threshold.
+
+**This is the human half of the `--discriminate` guard, and it is stricter.**
+§2.3 measured 6 of 8 named on synthetic speech, where the substitution is exact
+and everything else is identical between the two sides of the pair. On a human
+voice at the same operating point it is 3 of 7. The gap is the measurement
+§2.5 warned about: synthetic agreement is a ceiling, not a forecast. §3.2 already
+forbids an item entering `pronunciation.yaml` without passing `--discriminate`;
+this pass says the gate has to be the human one, and that it currently rejects
+half the curated set.
+
+**One inversion worth recording rather than explaining.** `ing-alveolar`'s wrong
+take scored **lower** than its correct one — 0,235 against 0,529 — and the
+gabarito matched in the *correct* take and not in the wrong one. The likely
+reading is that the 0,529 take was the noisy recording rather than the wrong
+one being better speech; it is not settled here, and a re-take of both at the
+same distance is what would settle it.
+
+**`pron.r-initial` has no wrong-pass data.** It was refused for speech contrast,
+the only one of the eight, so the rule with the best correct take (PER 0,000)
+is the one with nothing to pair it against. It needs a re-take before any
+decision mentions it.
+
+**O que isto decide.** The two numbers E9 asked for both exist now: eleven
+clean utterances with median PER **0,154**, and **3 of 7** curated errors named
+when deliberately committed. Read together they do not support a clean "go" or
+a clean "stop". They support a **narrower phase**: the evaluator is viable for
+the rules it can name — the two `th` and `h-dropping` — and is not viable, in
+this stack and for this speaker, for the four that stayed silent. The decision
+line and the scope of E10 follow from that, and are the remaining item of E9.
+
 ### 3.6 A iGPU da §7 é o que paga a pronúncia
 
 A §7.5 da Fase 1.5 tirou o LLM do caminho crítico pela iGPU, e a §5 do mesmo
@@ -863,6 +934,64 @@ segunda coisa, que a §7 não contou: **espaço de CPU para um terceiro modelo.*
 A invariante continua valendo e ganha a redação precisa: nada de duas
 inferências disputando **o mesmo dispositivo**. Pronúncia e TTS, os dois na
 CPU, continuam serializando com lock próprio.
+
+---
+
+### 3.7 A decisão da E9: segue, e mais estreita
+
+A entrega pede a decisão escrita com o número na mão. São dois números, e eles
+não dizem a mesma coisa.
+
+**O primeiro é o que abriu a fase, e ele passa.** Onze elocuções humanas limpas,
+mediana de PER **0,154** — 2,5× o piso de 0,061 e bem longe do proxy de 0,676
+da §2.4, onde o alinhamento desaba e nada é *o* erro. O risco da §6 que podia
+cancelar as outras entregas não se realizou: esta pilha ouve este falante. A
+alternativa que a §5 previa para o caso ruim — `small` em vez de `large`,
+*forced alignment* em vez de reconhecimento livre, ou pronúncia fora do escopo —
+não precisa ser acionada por causa do PER.
+
+**O segundo é o que decide o escopo, e ele reprova metade da base.** Com o erro
+curado cometido de propósito, o avaliador nomeou a operação certa em **3 de 7**:
+`sub /θ/→/t/`, `sub /ð/→/d/` e `del /h/`. As outras quatro — `epenthesis-initial`,
+`epenthesis-final`, `vowel-length`, `ing-alveolar` — não produziram a operação
+curada nem com o erro na fala. Pela §3.2 isso não é um limiar mal calibrado que
+se conserte depois: operação sem `rule_id` não chega ao aluno, então essas
+quatro regras são silêncio no produto por construção.
+
+**A decisão: seguir, com a base admitida pelo teste humano e não pelo
+sintético.** Em concreto:
+
+1. **A E10 muda de critério de entrada.** A §3.2 exigia passar no
+   `--discriminate`; passa a exigir também **ser nomeada na passada `--errado`
+   por voz humana**. O sintético continua valendo como primeiro filtro barato —
+   ele reprova cedo o que nem no caso ideal funciona —, mas quem decide é o
+   humano, porque é ele que mede o que o aluno vai receber. A §2.3 deu 6 de 8;
+   esta passada deu 3 de 7 nas mesmas regras.
+2. **A E10 nasce pequena, e o plano para de prometer ~15 itens.** Três regras
+   passam hoje. A base admitida é a que passar no teste, e o número sai da
+   medição, não do alvo.
+3. **As quatro regras cegas ficam documentadas como ponto cego**, como a §6 já
+   faz com `pron.ing-alveolar`, e não entram na base. Não viram falso negativo
+   silencioso, e não viram item "a revisar depois".
+4. **A E11 e a E12 seguem como escritas.** Nada nelas depende do tamanho da
+   base: o contrato é devolver só erro com `rule_id` e calar acima do portão, e
+   isso é igual com três regras ou com quinze.
+5. **O `pron.r-initial` fica indeciso.** A tomada errada foi recusada por
+   contraste de fala, então a regra com a melhor tomada certa (PER 0,000) é a
+   única sem par. Uma regravação decide se ela entra — e ela é a primeira
+   candidata a crescer a base.
+
+**O que reverteria esta decisão.** Se o conjunto admitido não passar de três ou
+quatro regras depois de o `r-initial` ser regravado e de a E10 testar os itens
+novos, o produto de pronúncia é fino demais para o custo dos 318 MB e do
+terceiro modelo nativo no processo, e a §4 volta a valer com "pronúncia fora do
+escopo". O número que decide isso é o mesmo desta subseção, medido do mesmo
+jeito; não é preciso instrumento novo.
+
+**O que esta decisão não autoriza.** Ela não calibra teto de PER — a §3.3
+continua valendo, e o portão continua sendo por operação de alinhamento. E ela
+vale para **um** falante: a §2.5 já dizia que uma voz não é a população, e a
+primeira coisa que uma segunda voz pode derrubar é justamente o 3 de 7.
 
 ---
 
@@ -910,8 +1039,8 @@ entregas numeradas.
 | | Entrega | Pronto quando |
 |---|---|---|
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
-| **E9** 🚧 | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Onze elocuções limpas, mediana 0,154, dois gabaritos nomeados** (§3.5) — o critério de elocuções está cumprido; falta a passada `--errado` e a decisão escrita |
-| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; ~15 itens, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate`** (§3.2) |
+| **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com 3 de 7 nomeados (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada e nasce com três regras |
+| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado na passada `--errado` por voz humana** (§3.7). O número de itens sai da medição, não do alvo |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
