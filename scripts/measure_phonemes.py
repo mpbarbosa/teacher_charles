@@ -42,6 +42,14 @@ Modos:
     uv run python scripts/measure_phonemes.py --audio fala.wav --say "what I said"
         O mesmo, sobre um WAV que já existe. É assim que se mede o que importa.
 
+    uv run python scripts/measure_phonemes.py --rescore
+        Responde outra vez "o erro previsto foi nomeado?" sobre os relatórios
+        que já estão no disco — sem microfone, sem áudio e sem carregar os 318
+        MB do reconhecedor. É a §3.4 do plano aplicada: a assinatura de um item
+        é um **conjunto** de operações aceitáveis, e abrir o lado ouvido do
+        gabarito à classe do fonema não pede gravação nova, porque a resposta
+        está em `esperado` e `ouvido`.
+
 ## O que esta medição NÃO diz
 
 O áudio das duas tabelas é **sintético**: o Kokoro lê uma transcrição de
@@ -278,6 +286,38 @@ def tokenize(ipa: str, vocab: set[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _vocab_raw() -> dict[str, int]:
+    """O `vocab.json` do reconhecedor, que são alguns kilobytes."""
+    from huggingface_hub import hf_hub_download
+
+    vocab_path = hf_hub_download(HF_REPO, "vocab.json")
+    return json.loads(Path(vocab_path).read_text(encoding="utf-8"))
+
+
+def load_vocab() -> set[str]:
+    """O vocabulário de fonemas **sem** carregar o reconhecedor.
+
+    O `_error_signature` precisa de duas coisas, e nenhuma delas é áudio: o
+    G2P e o vocabulário em que a transcrição é tokenizada. Quem só vai
+    responder a coluna do gabarito — o `--rescore` — não abre WAV nenhum, e
+    pagar 318 MB e ~1,8 s de carga para ler um arquivo de poucos kilobytes
+    seria o defeito que o `/health` da Fase 1.5 evita: efeito colateral de
+    centenas de megabytes numa operação que não os pede.
+    """
+    return {t for t in _vocab_raw() if not (t.startswith("<") and t.endswith(">"))}
+
+
+class Vocabulary:
+    """O que o gabarito precisa do reconhecedor, que é só o vocabulário.
+
+    Entra onde um `PhonemeRecognizer` entraria, e por isso tem o mesmo nome de
+    atributo: o `_error_signature` nunca tocou em mais do que isto.
+    """
+
+    def __init__(self) -> None:
+        self.vocab = load_vocab()
+
+
 class PhonemeRecognizer:
     """O wav2vec2 de fonemas, em ONNX, na CPU.
 
@@ -296,7 +336,6 @@ class PhonemeRecognizer:
         self._np = np
         t0 = time.perf_counter()
         model_path = hf_hub_download(HF_REPO, HF_MODEL_FILE)
-        vocab_path = hf_hub_download(HF_REPO, "vocab.json")
         opts = ort.SessionOptions()
         if threads:
             opts.intra_op_num_threads = threads
@@ -305,7 +344,7 @@ class PhonemeRecognizer:
         )
         self.load_ms = (time.perf_counter() - t0) * 1000
 
-        raw: dict[str, int] = json.loads(Path(vocab_path).read_text(encoding="utf-8"))
+        raw: dict[str, int] = _vocab_raw()
         self._id_to_token = {i: t for t, i in raw.items()}
         self.vocab = {t for t in raw if not (t.startswith("<") and t.endswith(">"))}
         self.pad_id = raw.get("<pad>", 0)
@@ -426,6 +465,51 @@ def ops(alignment: Alignment) -> set[tuple[str, ...]]:
     tagged |= {("del", phoneme) for phoneme in alignment.deletions}
     tagged |= {("ins", phoneme) for phoneme in alignment.insertions}
     return tagged
+
+
+# As classes de fonema que esta pilha não resolve, do lado **ouvido** de uma
+# operação do gabarito. Não é a tabela de equivalência de inglês correto — essa
+# é outra coisa, é da E10, e valeria para o alinhamento inteiro (`/ɔː/ ≡ /ɑː/`,
+# a fusão *cot/caught* que a §3.5 do plano encontrou em fala correta). Esta
+# aqui serve a uma pergunta só: a operação que o reconhecedor produziu **é o
+# erro curado?** Logo não toca em PER, em alinhamento, nem no que conta como
+# fala correta.
+#
+# A §3.4 do plano prescreve este conjunto e diz por quê: a identidade exata de
+# uma vogal não é confiável aqui, a presença de uma vogal onde não devia haver
+# é. O mesmo item foi medido errando o símbolo duas vezes — o par sintético da
+# §2.3 ouviu `+/ɐ/` onde o gabarito dizia `+/ɪ/`, e a elocução humana
+# deliberada ouviu `+/i/`.
+PHONEME_CLASSES: tuple[frozenset[str], ...] = (frozenset({"ɪ", "i", "ɐ", "ə"}),)
+
+
+def _class_of(phoneme: str) -> frozenset[str]:
+    for klass in PHONEME_CLASSES:
+        if phoneme in klass:
+            return klass
+    return frozenset({phoneme})
+
+
+def widen(signature: set[tuple[str, ...]]) -> set[tuple[str, ...]]:
+    """O gabarito com o lado ouvido aberto à classe do fonema.
+
+    Só o lado ouvido. A origem vem do G2P sobre a frase curada e não se move;
+    as posições e os tipos de operação continuam saindo das duas transcrições,
+    que é a lição do `ops`. O que se abre é o que saiu da boca do aluno, porque
+    o reconhecedor escreve `/i/` onde o gabarito diz `/ɪ/` e isso não é outro
+    erro — é o mesmo, transcrito com o símbolo vizinho.
+
+    Deleção não tem lado ouvido e passa intacta. E isto **não** entra no
+    `run_pairs`: os números da §2 do plano foram medidos com a interseção
+    estrita, e trocá-la lá redefiniria aquelas tabelas em silêncio.
+    """
+    wider: set[tuple[str, ...]] = set(signature)
+    for op in signature:
+        if op[0] == "sub":
+            wider |= {("sub", op[1], alt) for alt in _class_of(op[2])}
+        elif op[0] == "ins":
+            wider |= {("ins", alt) for alt in _class_of(op[1])}
+    return wider
 
 
 # ---------------------------------------------------------------------------
@@ -1535,6 +1619,71 @@ def run_corpus(
     return _report_corpus(results, wrong=wrong)
 
 
+def _rule_of(data: dict) -> Substitution | None:
+    """A regra curada deste relatório, pelo campo ou pela frase dita.
+
+    Pela frase também, e não só pelo campo: os relatórios anteriores ao campo
+    `regra` guardam o `dito`, e a frase é o que identifica a regra. Descartá-los
+    jogaria fora elocução limpa que o critério da E9 conta — cinco delas, aqui.
+    """
+    by_id = next((i for i in SUBSTITUTIONS if i.rule_id == data.get("regra")), None)
+    if by_id is not None:
+        return by_id
+    return next((i for i in SUBSTITUTIONS if _same_phrase(data.get("dito"), i.phrase)), None)
+
+
+def run_rescore(vocabulary: Any, g2p) -> int:
+    """Responde outra vez a coluna do gabarito sobre o que já está no disco.
+
+    Nada aqui é medição nova, e é essa a razão de o modo existir. A §3.4 do
+    plano diz que a assinatura de um item é um **conjunto** de operações
+    aceitáveis; abrir o lado ouvido do gabarito à classe do fonema muda quais
+    relatórios respondem "sim" e não muda um alinhamento, um PER nem um byte de
+    áudio. A resposta já está em `esperado` e `ouvido`, que todo relatório
+    medido guarda — foi o que o `_with_signature` estabeleceu quando a
+    alternativa era o `--redo` gravar por cima de elocução limpa.
+
+    O que ele escreve no disco é o gabarito faltante, pela mesma razão: ele não
+    é medição. Inclusive nos relatórios **com aviso**, que o `--corpus` pula de
+    propósito — o aviso exclui a elocução da contagem da E9, não a transcrição
+    que ela já carrega.
+    """
+    print("\n## Re-score dos relatórios no disco — sem microfone, sem modelo")
+    certas: list[dict] = []
+    erradas: list[dict] = []
+    sem_regra, preenchidos = 0, 0
+    for report in sorted(RECORDING_DIR.glob("*.json")) if RECORDING_DIR.is_dir() else []:
+        try:
+            data = json.loads(report.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        item = _rule_of(data)
+        if item is None:
+            sem_regra += 1
+            continue
+        data = data | {"regra": item.rule_id}
+        if "assinatura" not in data and not data.get("recusado"):
+            signature = _error_signature(
+                vocabulary, g2p, data.get("dito") or item.phrase, item.rule_id
+            )
+            data = data | {"assinatura": sorted(list(op) for op in signature)}
+            report.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+            preenchidos += 1
+        (erradas if data.get("errado") else certas).append(data)
+    print(f"   {len(certas)} relatório(s) da passada correta, {len(erradas)} da errada")
+    if preenchidos:
+        print(f"   gabarito preenchido em {preenchidos} relatório(s) que não tinham")
+    if sem_regra:
+        print(f"   {sem_regra} relatório(s) sem regra curada reconhecível — fora das tabelas")
+    if certas:
+        _report_corpus(certas)
+    if erradas:
+        _report_corpus(erradas, wrong=True)
+    if not certas and not erradas:
+        print("   Nenhum relatório com regra curada no disco: não há o que re-scorar.")
+    return 0
+
+
 def _per_do_certo(phrase: str) -> float | None:
     """O PER da tomada **correta** e limpa desta frase, se houver uma."""
     report = _clean_report_for(phrase, wrong=False)
@@ -1564,6 +1713,18 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
     else:
         print(f"   {'regra':<26} {'áudio':<9} {'PER':>6}  {'previsto?':<10} avisos")
     limpas, nomeados, nomeaveis = 0, 0, 0
+    # O "sim" exato e o "sim" por classe são contados à parte, e saem à parte.
+    # A §2 do plano foi medida com a interseção estrita; somar as duas numa
+    # coluna só redefiniria aquelas tabelas em silêncio, que é exatamente o que
+    # o comentário sobre a construção do gabarito pede para não fazer.
+    exatos, por_classe_total = 0, 0
+    # E a mesma fração sobre as limpas, que são as que o critério conta. Sem
+    # ela o re-score anunciou "6 de 8" com uma das tomadas sendo as 44 fonemas
+    # de salada do relatório `d2d3b42e`, onde um `ins /i/` aparece por acidente:
+    # num alinhamento de PER 2,500 o gabarito casa por sorte, e o "sim" parece
+    # medição. É a mesma distinção que a mediana já faz entre o que foi medido
+    # e o que conta.
+    nomeados_limpos, nomeaveis_limpos = 0, 0
     detalhe: list[tuple[str, list[str]]] = []
     for data in results:
         rule_id = data.get("regra", "?")
@@ -1572,16 +1733,27 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
         assinatura = data.get("assinatura")
         named = "—"
         medida_nomeavel = False
+        avisos = len(data.get("avisos", []))
+        limpa = not data.get("recusado") and not avisos
         if item and heard and expected and assinatura:
             # Interseção, como no `run_pairs`: basta o reconhecedor produzir
             # **uma** das operações do gabarito. Relatório sem assinatura fica
             # em `—` de propósito: é anterior a este cálculo, e chamá-lo de
             # "não" seria inventar uma medida que ninguém fez.
-            casadas = {tuple(op) for op in assinatura} & ops(align(expected, heard))
-            found = bool(casadas)
-            named = "sim" if found else "não"
+            gabarito = {tuple(op) for op in assinatura}
+            produzidas = ops(align(expected, heard))
+            casadas = gabarito & produzidas
+            # E depois das exatas, nunca em vez delas: a classe só é consultada
+            # onde o símbolo não casou, e a coluna diz qual dos dois aconteceu.
+            por_classe = (widen(gabarito) & produzidas) - casadas
+            found = bool(casadas or por_classe)
+            named = "sim" if casadas else ("classe" if por_classe else "não")
             nomeados += bool(found)
+            exatos += bool(casadas)
+            por_classe_total += bool(por_classe and not casadas)
             medida_nomeavel = True
+            nomeaveis_limpos += limpa
+            nomeados_limpos += bool(found) and limpa
             if found:
                 # **Qual** operação casou, e não só que casou. O gabarito vem
                 # de trocar o fonema em toda a transcrição, então numa frase
@@ -1594,9 +1766,14 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
                 # redefiniria em silêncio os números da §2 do plano. O que
                 # muda é que a operação casada fica à vista, para quem lê a
                 # tabela poder recusá-la.
-                detalhe.append((rule_id, sorted("/".join(op) for op in casadas)))
-        avisos = len(data.get("avisos", []))
-        if not data.get("recusado") and not avisos:
+                detalhe.append(
+                    (
+                        rule_id,
+                        sorted("/".join(op) for op in casadas)
+                        + sorted(f"{'/'.join(op)} (classe)" for op in por_classe),
+                    )
+                )
+        if limpa:
             limpas += 1
         nomeaveis += medida_nomeavel
         per = data.get("per")
@@ -1631,7 +1808,18 @@ def _report_corpus(results: list[dict], wrong: bool = False) -> int:
         # Measured but none of it clean. Printing the median anyway would put a
         # number the criterion rejects where the headline goes.
         print("   Nenhuma elocução limpa: não há mediana que o critério aceite.")
-    print(f"   erros curados nomeados: {nomeados} de {nomeaveis} com gabarito")
+    resumo = f"   erros curados nomeados: {nomeados} de {nomeaveis} com gabarito"
+    if por_classe_total:
+        # O split fica na linha de manchete porque é ele que diz o que o
+        # número é: um "sim" por classe é a §3.4 sendo aplicada, não a §2.3
+        # sendo melhorada.
+        resumo += f" — {exatos} exato(s), {por_classe_total} por classe de fonema (§3.4)"
+    print(resumo)
+    if nomeaveis_limpos != nomeaveis:
+        print(
+            f"   nas limpas, que são as que o critério conta: "
+            f"{nomeados_limpos} de {nomeaveis_limpos}"
+        )
     if detalhe:
         print("\n   Qual operação do gabarito casou — confira se é a que a regra descreve:")
         for rule_id, casadas in detalhe:
@@ -1706,6 +1894,11 @@ def main() -> int:
     )
     parser.add_argument("--redo", action="store_true", help="com --corpus, regrava as já limpas")
     parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="responde a coluna do gabarito outra vez sobre os relatórios no disco",
+    )
+    parser.add_argument(
         "--errado",
         action="store_true",
         help="com --corpus, grava a passada em que o erro curado é cometido de propósito",
@@ -1732,6 +1925,7 @@ def main() -> int:
             args.audio,
             args.record,
             args.corpus is not None,
+            args.rescore,
         ]
     ):
         args.rtf = args.discriminate = True
@@ -1744,6 +1938,8 @@ def main() -> int:
         raise SystemExit(
             "--corpus grava as frases curadas sozinho; não combine com --audio/--record"
         )
+    if args.rescore and (args.corpus is not None or args.audio or args.record):
+        raise SystemExit("--rescore lê os relatórios que já existem; não grava nem mede áudio")
     if args.corpus is not None and args.corpus < 1:
         raise SystemExit("--corpus precisa de pelo menos 1 segundo por elocução")
     if args.errado and args.corpus is None:
@@ -1764,6 +1960,12 @@ def main() -> int:
         )
     if args.record and args.record < 1:
         raise SystemExit("--record precisa de pelo menos 1 segundo")
+
+    if args.rescore:
+        # Antes de tudo o que custa: este modo não abre áudio nenhum, então não
+        # carrega o reconhecedor (318 MB), não precisa do Kokoro e não lê
+        # `Settings`. É a mesma regra das recusas acima, um passo adiante.
+        return run_rescore(Vocabulary(), _build_g2p())
 
     from teacher_charles.config import Settings
 
