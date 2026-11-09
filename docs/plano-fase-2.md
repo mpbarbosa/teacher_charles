@@ -292,6 +292,14 @@ ele é um erro real, bem documentado, e esta pilha **não o ouve** (§2.3). Um
 item que não sobrevive ao `--discriminate` não entra na base, do mesmo jeito
 que na E3 um padrão que não generalizava quebrava a suíte.
 
+**Ressalva medida depois, e ela é sobre o exemplo e não sobre a regra.** O
+`pron.ing-alveolar` deixou de ser a prova: em fala humana esta pilha **ouve** a
+troca — `/ŋ/→/n/` nomeado duas vezes numa tomada limpa (§3.5) —, e o que não a
+distinguia era a renderização do Kokoro no par sintético. O teste de
+discriminação continua sendo condição de entrada, pela razão escrita acima; o
+que muda é que a fonte humana desempata a sintética, e um item reprovado só pelo
+par entra com a razão registrada em vez de ficar de fora.
+
 ### 3.3 O portão de confiança: calar é resposta
 
 Quando o PER da elocução inteira passa de um teto, o reconhecedor **não está
@@ -963,6 +971,123 @@ estava lá, **ou o erro deliberado não foi deliberado**. Quem for crescer a bas
 pela §3.7 precisa olhar o `ouvido` da tomada antes de aceitar um "não", e não só
 a coluna.
 
+*As duas confirmações que esta subseção pede continuam pendentes, mas o 5 de 8
+não: a subseção seguinte aplica a §3.4, mede quatro tomadas mais e leva a
+contagem a 8 de 8 — sem mover nenhuma coluna de limpas.*
+
+#### The class the signature declares, and the eighth rule
+
+The subsection above closed at 5 of 8, and said what would make that number
+solid: a clean confirmation of the two new namings. What arrived instead was
+cheaper and moved the count further — **§3.4 applied, and four more takes.**
+
+**Two of the four "blind" verdicts were the gabarito's symbol, not the
+evaluator's hearing.** The initial-epenthesis signature asks for `ins /ɪ/`
+because that is how espeak renders the swap; `454a1ff6` was heard as `ins /i/`,
+arguably the better transcription of what a Brazilian inserts. The long vowel is
+the same case in substitution: signature `sub /iː/→/ɪ/`, heard `sub /iː/→/i/`, in
+both *beach* and *people*. §3.4 had already declared the signature to be a
+**set** of acceptable operations (`+/ɪ/`, `+/ɐ/`, `+/i/`, `+/ə/`) and nothing was
+reading it as one. The synthetic pair of §2.3 missed the same item the same way,
+hearing `+/ɐ/`, so one class fixes both sources.
+
+`widen()` applies it, and **only on the heard side**: the origin keeps coming
+from the G2P over the curated phrase, and the positions and operation types keep
+coming out of the two transcriptions. A deletion has no heard side and passes
+through intact. Three properties, and the third authorizes the rest:
+
+* **It does not touch what is correct.** Only what counts as the *curated error*
+  moves; the alignment, the PER and what counts as correct English stay where
+  they were. The equivalence sets of this same §3.5 (`/ɔː/ ≡ /ɑː/`) are a
+  different table, for a different question, and they are E10's.
+* **It stays out of `run_pairs`.** §2's tables were measured with the strict
+  intersection; widening it there would redefine them in silence.
+* **It does not fire on correct speech.** Across the **30** correct-pass takes
+  that carry a signature — eleven of them clean — **not one** matched by class.
+  That was the obvious risk (`/ɐ/` is one of the three phonemes the floor of
+  §2.2 is made of) and it did not materialize in the only speech there is.
+
+**`--rescore` answers the column with no microphone and no model**, which is why
+none of this cost anyone a word. The signature is not a measurement — it is the
+curated phrase through the G2P with the swap applied — and `esperado` and
+`ouvido` are in every measured report. It fills the signature in even on
+**warned** reports, which `--corpus` skips on purpose: the warning excludes the
+utterance from the count, not the transcription it carries. Eighteen reports were
+filled in; a refusal gets none, because there is no alignment to match against.
+
+Then four more takes, all with the level warning, none clean:
+
+| regra | áudio (md5) | PER | o que saiu |
+|---|---|---|---|
+| `pron.epenthesis-final` | `aa8e741a` | 0,250 | `+/i/` depois do `/ɡ/` de *big* **e** `+/ɪ/` depois do `/b/` de *club* |
+| `pron.epenthesis-initial` | `1d64e713` | 0,250 | `+/ɪ/` antes de `/sp/` **e** de `/st/` — o símbolo exato, nas duas posições |
+| `pron.r-initial` | `fc11b48b` | 0,308 | `/ɹ/→/h/` **nomeado** outra vez, e a melhor tomada que esta frase deu |
+| `pron.vowel-length` | `6cf76eb7` | 1,000 | casou `/iː/→/i/` **por classe**, num alinhamento onde nada alinhou |
+
+**`pron.epenthesis-final` is named, and it was the rule this pass had written off
+twice.** The subsection above is right that `ins /i/` inside the 2,500 salad is
+the alignment finding a coincidence. This take is the opposite: 0,250, the best
+that phrase has produced in the deliberate pass, with the inserted vowel
+appearing **twice** — `+/i/` after the `/ɡ/` of *big*, the signature's own
+symbol, and `+/ɪ/` after the `/b/` of *club*, the class. One alignment naming one
+rule by symbol and by class, in two words, is §3.4's argument without the
+argument.
+
+**And the `/iː/→/i/` at PER 1,000 is the second coincidence, which is the same
+lesson the salad taught.** The transcription of *The beach was full of people*
+reads `d ə b i tʃ i ɪ s f uː l o ɡ w a s f l o f i p uː`: the class operation is
+in there, and so is nearly every other operation, because nothing aligned. It is
+discarded for the reason the subsection above discards the salad — and
+`vowel-length`'s honest naming is the 0,706 take, by class, not this one.
+
+**A third coincidence sits in the *correct* pass, and it names the shape of
+signature that is vulnerable.** `13008743` transcribes as six phonemes against
+eleven — the take ends after *He has a* — and `del /h/` matched because the last
+two `/h/` are not there to be dropped. A take that stops early deletes everything
+after it, so **a deletion signature is the one shape a truncated take satisfies
+for free**, and `h-dropping` is the only curated rule whose signature is a
+deletion. It needs no new gate: the diagnostic had already said so, in that
+take's second warning — *"a fala vai até 6.9s de 7.0s, encostada no fim do
+arquivo"*. Three coincidences, three shapes, one rule: **the fraction that counts
+is the one over the clean takes**, which is why the corpus table now prints it.
+
+**One caveat for E11 that is about attribution rather than hearing.** In
+`454a1ff6` the epenthetic vowel is audible before **both** clusters — the
+transcription reads `i s p ɔ ɾ t z ɡ uː d f ɔ i s t ɹ ɛ s` — and the aligner
+resolved only the first as `ins /i/`, booking the second as `sub /ɔːɹ/→/i/` over
+the vowel of *for* next door. The same phrase in `1d64e713` resolved both as
+insertions. What reaches the student is the **operation**, not the audible vowel,
+so an epenthesis charged to a neighbour is one the evaluator cannot report. It
+costs nothing while one match names the rule; it is the reason a count of
+occurrences is the wrong thing for E12 to show.
+
+**So all eight rules are named, and the number that matters is now the shape of
+the ladder rather than its height:**
+
+| how the rule was named | regras |
+|---|---|
+| clean deliberate take | `th-voiced`, `h-dropping` |
+| clean take, but in the **correct** pass — error unmonitored, never produced on demand | `ing-alveolar` |
+| warned deliberate take, **exact** symbol | `th-unvoiced`, `epenthesis-initial`, `epenthesis-final`, `r-initial` |
+| warned deliberate take, **by class** only | `vowel-length` |
+
+`ing-alveolar` is the row the subsection above left unresolved, and the ladder
+resolves it in the direction that was already recorded there: its signature
+matched the **correct** take and not the deliberate one, because the deliberate
+one came out `/ŋ/`. The rule is named — twice in one phrase, on a clean take —
+and what is missing is a deliberate take in which the error is actually
+committed. That is the third reading of "não" from the subsection above,
+confirmed on a second rule.
+
+The corpus behind the ladder: **64 reports, 46 with a signature, 18 refused.**
+Correct pass 37 takes — 11 clean, 19 warned, 7 refused, median of the clean
+**0,154**. Deliberate pass 27 takes — 3 clean, 13 warned, 11 refused, median of
+the clean **0,438**. **No round moved a clean column**, which is the reason the
+decision below reads them: the warned rows keep growing, `--rescore` re-answers
+every column at any moment with no microphone and no model, and the fractions the
+criterion reads have stood at 2 of 11 and 2 of 3 since the eleventh clean
+utterance.
+
 ### 3.6 A iGPU da §7 é o que paga a pronúncia
 
 A §7.5 da Fase 1.5 tirou o LLM do caminho crítico pela iGPU, e a §5 do mesmo
@@ -994,47 +1119,71 @@ alternativa que a §5 previa para o caso ruim — `small` em vez de `large`,
 *forced alignment* em vez de reconhecimento livre, ou pronúncia fora do escopo —
 não precisa ser acionada por causa do PER.
 
-**O segundo é o que decide o escopo, e ele reprova parte da base.** Com o erro
-curado cometido de propósito, o avaliador nomeou a operação certa em **5 de 8**:
-`sub /θ/→/t/`, `sub /ð/→/d/`, `del /h/`, `ins /ɪ/` em `epenthesis-initial` e
-`sub /ɹ/→/h/` em `r-initial`. Esta subseção foi escrita com 3 de 7, antes das
-regravações da §3.5 — elas tiraram `epenthesis-initial` do silêncio e deram par
-ao `r-initial`, e **não mudaram a direção da decisão, só a largura**. As outras
-três — `epenthesis-final`, `vowel-length`, `ing-alveolar` — não produziram a
-operação curada nem com o erro na fala. Pela §3.2 isso não é um limiar mal
-calibrado que se conserte depois: operação sem `rule_id` não chega ao aluno,
-então essas três regras são silêncio no produto por construção.
+**O segundo é o que decide o escopo, e ele mudou três vezes sem mudar de
+direção.** Esta subseção nasceu com **3 de 7**, foi para **5 de 8** com as
+regravações, e está em **8 de 8** desde que a §3.4 passou a ser aplicada e
+quatro tomadas novas entraram. As duas correções que fizeram a diferença não são
+do avaliador: `vowel-length` e a primeira tomada de `epenthesis-initial` eram
+**o símbolo do gabarito**, não a audição — o reconhecedor ouviu `+/i/` e
+`/iː/→/i/` onde o espeak prevê `+/ɪ/` e `/iː/→/ɪ/`, e a §3.4 já declarava a
+assinatura como *conjunto*. O `epenthesis-final` entrou pela última rodada, com
+`+/i/` e `+/ɪ/` numa tomada de 0,250 — não pela de 2,500, que a §3.5 descarta
+com razão.
+
+**Mas a altura do número vale menos que a forma da escada, e é ela que decide o
+escopo.** Duas regras são nomeadas em tomada limpa da passada errada
+(`th-voiced`, `h-dropping`); uma só na passada **correta**, porque o erro
+deliberado nunca saiu (`ing-alveolar`); quatro em tomada com aviso e símbolo
+exato (`th-unvoiced`, `epenthesis-initial`, `epenthesis-final`, `r-initial`); e
+uma só por classe, e só com aviso (`vowel-length`). O aviso degrada o PER, não o
+fato de a operação ter sido achada — mas **cinco das oito regras só foram
+nomeadas em tomada que o critério não conta**, e é isso, não o 8 de 8, que a
+E10 tem de resolver antes de virar item.
 
 **A decisão: seguir, com a base admitida pelo teste humano e não pelo
 sintético.** Em concreto:
 
 1. **A E10 muda de critério de entrada.** A §3.2 exigia passar no
-   `--discriminate`; passa a exigir também **ser nomeada na passada `--errado`
-   por voz humana**. O sintético continua valendo como primeiro filtro barato —
-   ele reprova cedo o que nem no caso ideal funciona —, mas quem decide é o
-   humano, porque é ele que mede o que o aluno vai receber. A §2.3 deu 6 de 8;
-   esta passada deu 5 de 8 nas mesmas regras, e três dessas cinco por tomada
-   com aviso.
-2. **A E10 nasce pequena, e o plano para de prometer ~15 itens.** Cinco regras
-   passam hoje, e duas delas — `epenthesis-initial` e `r-initial` — pedem uma
-   confirmação em tomada limpa antes de virarem item. A base admitida é a que
-   passar no teste, e o número sai da medição, não do alvo.
-3. **As três regras cegas ficam documentadas como ponto cego**, como a §6 já
-   faz com `pron.ing-alveolar`, e não entram na base. Não viram falso negativo
-   silencioso, e não viram item "a revisar depois". O `epenthesis-final` é a
-   que mais parece quase lá, e é justamente a que a §3.5 mostra casando só na
-   tomada de PER 2,500 — coincidência de alinhamento, não sinal.
+   `--discriminate`; passa a exigir também **ser nomeada por voz humana, em
+   tomada que o diagnóstico não tenha avisado**. O sintético continua valendo
+   como primeiro filtro barato — ele reprova cedo o que nem no caso ideal
+   funciona —, mas quem decide é o humano, porque é ele que mede o que o aluno
+   vai receber. A §2.3 deu 6 de 8 em fala sintética; em fala humana são 8 de 8
+   nomeadas e **3 de 8 em tomada limpa**, e é a segunda fração que é o critério.
+2. **A E10 nasce pequena, e o plano para de prometer ~15 itens.** Oito regras
+   são candidatas e **três** passam hoje pelo critério do item 1 — `th-voiced`,
+   `h-dropping` e `ing-alveolar`, esta última pela passada correta. As outras
+   cinco pedem uma tomada limpa, que é gravação e não pilha: a §3.5 mede o
+   rendimento em 14 utilizáveis de 64, e dez das onze recusas da passada errada
+   são contraste de fala. A base admitida é a que passar no teste, e o número
+   sai da medição, não do alvo.
+3. **Nenhuma regra fica documentada como cega, e é uma mudança desta revisão.**
+   Com a §3.4 aplicada e a última rodada medida, não sobrou regra sem nomeação —
+   o que sobrou é nomeação que o critério não conta. A diferença importa porque
+   ponto cego é veredito sobre a pilha e aviso é veredito sobre a gravação: o
+   primeiro não se conserta gravando de novo, e o segundo é exatamente o que uma
+   sala silenciosa conserta. A §6 mantém a linha do `pron.ing-alveolar`, que
+   continua sendo o item cujo ponto cego era da **síntese**, desempatado pela
+   fonte humana.
 4. **A E11 e a E12 seguem como escritas.** Nada nelas depende do tamanho da
    base: o contrato é devolver só erro com `rule_id` e calar acima do portão, e
-   isso é igual com cinco regras ou com quinze.
-5. **Um "não" não basta para condenar uma regra.** A §3.5 mostra que ele tem
-   três leituras e não duas: avaliador cego, erro ausente, ou erro deliberado
-   que não foi cometido — foi o que aconteceu numa tomada de `th-unvoiced`.
-   Antes de dar uma regra por cega, olhe o `ouvido` da tomada.
+   isso é igual com três regras ou com quinze. Duas ressalvas da §3.5 são da
+   E11, não da base: assinatura de **deleção** casa de graça numa tomada
+   truncada, e epêntese cobrada da vogal vizinha é epêntese que o avaliador não
+   consegue relatar — daí o retorno citar a regra e nunca uma contagem de
+   ocorrências.
+5. **Um "não" não basta para condenar uma regra, e um "sim" não basta para
+   admitir uma.** O "não" tem três leituras e não duas — avaliador cego, erro
+   ausente, ou erro deliberado que não foi cometido, o que aconteceu em
+   `th-unvoiced` e em `ing-alveolar`. O "sim" tem duas: operação achada, ou
+   coincidência de alinhamento, que é o que as tomadas de PER 2,500 e 1,000
+   produziram e o que uma assinatura de deleção produz numa tomada cortada. Nos
+   dois sentidos a resposta é a mesma: olhe o `ouvido` da tomada, não a coluna.
 
 **O que reverteria esta decisão.** Se o conjunto admitido não passar de quatro
 ou cinco regras depois das confirmações limpas e de a E10 testar os itens
-novos, o produto de pronúncia é fino demais para o custo dos 318 MB e do
+novos — o caso provável se a sala não melhorar, porque hoje são três —, o
+produto de pronúncia é fino demais para o custo dos 318 MB e do
 terceiro modelo nativo no processo, e a §4 volta a valer com "pronúncia fora do
 escopo". O número que decide isso é o mesmo desta subseção, medido do mesmo
 jeito; não é preciso instrumento novo.
@@ -1042,7 +1191,8 @@ jeito; não é preciso instrumento novo.
 **O que esta decisão não autoriza.** Ela não calibra teto de PER — a §3.3
 continua valendo, e o portão continua sendo por operação de alinhamento. E ela
 vale para **um** falante: a §2.5 já dizia que uma voz não é a população, e a
-primeira coisa que uma segunda voz pode derrubar é justamente o 5 de 8.
+primeira coisa que uma segunda voz pode derrubar é justamente a escada — tanto o
+8 de 8 nomeadas quanto o 3 de 8 limpas.
 
 ---
 
@@ -1090,8 +1240,8 @@ entregas numeradas.
 | | Entrega | Pronto quando |
 |---|---|---|
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
-| **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com 3 de 7 nomeados (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada e nasce com cinco regras (5 de 8 nomeados depois das regravações da §3.5) |
-| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado na passada `--errado` por voz humana** (§3.7). O número de itens sai da medição, não do alvo |
+| **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com a operação curada nomeada em **8 de 8** regras e em **3 de 8** por tomada limpa (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada, exige nomeação em tomada **limpa**, e nasce com três regras enquanto as outras cinco esperam gravação, não pilha |
+| **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado por voz humana em tomada que o diagnóstico não avisou** (§3.7). O número de itens sai da medição, não do alvo — e `pron.ing-alveolar` entra pela passada correta, com a razão registrada, porque ali o ponto cego era da síntese (§3.5) |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
 | **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
@@ -1104,6 +1254,10 @@ não é viável nesta pilha e a fase vira outra coisa (um `small` em vez do
 livre, ou pronúncia fora do escopo). Escrever E10–E12 antes disso é escrever
 código que a medição pode jogar fora — exatamente o que a abertura por medição
 existe para evitar.
+
+**E a E9 respondeu: 0,154, não 0,676.** A fase segue como escrita, com o
+`large`; o que ela estreitou é a base da E10, não a pilha. A decisão, com as
+condições que a reverteriam, está na §3.7.
 
 **O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
 no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer
@@ -1132,13 +1286,13 @@ com uma fonte só.
 
 | Risco | Como lidamos |
 |---|---|
-| **O aluno real pode cair perto do 0,676 do proxy** | É o portão da E9, e ele vem antes de qualquer código de produto. A decisão fica escrita com o número |
+| **O aluno real pode cair perto do 0,676 do proxy** | ~~É o portão da E9~~ **Não caiu:** mediana 0,154 em onze elocuções limpas, e a decisão está escrita (§3.7). O risco volta inteiro para cada novo falante, e é a única condição da §3.7 que reabre o portão |
 | **Áudio sintético calibra o portão errado** | Não calibra: a §3.3 proíbe calibrar o teto em sintético, de propósito. O valor sai da E9 ou não sai |
 | **Erro real de brasileiro reportado como erro que ele não cometeu** | Duas camadas: só operação com `rule_id` chega ao aluno (§3.2), e acima do portão o avaliador cala (§3.3) |
 | **Precisão inventada no retorno** | O retorno fala em classe de erro, não em símbolo de vogal (§3.4) |
-| **`pron.ing-alveolar` não é o único ponto cego** | Todo item passa pelo `--discriminate` antes de entrar na base (§3.2), e o que não passa fica documentado como ponto cego em vez de virar falso negativo silencioso |
+| **`pron.ing-alveolar` não é o único ponto cego** | Todo item passa pelo `--discriminate` antes de entrar na base (§3.2), e o que não passa fica documentado como ponto cego em vez de virar falso negativo silencioso. E o ponto cego pode ser da **síntese**: este item é nomeado em fala humana e não no par do Kokoro (§3.5), então a fonte humana desempata a sintética |
 | **Três modelos nativos no mesmo processo** | O lock por motor da Fase 1.5 continua, e a §3.6 explica por que a CPU agora caberia: o LLM saiu dela |
-| **Gravação quebrada reportada como medição** | Quatro perguntas de sinal antes de o modelo carregar, e recusa com diagnóstico em vez de PER (§3.5). A primeira gravação da E9 caiu exatamente nisso |
+| **Gravação quebrada reportada como medição** | Cinco perguntas de sinal antes de o modelo carregar, e recusa com diagnóstico em vez de PER (§3.5). A primeira gravação da E9 caiu exatamente nisso |
 | **318 MB a mais de peso** | Extra desligado por default, como a voz. Quem não quer pronúncia não baixa nada |
 | **Acerto no drill não distingue "não errou" de "não tentou"** (E13) | Dívida aberta, não resolvida. O aluno que responde *"yes"* três vezes gradua a regra. Não há guarda determinística hoje — o analisador devolve erros, não "usou a estrutura" — e um piso inventado (contagem de palavras, lista de respostas triviais) seria número sem medição. O que existe é o dado: `rule_review.turn_id` aponta para o turno, então dá para medir quantos acertos registrados não eram tentativa. Pinado em `test_uma_resposta_vazia_de_conteudo_conta_como_acerto` |
 | **A escada de intervalos não é medida** (E13) | Admitido no código. Não havia histórico de revisão para calibrar escada nenhuma antes de a E13 existir, então os valores são Leitner clássico. É por isso que `rule_review` guarda `interval_days` na linha em vez de confiar na constante: quando houver histórico, a escada se recalibra contra o que o aluno de fato recebeu |
