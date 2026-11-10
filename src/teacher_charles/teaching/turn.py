@@ -46,9 +46,10 @@ from typing import Literal
 from ..llm.base import ChatProvider, GenerationOptions, Message, ProviderError
 from ..prompts import PromptLibrary
 from ..store.models import Student
-from ..store.repo import CorrectionRepo, SessionRepo, TurnRepo
+from ..store.repo import CorrectionRepo, SessionRepo, TurnRepo, UnverifiedFindingRepo
 from .analyzer import Analysis, Analyzer
 from .capabilities import partial_name as app_partial_name
+from .contrastive import span_key
 from .level import LevelDecision, LevelTracker
 from .level import partial_name as level_partial_name
 from .modes import (
@@ -220,6 +221,10 @@ class TurnRunner:
         self._turns = TurnRepo(conn)
         self._sessions = SessionRepo(conn)
         self._corrections = CorrectionRepo(conn)
+        # A fila de curadoria. Fica ao lado de `_corrections` porque é o
+        # avesso dela: o que a garantia da E4 barrou por não citar regra
+        # curada, que é o mesmo que dizer os erros que a base ainda não vê.
+        self._gaps = UnverifiedFindingRepo(conn)
         # A agenda de revisão (E13) não é opcional como o planner e o tracker.
         # Erro pela regra é evidência negativa em qualquer modo, inclusive em
         # conversa livre e inclusive sem base carregada para dar drill: deixar
@@ -472,7 +477,7 @@ class TurnRunner:
         )
 
     def _persist(self, student_turn_id: int, analysis: Analysis) -> tuple[int, ...]:
-        return tuple(
+        correction_ids = tuple(
             self._corrections.add(
                 student_turn_id,
                 span=finding.span,
@@ -483,6 +488,36 @@ class TurnRunner:
             )
             for finding in analysis.findings
         )
+        self._persist_gaps(student_turn_id, analysis)
+        return correction_ids
+
+    def _persist_gaps(self, student_turn_id: int, analysis: Analysis) -> None:
+        """Grava na fila de curadoria o que o verificador barrou.
+
+        Depois das correções, de propósito: a conexão é compartilhada e nada
+        no caminho da requisição abre transação, então estas são escritas
+        soltas e a ordem é o que decide o que se perde se algo estourar no
+        meio. Correção é o que o aluno vai ver; buraco de base é trabalho de
+        curadoria que o próximo turno parecido torna a oferecer. Perder o
+        segundo é barato, perder o primeiro não.
+
+        Nunca derruba o turno. Uma falha aqui não tem como chegar ao aluno —
+        ele já recebeu a aula —, e trocar a aula por uma linha de telemetria
+        de curadoria seria a inversão exata do que esta tabela serve.
+        """
+        for finding in analysis.rejected:
+            try:
+                self._gaps.add(
+                    student_turn_id,
+                    span=finding.span,
+                    span_key=span_key(finding.span),
+                    corrected=finding.correction,
+                    error_type=finding.error_type,
+                    explanation=finding.explanation,
+                    candidates=" ".join(analysis.candidates),
+                )
+            except Exception:  # noqa: BLE001 - curadoria nunca derruba o turno
+                log.warning("não deu para registrar achado sem regra na fila de curadoria")
 
     def _collect(self, pending: _Pending, student_turn_id: int) -> Analyzed | None:
         """Grava a análise concluída e devolve o evento. Nunca levanta."""

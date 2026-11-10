@@ -142,6 +142,17 @@ class Analysis:
     # Contado, e não só jogado fora, porque é a medida de quanto a base ainda
     # não cobre — a lista de curadoria da próxima rodada.
     unverified: int = 0
+    # E a lista em si, que por um bom tempo era só o contador acima com o
+    # texto indo para `log.debug`. Cada item aqui é um erro no texto real de um
+    # aluno que `data/contrastive/` não cobre: o span vira `wrong:`, a proposta
+    # do modelo vira candidato a `right:`. O `TurnRunner` persiste em
+    # `unverified_finding` e `scripts/curation_queue.py` lê agregado.
+    #
+    # Fica FORA de `as_dict`, e isso é a garantia e não um esquecimento:
+    # `as_dict` alimenta o SSE, e estes achados são exatamente a gramática
+    # improvisada que o verificador acabou de barrar. Material de curadoria
+    # nunca é material de aula.
+    rejected: tuple[Finding, ...] = ()
     # A análise não aconteceu porque não podia dar em nada: a base não levantou
     # candidato e a política exige regra curada.
     skipped: bool = False
@@ -307,7 +318,10 @@ class _Verifier:
     matches: Sequence[Match] = field(default_factory=tuple)
     require_curated_rule: bool = REQUIRE_CURATED_RULE
     max_findings: int = MAX_FINDINGS
-    unverified: int = 0
+    # Os achados barrados por não citar regra curada, na ordem em que o modelo
+    # os propôs. Era um contador; virou lista quando a fila de curadoria
+    # (`unverified_finding`) passou a precisar do span, e não só do quanto.
+    rejected: list[Finding] = field(default_factory=list)
 
     def verify(self, raw_entries: Sequence[object]) -> list[Finding]:
         findings: list[Finding] = []
@@ -332,7 +346,11 @@ class _Verifier:
 
             if self.require_curated_rule and not finding.from_curated_rule:
                 # Medido: aqui é onde o modelo pequeno inventa gramática.
-                self.unverified += 1
+                #
+                # Guardado, e não só contado: é um erro de aluno real que a
+                # base não cobre, e a fila de curadoria é feita disto. O
+                # descarte em si não mudou — nada daqui chega ao aluno.
+                self.rejected.append(finding)
                 log.debug(
                     "correção sem regra curada descartada: %r => %r",
                     finding.span,
@@ -550,7 +568,8 @@ class Analyzer:
                 candidates=candidates,
                 attempts=attempts,
                 elapsed_ms=(time.monotonic() - started) * 1000,
-                unverified=verifier.unverified,
+                unverified=len(verifier.rejected),
+                rejected=tuple(verifier.rejected),
             )
 
         # Degradar para "sem correção" é a escolha deliberada: o turno do aluno

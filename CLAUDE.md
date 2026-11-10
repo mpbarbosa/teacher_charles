@@ -31,7 +31,7 @@ TC_VOICE_ENABLED=true uv run teacher-charles
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
-uv run pytest -m "not integration"       # 641 tests, ~16s, no model at all
+uv run pytest -m "not integration"       # 721 tests, ~20s, no model at all
 uv run pytest -m integration             # only the 9 that exercise the local Ollama
 uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .
@@ -144,6 +144,32 @@ answer), and as a sort term instead of a filter.
 shared-connection rule, and the order is chosen because of it: `rule_review`
 (the event) before `rule_schedule` (the state), because the state can be
 rebuilt from the event and not the other way round.
+
+**A correction the verifier barred is kept, not just counted.** `_Verifier`
+discards every finding that cites no curated rule — that is E4's guard against
+the small model inventing grammar, and it has not changed. What changed is that
+the span and the model's proposal now land in `unverified_finding` instead of
+in `log.debug`: each row is an error in a real student's text that
+`data/contrastive/` does not cover, which is the curation backlog, read
+aggregated by `scripts/curation_queue.py`. Two things hold it in place. The
+write goes **after** the corrections, same shared-connection reason as the
+review pair: these are loose statements, and losing a curation row costs a
+note the next similar turn offers again, while losing a correction costs the
+lesson. And `Analysis.as_dict` **does not expose `rejected`** — that payload
+feeds the SSE, and those findings are exactly the improvised grammar the
+verifier just refused; material for the curator is not material for the
+student. Both are mutation-tested in `tests/test_curation_queue.py`.
+
+The queue has a blind spot that is written into the migration because it is
+easier to rediscover than to deduce: with `require_curated_rule` on, the
+analysis does not run when the base raises no candidate, so **every row comes
+from a turn where the base already matched some other rule**. The deeper hole —
+an error the base cannot see at all — is invisible by construction and cannot
+be closed with data: without calling the model, "correct English" and "an error
+the base misses" produce the same absence of candidates, which is §6's
+asymmetry again. `TC_REQUIRE_CURATED_RULE=false` turns the queue into the
+opposite probe, at the latency the default protects; that is a deliberate
+curation run, not normal use.
 
 **The order of the system messages is persona → app capabilities → level →
 mode → drill data**, and then, at the end of the prompt, the curated hint and

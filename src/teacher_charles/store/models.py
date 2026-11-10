@@ -311,3 +311,79 @@ class RuleReview:
             interval_days=row["interval_days"],
             created_at=row["created_at"],
         )
+
+
+@dataclass(frozen=True, slots=True)
+class UnverifiedFinding:
+    """Uma correção que o verificador barrou por não citar regra curada.
+
+    Não é correção: nada daqui chegou ao aluno, e é justamente por isso que a
+    linha existe. O que ela aponta é o avesso de ``Correction`` — um erro no
+    texto real de um aluno que ``data/contrastive/`` não cobre, com o span que
+    vira ``wrong:`` e a proposta do modelo que vira candidato a ``right:``.
+
+    ``explanation`` é a gramática improvisada que foi descartada. Guardada
+    como nota de curadoria, para dizer o que o modelo *achou* que era a regra;
+    nunca para mostrar a alguém que está aprendendo.
+    """
+
+    id: int
+    turn_id: int
+    span: str
+    span_key: str
+    corrected: str
+    error_type: str
+    explanation: str
+    candidates: str
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> UnverifiedFinding:
+        return cls(
+            id=row["id"],
+            turn_id=row["turn_id"],
+            span=row["span"],
+            span_key=row["span_key"],
+            corrected=row["corrected"],
+            error_type=row["error_type"],
+            explanation=row["explanation"],
+            candidates=row["candidates"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GapCount:
+    """Uma linha da fila de curadoria: um span sem cobertura, e quantas vezes.
+
+    Agregada por ``span_key``, não por aluno: a base contrastiva é conteúdo de
+    produto, revisado item por item, e não progresso pessoal — o span que dois
+    perfis da máquina produziram é o *mesmo* buraco, e contá-lo duas vezes é o
+    que faz a fila ordenar certo.
+
+    ``last_candidates`` é o que separa os dois trabalhos de curadoria: span que
+    apareceu ao lado de uma regra que casou costuma ser padrão a alargar no
+    item que já existe; span sozinho costuma ser item novo.
+    """
+
+    span_key: str
+    times: int
+    last_span: str
+    last_correction: str
+    last_type: str
+    last_explanation: str
+    last_candidates: str
+    last_at: str = ""
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> GapCount:
+        return cls(
+            span_key=row["span_key"],
+            times=row["times"],
+            last_span=row["last_span"],
+            last_correction=row["last_correction"],
+            last_type=row["last_type"],
+            last_explanation=row["last_explanation"],
+            last_candidates=row["last_candidates"],
+            last_at=row["last_at"] if "last_at" in row.keys() else "",
+        )

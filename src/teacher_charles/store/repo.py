@@ -15,6 +15,7 @@ from .models import (
     MODES,
     REVIEW_SOURCES,
     Correction,
+    GapCount,
     LevelChange,
     LevelSignal,
     RuleCount,
@@ -23,6 +24,7 @@ from .models import (
     Session,
     Student,
     Turn,
+    UnverifiedFinding,
 )
 
 # O próximo número da fila de "visto por último".
@@ -698,3 +700,108 @@ class ScheduleRepo:
 
     def count(self) -> int:
         return self._conn.execute("SELECT count(*) AS n FROM rule_review").fetchone()["n"]
+
+
+class UnverifiedFindingRepo:
+    """A fila de curadoria: o que o verificador barrou, agregado por span.
+
+    O avesso de ``CorrectionRepo``. Lá ficam as correções que passaram pela
+    garantia da E4; aqui, as que foram barradas por não citar regra curada —
+    que é o mesmo que dizer: os erros que ``data/contrastive/`` ainda não vê.
+    Antes disto a medida existia (``analysis.unverified``, um contador) e a
+    lista não: o span ia para ``log.debug``.
+
+    Nada daqui chega ao aluno, e não é por descuido de rota: é gramática que o
+    modelo pequeno improvisou, exatamente o que a E4 existe para barrar. Quem
+    lê é ``scripts/curation_queue.py``, por quem escreve YAML.
+
+    ``turn_id`` aponta para o turno **do aluno**, como em ``correction``.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def add(
+        self,
+        turn_id: int,
+        *,
+        span: str,
+        span_key: str,
+        corrected: str,
+        error_type: str,
+        explanation: str,
+        candidates: str = "",
+    ) -> int:
+        """Registra um achado barrado.
+
+        ``span_key`` chega pronto, e não é preguiça: ``store/`` não importa
+        ``teaching/`` — a dependência corre num sentido só —, e a chave tem de
+        sair da MESMA normalização do matcher, que mora lá
+        (``contrastive.span_key``). Derivá-la aqui com o ``lower()`` do SQLite,
+        que é só ASCII, daria duas normalizações divergentes para a única
+        coisa que esta tabela precisa agregar direito.
+        """
+        cur = self._conn.execute(
+            """
+            INSERT INTO unverified_finding
+                   (turn_id, span, span_key, corrected, error_type, explanation, candidates)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (turn_id, span, span_key, corrected, error_type, explanation, candidates),
+        )
+        return int(cur.lastrowid)
+
+    def for_turn(self, turn_id: int) -> list[UnverifiedFinding]:
+        rows = self._conn.execute(
+            "SELECT * FROM unverified_finding WHERE turn_id = ? ORDER BY id",
+            (turn_id,),
+        ).fetchall()
+        return [UnverifiedFinding.from_row(row) for row in rows]
+
+    def backlog(self, limit: int = 20) -> list[GapCount]:
+        """A fila, do buraco mais frequente para baixo.
+
+        Sem ``student_id``: a base contrastiva é conteúdo de produto, não
+        progresso pessoal, e o span que dois perfis da máquina produziram é o
+        mesmo buraco — separar por aluno faria a fila ordenar errado. É a
+        única agregação daqui que não é do aluno, e é de propósito.
+
+        A junção pelo ``max(id)`` em vez de coluna solta ao lado do agregado:
+        o SQLite deixaria passar, mas por uma particularidade dele, e consulta
+        que depende de particularidade do motor é consulta que quebra calada
+        na próxima vez que alguém mexer no ``GROUP BY``.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT u.span_key    AS span_key,
+                   g.times       AS times,
+                   u.span        AS last_span,
+                   u.corrected   AS last_correction,
+                   u.error_type  AS last_type,
+                   u.explanation AS last_explanation,
+                   u.candidates  AS last_candidates,
+                   u.created_at  AS last_at
+              FROM unverified_finding u
+              JOIN (SELECT span_key, count(*) AS times, max(id) AS last_id
+                      FROM unverified_finding
+                     GROUP BY span_key) g
+                ON g.last_id = u.id
+             ORDER BY g.times DESC, u.id DESC
+             LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [GapCount.from_row(row) for row in rows]
+
+    def count(self) -> int:
+        return self._conn.execute("SELECT count(*) AS n FROM unverified_finding").fetchone()["n"]
+
+    def distinct_spans(self) -> int:
+        """Quantos buracos distintos, que é o tamanho da fila de curadoria.
+
+        Diferente de ``count()``: dez turnos com ``"I have 30 years"`` são dez
+        linhas e um item de YAML a escrever.
+        """
+        return self._conn.execute(
+            "SELECT count(DISTINCT span_key) AS n FROM unverified_finding"
+        ).fetchone()["n"]
