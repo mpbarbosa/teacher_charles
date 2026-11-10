@@ -393,6 +393,13 @@ does not depend on E9 either, and for the reason the gate exists: the line says
 how the written word is pronounced, which is a table; E11 would judge how the
 student said it, which is measurement over audio.
 
+**The curation queue has no number either**, and it is recorded in the same
+place for the same reason. It keeps the correction the verifier barred instead
+of only counting it, so that what the contrastive base fails to cover becomes a
+list a curator can read and not just a number — `unverified_finding` and
+`scripts/curation_queue.py`. §5 of `docs/plano-fase-2.md` states its blind
+spot, which the invariants above also carry.
+
 Phase 1 is complete, and so is **Phase 1.5 (voice)** —
 `docs/plano-fase-1-5.md`. The student speaks via push-to-talk, Charles answers
 out loud sentence by sentence, all local. `teaching/`, `llm/` and `store/` did

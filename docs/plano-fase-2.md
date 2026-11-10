@@ -1274,6 +1274,35 @@ graça: o símbolo que o aluno lê é o som que ele ouve. O `phonemizer` e o
 nada ali é áudio. E o partial `partials/app/phonetics.md` mantém explícito para
 o modelo que a linha é do texto, não uma leitura do aluno.
 
+**A fila de curadoria também entrou fora da tabela**, e pelo mesmo motivo: não
+estava no plano, e numerá-la tomaria um rótulo que o autor da fase pode querer
+para outra coisa. É a migração `005_unverified.sql`, a tabela
+`unverified_finding` e o `scripts/curation_queue.py`, e o que ela faz é
+**guardar a correção que o verificador da E4 barrou** em vez de só contá-la. Até
+aqui `Analysis.unverified` dizia *quantos* achados foram descartados por não
+citarem regra de `data/contrastive/`, e o trecho ia para `log.debug`: a medida
+de quanto a base não cobre existia, a lista não. Cada linha descartada é um erro
+no texto real de um aluno, já localizado no trecho — que é a parte cara de
+escrever item novo.
+
+Ela **não depende da E9**, e a razão é a do IPA uma camada acima: o que entra
+ali é achado do analisador sobre **texto**, não alinhamento sobre áudio. Nada
+do que a fila guarda chega ao aluno — é exatamente a gramática que o verificador
+acabou de recusar, e `Analysis.as_dict` não a expõe, pelo princípio que a §3.2
+aplica à pronúncia: material de curadoria não é material de aula. Por isso quem
+lê a fila é um script de linha de comando, e não a tela de progresso.
+
+**E ela nasceu com um ponto cego, que é a assimetria da §6 deslocada um nível.**
+Com `require_curated_rule` ligado, a análise não roda quando a base não levanta
+candidato nenhum, então toda linha da fila vem de um turno em que a base **já
+acertou alguma outra regra**: o buraco mais fundo — o erro que ela não enxerga
+de jeito nenhum — é invisível por construção. E não dá para fechá-lo com dado,
+porque sem chamar o modelo "inglês correto" e "erro que a base não vê" produzem
+a mesma ausência de candidato, como "não errou" e "não tentou" produzem a mesma
+ausência de correção no drill. `TC_REQUIRE_CURATED_RULE=false` inverte a sonda,
+ao custo da latência que o default protege — rodada de curadoria deliberada, não
+uso normal.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte
