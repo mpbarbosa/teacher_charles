@@ -265,6 +265,68 @@ def test_no_match_on_clean_english():
     assert base.rule_ids(text) == ()
 
 
+def test_subject_drop_also_catches_a_dropped_subject_before_a_noun():
+    """O primeiro padrão só via adjetivo e particípio.
+
+    O português oculta o sujeito antes de substantivo com a mesma
+    naturalidade -- "É um problema", "Não é nada" -- e essas frases passavam
+    sem correção nenhuma.
+    """
+    base = load_base(CONTRASTIVE_DIR)
+    for utterance in (
+        "Is nothing left for me to say.",
+        "Is a problem with my account.",
+        "Is always difficult to find time.",
+    ):
+        assert "grammar.subject-drop" in base.rule_ids(utterance), utterance
+
+
+def test_subject_drop_leaves_a_yes_no_question_alone():
+    """A guarda que separa o decalque da pergunta.
+
+    "Is nothing left?" e "Is a problem?" são inglês correto. Sem o lookahead
+    de "?" nos padrões, a base corrigiria a pergunta do aluno -- que é o erro
+    mais caro que uma base curada pode cometer, porque ensina o errado.
+    """
+    base = load_base(CONTRASTIVE_DIR)
+    for question in (
+        "Is nothing left to say?",
+        "Is a problem with my account?",
+        "Was a good day?",
+    ):
+        assert "grammar.subject-drop" not in base.rule_ids(question), question
+
+
+def test_pronoun_object_case_catches_the_bp_subject_pronoun():
+    """Pronome reto onde o inglês exige oblíquo: "vi ele", "fui com ela"."""
+    base = load_base(CONTRASTIVE_DIR)
+    for utterance in (
+        "I saw he yesterday at the office.",
+        "I went to the party with she.",
+        "My boss called I twice.",
+    ):
+        assert "grammar.pronoun-object-case" in base.rule_ids(utterance), utterance
+
+
+def test_pronoun_object_case_spares_the_forms_that_are_correct():
+    """As três armadilhas do padrão, cada uma inglês correto.
+
+    Oração como complemento ("I heard he left"), comparação ("like I said")
+    e a coordenação depois de preposição ("between you and me") -- esta
+    última é o caso que o padrão erraria se a lista de preposições incluísse
+    "between".
+    """
+    base = load_base(CONTRASTIVE_DIR)
+    for utterance in (
+        "I heard he left early.",
+        "I know he is coming tomorrow.",
+        "Like I said, it was difficult.",
+        "She speaks better than I do.",
+        "Between you and me, it was difficult.",
+    ):
+        assert "grammar.pronoun-object-case" not in base.rule_ids(utterance), utterance
+
+
 def test_candidates_put_unambiguous_items_first():
     """A análise da E4 recebe primeiro o que tem mais chance de confirmar."""
     base = base_with(
@@ -311,6 +373,38 @@ def test_the_real_base_covers_the_curated_categories():
     present = {item.category for item in REAL_BASE}
     assert {"false-friend", "calque", "grammar"} <= present
     assert present <= set(CATEGORIES)
+
+
+def test_since_present_leaves_causal_since_alone():
+    """A guarda medida sobre dialogo real.
+
+    O padrão antigo não exigia nada depois de "since" e aceitava vírgula no
+    caminho, então pegava o "since" causal -- "since you asked" -- e, com
+    "know" na lista de verbos, o marcador de discurso mais comum do inglês
+    falado junto. Quatro de quatro frases corretas eram marcadas.
+    """
+    base = load_base(CONTRASTIVE_DIR)
+    for utterance in (
+        "You know what, since nobody else will say it, I will.",
+        "I know a place, since you asked.",
+        "We work better together, since you mention it.",
+        "They play along, since it keeps the peace.",
+        "I study at home since you prefer it that way.",
+    ):
+        assert "grammar.since-present" not in base.rule_ids(utterance), utterance
+
+
+def test_since_present_still_catches_the_temporal_calque():
+    """E a guarda não pode custar o erro que o item existe para pegar."""
+    base = load_base(CONTRASTIVE_DIR)
+    for utterance in (
+        "I live here since 2010.",
+        "I work in this company since three years.",
+        "I know him since 2010.",
+        "She studies English since last year.",
+        "We work together since March.",
+    ):
+        assert "grammar.since-present" in base.rule_ids(utterance), utterance
 
 
 @pytest.mark.parametrize("item", REAL_ITEMS)
