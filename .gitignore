@@ -32,3 +32,12 @@ gravacoes/
 # servidor, e isso vale para quem clonar. O settings.json guarda a escolha de
 # modelo de quem esta na maquina, que nao vale para os outros.
 .claude/settings.json
+
+# Third-party source material never enters the repo. This is not the student's
+# data nor a model weight -- it is somebody else's copyrighted text (subtitles,
+# transcripts, book excerpts), and this repo is public, so a commit here would
+# be redistribution. The corpus/README.md beside it IS tracked: it says what
+# belongs in the folder and how to put it there, which is what someone cloning
+# needs. The contents are fetched by whoever runs the project, on their machine.
+corpus/*
+!corpus/README.md

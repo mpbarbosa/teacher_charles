@@ -351,7 +351,7 @@ the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
 
 ## Where the data lives
 
-Three destinations, and confusing them is a category error:
+Four destinations, and confusing them is a category error:
 
 - **Model weights** — in `~/.ollama`, never in the repo. The voice ones neither:
   Kokoro in `$XDG_CACHE_HOME/teacher-charles/voice` (a cache, re-downloadable)
@@ -363,6 +363,14 @@ Three destinations, and confusing them is a category error:
 - **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
   base arrives in E3.
+- **Third-party material** — `corpus/`, outside version control, `corpus/*` in
+  `.gitignore` with the README as the one exception. Subtitles, transcripts,
+  excerpts: authentic English somebody else owns, and this repo is public, so a
+  commit here would publish it. The asymmetry with the line above is the whole
+  point — a derived observation (*this construction appears 12 times in 30
+  minutes of dialogue*) is ours to version; the 30 minutes are not. **Derive
+  into `data/`, never copy into it.** `corpus/README.md` records what each path
+  held, so a script that reads one can be understood with the file absent.
 
 ## State, and where the code grows next
 
