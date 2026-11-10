@@ -381,20 +381,28 @@ conflict: it is a `git commit` that exits 0, prints a plausible summary, and
 records something else — on a branch you never chose, or carrying paths another
 session staged minutes ago.
 
-`.claude/worktrees/COORDINATION.md` is the register of worktrees in use, and
-**it is ignored by git and exists only in the root checkout.** A fresh clone has
-no copy, nothing in the tree points at it, and that is exactly why it is named
-here: this file is the only place it can be discovered from. Whoever creates a
-worktree writes its row; whoever adopts someone else's rewrites that row with
-their own branch; whoever removes one deletes the row. The reason is in the file
-— a clean, quiet directory with **no** row is indistinguishable from an
-already-merged one by any command, and worktrees have been swept away on that
-reading.
+`.claude/worktrees/COORDINATION.md` is the register of worktrees in use. The
+`.gitignore` keeps it out of the repo and it lives only on the machine, so **a
+fresh clone does not have one** and nothing in the tree points at it: this file
+is the only place it can be discovered from. If it is absent, create it before
+the first `git worktree add` — a `# Worktrees em uso` heading, the obligations
+below, and a table whose columns are worktree path, branch, base commit, session
+and what it is for.
 
-Read it before the first `git worktree add`, not after. It has already failed
-once the other way round: a session created a worktree, never read the file, and
-left a second session to write the row and ask the creator to come back and
-complete it.
+Three obligations: whoever creates a worktree writes its row, whoever adopts
+someone else's rewrites that row with their own branch, and whoever removes one
+deletes the row. Write the row in the same breath as the `git worktree add` — a
+worktree that exists with no row is the state the register exists to make
+impossible.
+
+**But a missing row is never licence to delete anything.** The register is kept
+by hand, so it is evidence and not truth: an interrupted setup leaves a real
+worktree unregistered, and a clean, quiet directory with no row is
+indistinguishable from an already-merged one by any command. Reconcile against
+`git worktree list` before sweeping. Worktrees have been swept away for want of
+that check — and a session has already created one here without reading the
+register at all, leaving a second session to write the row and ask the creator
+to come back for it.
 
 Two habits follow, and both are cheaper than the recovery:
 
@@ -402,8 +410,10 @@ Two habits follow, and both are cheaper than the recovery:
   you your own `HEAD` and your own index, and none of the above can reach you.
 - **Never `git stash`.** The stack is shared across the root checkout and every
   worktree, so what you pop may be another session's in-flight edit, which from
-  their side looks like a file reverting by itself. Set work aside with a WIP
-  commit instead.
+  their side looks like a file reverting by itself. To set work aside, commit it
+  **with an explicit pathspec** — `git commit -m "…" -- PATH` — because a bare
+  `git commit` takes the whole shared index, other sessions' staged paths
+  included. That is the trap of the first paragraph, one command later.
 
 ## State, and where the code grows next
 
