@@ -33,6 +33,15 @@ gravacoes/
 # modelo de quem esta na maquina, que nao vale para os outros.
 .claude/settings.json
 
+# Worktrees, and the register of them. Both are local to one machine: a worktree
+# is a second checkout of this same repo, and COORDINATION.md inside it is the
+# hand-kept list of which session holds which one. Neither means anything to
+# whoever clones. The rule is here and not only in .git/info/exclude because
+# that file is per-clone and never travels -- without this line a fresh clone
+# would see the register as untracked and could commit one machine's inventory.
+# CLAUDE.md documents the protocol, and is the only place it can be found from.
+.claude/worktrees/
+
 # Third-party source material never enters the repo. This is not the student's
 # data nor a model weight -- it is somebody else's copyrighted text (subtitles,
 # transcripts, book excerpts), and this repo is public, so a commit here would
