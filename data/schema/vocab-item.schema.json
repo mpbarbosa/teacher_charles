@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teacher-charles.local/schema/vocab-item.schema.json",
+  "$defs": {
+    "CorpusNote": {
+      "additionalProperties": false,
+      "description": "O que o ``corpus/`` desta máquina diz da palavra — em número, só.\n\nNão há campo de texto aqui, e a ausência é a regra do ``corpus/README.md``\nescrita em código: a observação derivada é nossa para versionar, a frase\nde onde ela saiu não é.",
+      "properties": {
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "hits": {
+          "minimum": 0,
+          "title": "Hits",
+          "type": "integer"
+        },
+        "of": {
+          "exclusiveMinimum": 0,
+          "title": "Of",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "hits",
+        "of"
+      ],
+      "title": "CorpusNote",
+      "type": "object"
+    },
+    "Sense": {
+      "additionalProperties": false,
+      "description": "Um sentido da palavra, com o que o aluno precisa para usá-lo.",
+      "properties": {
+        "gloss": {
+          "minLength": 1,
+          "title": "Gloss",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "literal",
+            "figurative"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "style": {
+          "default": "neutral",
+          "enum": [
+            "neutral",
+            "formal",
+            "informal",
+            "technical",
+            "pejorative"
+          ],
+          "title": "Style",
+          "type": "string"
+        },
+        "examples": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Examples",
+          "type": "array"
+        },
+        "collocations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Collocations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "gloss",
+        "kind",
+        "examples"
+      ],
+      "title": "Sense",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Uma palavra curada.\n\n``extra=\"forbid\"`` pelo mesmo motivo da base contrastiva — nome de campo\nerrado num YAML curado à mão é erro de curadoria, e falhar na carga é\nmelhor que ignorar em silêncio — e por um motivo a mais: é o que recusa um\n``ipa:`` aqui, que o cabeçalho do módulo explica.",
+  "properties": {
+    "id": {
+      "pattern": "^vocab\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "word": {
+      "minLength": 1,
+      "title": "Word",
+      "type": "string"
+    },
+    "pos": {
+      "enum": [
+        "noun",
+        "verb",
+        "adjective",
+        "adverb",
+        "phrase"
+      ],
+      "title": "Pos",
+      "type": "string"
+    },
+    "senses": {
+      "items": {
+        "$ref": "#/$defs/Sense"
+      },
+      "minItems": 1,
+      "title": "Senses",
+      "type": "array"
+    },
+    "cefr": {
+      "default": "B1",
+      "enum": [
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2"
+      ],
+      "title": "Cefr",
+      "type": "string"
+    },
+    "rule_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rule Ids",
+      "type": "array"
+    },
+    "corpus": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CorpusNote"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "id",
+    "word",
+    "pos",
+    "senses"
+  ],
+  "title": "VocabularyItem",
+  "type": "object"
+}
