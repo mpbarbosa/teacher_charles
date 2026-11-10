@@ -372,6 +372,39 @@ Four destinations, and confusing them is a category error:
   into `data/`, never copy into it.** `corpus/README.md` records what each path
   held, so a script that reads one can be understood with the file absent.
 
+## The checkout is shared, and the register of it is not versioned
+
+Several agents and the user work in this checkout at the same time. `HEAD`, the
+index and the working tree are therefore **not yours** — any of them can move
+between two of your own commands. The failure that follows is not a merge
+conflict: it is a `git commit` that exits 0, prints a plausible summary, and
+records something else — on a branch you never chose, or carrying paths another
+session staged minutes ago.
+
+`.claude/worktrees/COORDINATION.md` is the register of worktrees in use, and
+**it is ignored by git and exists only in the root checkout.** A fresh clone has
+no copy, nothing in the tree points at it, and that is exactly why it is named
+here: this file is the only place it can be discovered from. Whoever creates a
+worktree writes its row; whoever adopts someone else's rewrites that row with
+their own branch; whoever removes one deletes the row. The reason is in the file
+— a clean, quiet directory with **no** row is indistinguishable from an
+already-merged one by any command, and worktrees have been swept away on that
+reading.
+
+Read it before the first `git worktree add`, not after. It has already failed
+once the other way round: a session created a worktree, never read the file, and
+left a second session to write the row and ask the creator to come back and
+complete it.
+
+Two habits follow, and both are cheaper than the recovery:
+
+- **Prefer your own worktree to the shared checkout.** `git worktree add` gives
+  you your own `HEAD` and your own index, and none of the above can reach you.
+- **Never `git stash`.** The stack is shared across the root checkout and every
+  worktree, so what you pop may be another session's in-flight edit, which from
+  their side looks like a file reverting by itself. Set work aside with a WIP
+  commit instead.
+
 ## State, and where the code grows next
 
 All of Phase 1's deliverables are done: E0 (foundation), E1 (provider), E2 (text
