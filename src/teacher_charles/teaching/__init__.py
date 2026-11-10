@@ -12,6 +12,7 @@ from .contrastive import (
     Match,
     get_base,
     load_base,
+    span_key,
 )
 from .level import (
     LevelDecision,
@@ -73,4 +74,5 @@ __all__ = [
     "is_graduated",
     "load_base",
     "partial_name",
+    "span_key",
 ]

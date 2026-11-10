@@ -3,6 +3,7 @@
 from .db import connect, init_db, migrate, pending_migrations, session
 from .models import (
     Correction,
+    GapCount,
     LevelChange,
     LevelSignal,
     RuleCount,
@@ -11,6 +12,7 @@ from .models import (
     Session,
     Student,
     Turn,
+    UnverifiedFinding,
 )
 from .repo import (
     CorrectionRepo,
@@ -19,11 +21,13 @@ from .repo import (
     SessionRepo,
     StudentRepo,
     TurnRepo,
+    UnverifiedFindingRepo,
 )
 
 __all__ = [
     "Correction",
     "CorrectionRepo",
+    "GapCount",
     "LevelChange",
     "LevelRepo",
     "LevelSignal",
@@ -37,6 +41,8 @@ __all__ = [
     "StudentRepo",
     "Turn",
     "TurnRepo",
+    "UnverifiedFinding",
+    "UnverifiedFindingRepo",
     "connect",
     "init_db",
     "migrate",

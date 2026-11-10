@@ -81,6 +81,22 @@ def normalize(text: str) -> str:
     return text.translate(_NORMALIZE_MAP)
 
 
+def span_key(text: str) -> str:
+    """A chave de agregação de um trecho do aluno.
+
+    Usada pela fila de curadoria (``store.UnverifiedFindingRepo``) para somar
+    o mesmo buraco vindo de turnos diferentes. Mora aqui, e não no
+    repositório, porque tem de ser a MESMA normalização que o matcher aplica:
+    a chave é o texto contra o qual o padrão novo vai ser escrito, e duas
+    normalizações divergentes agrupariam errado justamente o caso que
+    ``normalize`` existe para unificar — apóstrofo curvo, espaço duro.
+
+    Ao contrário de ``normalize``, aqui o comprimento pode mudar: ninguém
+    aponta offset para esta string, então colapsar espaço é de graça.
+    """
+    return " ".join(normalize(text).lower().split())
+
+
 class ContrastiveError(ValueError):
     """A base não carregou. Traz todos os problemas, não só o primeiro."""
 
@@ -399,4 +415,5 @@ __all__ = [
     "load_items",
     "normalize",
     "schema_json_text",
+    "span_key",
 ]
