@@ -6,17 +6,32 @@
 items:
   - id: grammar.subject-drop
     category: grammar
-    pt: "Está chovendo / É difícil aprender inglês"
+    pt: "Está chovendo / É difícil aprender inglês / É um problema"
     wrong:
       - "is raining today"
       - "is very hot in Rio"
       - "is difficult to learn English"
+      - "is nothing left to say"
+      - "is a problem with my account"
+      - "is always difficult to find time"
     right:
       - "it is raining today"
       - "it's very hot in Rio"
       - "it is difficult to learn English"
+      - "there is nothing left to say"
+      - "there is a problem with my account"
+      - "it is always difficult to find time"
     patterns:
       - '(?:^|[.!?]\s+)(is|was)\s+(raining|snowing|cold|hot|very|difficult|easy|important|possible|necessary|better|good|bad)\b'
+      # O primeiro padrão só olha adjetivo e particípio, então "is nothing
+      # left" e "is a problem" passavam batido -- e o português oculta o
+      # sujeito antes de substantivo com a mesma naturalidade.
+      #
+      # O lookahead de "?" é o que separa o decalque da pergunta: "Is a
+      # problem?" e "Is nothing left?" são inglês correto, e sem a guarda a
+      # base corrigiria a pergunta do aluno.
+      - '(?:^|[.!?]\s+)(is|was)\s+(?![^.!?]*\?)(nothing|nobody|no\s+one|none|always|never|only|too)\b'
+      - '(?:^|[.!?]\s+)(is|was)\s+(?![^.!?]*\?)(a|an)\s+\w+'
     explanation: >-
       English sentences need a subject. Portuguese can drop it, English cannot:
       add "it". "It's raining", "it's difficult".
@@ -116,8 +131,21 @@ items:
       - "I have worked in this company since March"
       - "she has studied English since last year"
     patterns:
-      - '\b(i|you|we|they) (live|work|study|know|play|teach|date) [^.!?]{0,40}since\b'
-      - '\b(he|she|it) (lives|works|studies|knows|plays|teaches|dates) [^.!?]{0,40}since\b'
+      # Duas guardas, e as duas existem por medida sobre dialogo real: o padrao
+      # antigo (`[^.!?]{0,40}since\b`, sem exigir nada depois) marcava "since"
+      # causal -- 4 de 4 frases corretas compostas no teste abaixo.
+      #
+      # 1. O "since" tem de ser TEMPORAL: data, duracao ou ponto no tempo. O
+      #    causal e seguido de oracao ("since you asked"), nunca de 2010.
+      # 2. A virgula fecha o caminho: ela separa a oracao causal, e atravessa-la
+      #    era o que deixava "I know a place, since you asked" casar. Custa o
+      #    erro raro escrito com virgula ("I live in Recife, since 2010"), que
+      #    de todo modo se le como causal.
+      #
+      # "know" fica na lista: "Conheco ele desde 2010" e decalque de verdade. O
+      # que o derrubava era a falta da guarda 1, nao o verbo.
+      - '\b(i|you|we|they)\s+(live|work|study|know|play|teach|date)\b[^.!?,]{0,40}\bsince\s+(?:\d{4}\b|\d+\s+(?:years?|months?|weeks?|days?)\b|(?:a|two|three|four|five|six|seven|eight|nine|ten)\s+(?:years?|months?|weeks?|days?)\b|last\s+\w+|childhood\b|birth\b|then\b|yesterday\b|january|february|march|april|may|june|july|august|september|october|november|december)'
+      - '\b(he|she|it)\s+(lives|works|studies|knows|plays|teaches|dates)\b[^.!?,]{0,40}\bsince\s+(?:\d{4}\b|\d+\s+(?:years?|months?|weeks?|days?)\b|(?:a|two|three|four|five|six|seven|eight|nine|ten)\s+(?:years?|months?|weeks?|days?)\b|last\s+\w+|childhood\b|birth\b|then\b|yesterday\b|january|february|march|april|may|june|july|august|september|october|november|december)'
     explanation: >-
       For something that started in the past and still continues, English uses
       the present perfect: "I have lived here since 2010". The simple present
@@ -179,3 +207,38 @@ items:
       negative, English replaces it with "any-" words.
     cefr: B1
     tags: [negation, syntax]
+
+  # O português brasileiro usa pronome reto onde o inglês exige oblíquo --
+  # "vi ele", "fui com ela" -- e a base não tinha nada nessa área.
+  #
+  # Não confundir com "you and me got nowhere", que é inglês coloquial nativo
+  # sem causa portuguesa: aquilo é nota de registro, não correção.
+  - id: grammar.pronoun-object-case
+    category: grammar
+    pt: "Vi ele ontem / Fui com ela"
+    wrong:
+      - "I saw he yesterday"
+      - "I went to the party with she"
+      - "my boss called I twice"
+      - "I met she at the office"
+    right:
+      - "I saw him yesterday"
+      - "I went to the party with her"
+      - "my boss called me twice"
+      - "I met her at the office"
+    patterns:
+      # Só verbo que não aceita oração como complemento. Com "know" ou "heard"
+      # o padrão morderia inglês correto -- "I heard he left" -- e o que vem
+      # depois do pronome é o que decide: advérbio, preposição ou fim de
+      # frase, nunca um verbo.
+      - '\b(saw|called|met|invited|visited|helped|asked|thanked)\s+(he|she|they|i|we)\b(?=\s*(?:[.,!?;]|$|yesterday|today|tonight|last|again|twice|once|there|here|at|in|on|with|for|about|every|this))'
+      # Depois de preposição o pronome reto não é correto em inglês nenhum. A
+      # lista exclui "than", "as" e "like" de propósito: "like I said" e
+      # "better than I am" são corretos.
+      - '\b(with|to|for|about|from|without)\s+(he|she|they)\b'
+    explanation: >-
+      After a verb or a preposition English needs the object form: "him",
+      "her", "them", "me", "us". Portuguese uses the subject form in speech
+      ("vi ele"), English does not: "I saw him", "I went with her".
+    cefr: B1
+    tags: [pronoun, case]
