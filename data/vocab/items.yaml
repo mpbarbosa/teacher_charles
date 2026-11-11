@@ -1,0 +1,182 @@
+# Vocabulário curado: as palavras cujo sentido o modelo não pode improvisar.
+#
+# Convenções (schema em data/schema/vocab-item.schema.json):
+#   senses    em ordem de ENSINO, não de dicionário. O primeiro é o sentido que
+#             o aluno vai encontrar na vida. A entrada PT do Cambridge para
+#             "fodder" lidera com o sentido agrícola e o figurado só aparece
+#             dentro dos exemplos; aqui a ordem é o contrário, e de propósito.
+#   examples  escritos pelo curador. Nunca copiados do corpus/ — material de
+#             terceiro não entra em repositório público (corpus/README.md).
+#   corpus    só número: quantas vezes a palavra aparece, em quantos enunciados.
+#             É o que diz se a palavra merece aula nesta máquina.
+#   rule_ids  a ponte para data/contrastive/. Sem ela a armadilha do português
+#             fica curada e invisível: 25 tentativas na medição, zero citações.
+#   gloss     vai para o aluno, em inglês (decisão 1.1 do plano).
+#
+# Não existe campo de pronúncia: o IPA sai do espeak em teaching/phonetics.py,
+# que é o mesmo G2P que a voz pronuncia. Ver docs/medicao-vocabulario.md.
+
+items:
+  # A palavra que abriu o assunto. O modelo errou 1 em 4 tentativas sobre o
+  # sentido figurado, e numa delas inventou o exemplo "That argument was all
+  # about fodder", que não é inglês.
+  - id: vocab.fodder
+    word: fodder
+    pos: noun
+    cefr: C1
+    senses:
+      - gloss: >-
+          Material that feeds talk, speculation or a story. It almost always
+          appears in "fodder for" something.
+        kind: figurative
+        style: neutral
+        examples:
+          - "The scandal was fodder for the tabloids."
+          - "His answer gave the opposition fodder for weeks."
+        collocations:
+          - "fodder for"
+          - "tabloid fodder"
+      - gloss: "Dried food for farm animals, such as hay or straw."
+        kind: literal
+        style: technical
+        examples:
+          - "The barn was full of winter fodder."
+    corpus:
+      source: friends-1x01
+      hits: 0
+      of: 492
+    tags: [figurative, media]
+    notes: >-
+      0 ocorrências em 492 enunciados: a palavra não aparece em conversa comum,
+      e é por isso que o item é de "fodder for" e não de celeiro. O sentido
+      agrícola fica em segundo por existir, não por servir.
+
+  # 2 de 5 tentativas disseram "soldiers used as targets to practice shooting",
+  # que é o sentido que este item existe para impedir.
+  - id: vocab.cannon-fodder
+    word: cannon fodder
+    pos: phrase
+    cefr: C1
+    senses:
+      - gloss: >-
+          People, usually soldiers, treated as expendable and sent into danger
+          by those in charge of them.
+        kind: figurative
+        style: pejorative
+        examples:
+          - "The new recruits were treated as cannon fodder."
+          - "Junior staff became cannon fodder in the reorganisation."
+        collocations:
+          - "treated as cannon fodder"
+          - "used as cannon fodder"
+    corpus:
+      source: friends-1x01
+      hits: 0
+      of: 492
+    tags: [figurative, military, criticism]
+    notes: >-
+      A expressão critica quem manda, não descreve tática: quem é cannon fodder
+      está sendo desperdiçado. "Alvo de tiro ao alvo" é a leitura que o modelo
+      improvisou duas vezes, e ela perde exatamente a crítica.
+
+  - id: vocab.actually
+    word: actually
+    pos: adverb
+    cefr: B1
+    rule_ids: [false-friend.actually-atualmente]
+    senses:
+      - gloss: >-
+          In fact. It introduces what is true, often against what the other
+          person expects.
+        kind: literal
+        style: neutral
+        examples:
+          - "Actually, the meeting is on Thursday."
+          - "It looks difficult, but it is actually simple."
+        collocations:
+          - "actually, ..."
+          - "it is actually"
+    corpus:
+      source: friends-1x01
+      hits: 3
+      of: 492
+    tags: [false-friend, discourse]
+    notes: >-
+      3 ocorrências em 492 — é palavra de conversa de verdade, e a armadilha
+      vem junto: o item contrastivo cobre "atualmente", que é "currently".
+
+  - id: vocab.eventually
+    word: eventually
+    pos: adverb
+    cefr: B1
+    rule_ids: [false-friend.eventually-eventualmente]
+    senses:
+      - gloss: "In the end, after a delay or after a series of events."
+        kind: literal
+        style: neutral
+        examples:
+          - "The train eventually arrived."
+          - "She eventually agreed to help us."
+    corpus:
+      source: friends-1x01
+      hits: 0
+      of: 492
+    tags: [false-friend, time]
+    notes: >-
+      Na medição o modelo deu o exemplo "I will call you eventually when I
+      finish my work", que não é inglês — o advérbio não aceita a cláusula de
+      tempo logo atrás. Os exemplos daqui são os que o aluno deve ver.
+
+  - id: vocab.realize
+    word: realize
+    pos: verb
+    cefr: B1
+    rule_ids: [false-friend.realize-realizar]
+    senses:
+      - gloss: "To become aware of something, or to understand it for the first time."
+        kind: literal
+        style: neutral
+        examples:
+          - "I realized I had left my keys at home."
+          - "He never realized how late it was."
+    corpus:
+      source: friends-1x01
+      hits: 2
+      of: 492
+    tags: [false-friend, cognition]
+
+  - id: vocab.pretend
+    word: pretend
+    pos: verb
+    cefr: B1
+    rule_ids: [false-friend.pretend-pretender]
+    senses:
+      - gloss: "To act as if something is true when it is not."
+        kind: literal
+        style: neutral
+        examples:
+          - "He pretended to be asleep."
+          - "She pretended not to notice us."
+    corpus:
+      source: friends-1x01
+      hits: 0
+      of: 492
+    tags: [false-friend, behaviour]
+
+  - id: vocab.comprehensive
+    word: comprehensive
+    pos: adjective
+    cefr: B2
+    rule_ids: [false-friend.comprehensive-compreensivo]
+    senses:
+      - gloss: "Complete: covering everything that matters for the subject."
+        kind: literal
+        style: neutral
+        examples:
+          - "The report is comprehensive."
+          - "They published a comprehensive review of the data."
+    corpus:
+      source: friends-1x01
+      hits: 0
+      of: 492
+    tags: [false-friend, description]
