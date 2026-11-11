@@ -57,3 +57,54 @@ script that reads one of them can be understood without the file present.
 
 Imported 2026-11-10 from a local archive supplied by the person running the
 project. Rights are theirs to hold; this repo asserts none.
+
+## What was looked at and not imported
+
+The rule above says what may live here. This says what was held against it and
+turned down, because the next person to find a good free source will ask the
+same question, and the answer is not "no" — it is *which half*.
+
+**BBC Learning English — Pronunciation**
+(`bbc.co.uk/learningenglish/features/pronunciation`), read 2026-11-10. Two
+series: *Tim's Pronunciation Workshop*, 75 episodes on connected speech
+(assimilation, elision, gemination, linking and intrusive `/r/`, schwa, the
+weak forms of *and*, *can*, *was*, *have to*, *from*, *been*, *the*), each page
+carrying the **full transcript as text** and a Takeaways PDF; and *The Sounds
+of English*, 45 videos, one per sound. The video is an embedded player — there
+is no audio or subtitle file to fetch. Generic learner material: nothing on it
+is aimed at Portuguese speakers.
+
+Nothing from it was imported, for three separate reasons, and only the first
+is about rights:
+
+1. **It is not material the person running the project holds.** The table
+   above records a local archive, which is the condition under which a copy
+   sits in this folder at all. A site is not that, and the page text is the
+   BBC's. The asymmetry does not change: an observation we write down, with
+   the source credited, is ours to version.
+2. **It does not unblock the E9 gate.** What the gate needs is a Brazilian
+   human voice (§2.5 of `docs/plano-fase-2.md`). Clean RP read by a presenter
+   would give a second *floor*, next to the 0.061 of the synthetic audio — not
+   the expectation the 0.676 proxy stands in for. More material of the easiest
+   kind measures nothing that is open.
+3. **The variant disagrees with the loudspeaker.** `DEFAULT_LANGUAGE` in
+   `teaching/phonetics.py` is `en-us`. Linking `/r/` and intrusive `/r/` — two
+   of the thirty phenomena — are facts about a *non-rhotic* accent and do not
+   exist in what espeak renders. A rule taken from them would have the screen
+   teaching against the speaker, which is the one failure the single-G2P rule
+   exists to prevent. Every item from a source like this has to be filtered by
+   variant before anything else, and about a third of this list goes.
+
+What survives is a **reading list, not a corpus**. It points at a kind of
+curated item the base has no schema for today: `data/contrastive/` holds
+grammar and lexis, and these are cross-word pronunciation facts — *sandwich*
+said as *samwich*, the `/d/` elided and then the `/n/` assimilated before
+`/w/`. The IPA line cannot produce them and will not learn to: espeak
+phonemizes **per word**, so what the student reads is the citation form, which
+in that example is the one thing a fluent speaker does not say. That is a real
+gap, it is independent of E9 the way E13 and the IPA line were, and closing it
+is curation — one item with a test each, written here, citing nothing verbatim.
+
+The 45-unit sound inventory is the half worth skipping: espeak already names
+every phoneme the evaluator would score, so the videos add a label somebody
+would be writing anyway.
