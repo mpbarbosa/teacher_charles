@@ -28,11 +28,13 @@ import { flow } from "@twowayflow/dsl";
  *  2. **The microphone does not feed the turn.** `stt -> studentText` fills the
  *     text field; the student still presses send. An STT slip that became a turn
  *     would have Charles correcting a mistake the student never made.
- *  3. **An absent edge carries a claim.** `verify -> observeSchedule` is labelled
- *     for the silence as well as the error: a hit in the drill *is* the absence
- *     of a finding citing the rule. When the analysis did not run there is no
- *     edge at all, and nothing graduates — the guard that stops a model outage
- *     from reading as learning.
+ *  3. **An absent edge carries a claim, and this one is weaker than it looks.**
+ *     `verify -> observeSchedule` is labelled for the silence as well as the
+ *     error: a hit in the drill *is* the absence of a finding citing the rule.
+ *     The guard meant to stop a model outage from reading as learning tests
+ *     `analysis is None` — and a degraded analysis is not None, so an outage
+ *     during a clean drill turn *does* record a hit. Measured while drawing
+ *     this; see `turn-pipeline.md`.
  *
  * Upstream: https://github.com/mpbarbosa/teacher_charles — `teaching/turn.py`
  * runs this, `app.py::chat` turns the events into SSE frames, and `CLAUDE.md`
@@ -95,13 +97,27 @@ export default flow("teacher-charles-turn")
     params: { model: "base.en", medianS: 0.91, av: "<19 (measured incompatibility)" },
   })
   // --- the prompt of the reply ------------------------------------------- //
+  // There are TWO match passes per turn, and this is only the first. The
+  // analyzer does not consume this one — it calls `self._base.match(text)`
+  // again for its own candidates and for the verifier. Drawn as one node, the
+  // graph would claim a dependency the code does not have; drawn as two, it
+  // shows the same regex pass running twice. At microseconds that is a cost
+  // nobody needs to pay down, but it is what the code does.
   .node("matchBase", {
     kind: "transform",
     at: [340, 200],
-    label: "base.match",
+    label: "base.match (for the hint)",
     description:
-      "Compiled regexes over the normalised utterance, in microseconds. It decides which rules may be cited later, and whether the analysis is worth a model call at all.",
-    params: { cost: "microseconds", returns: "spans + rule_ids" },
+      "Compiled regexes over the normalised utterance, in microseconds, run by TurnRunner.rule_hint. Its only consumer is the curated hint that rides with the student's message.",
+    params: { cost: "microseconds", returns: "spans + rule_ids", consumedBy: "rule_hint only" },
+  })
+  .node("analyzeMatch", {
+    kind: "transform",
+    at: [1020, 1220],
+    label: "base.match (inside the analyzer)",
+    description:
+      "The analyzer's own pass over the same text, recomputed rather than passed in. It produces the candidates block for the prompt, the spans the verifier checks against, and the decision not to call the model at all when nothing matched.",
+    params: { sameInputAs: "matchBase", recomputed: true, maxCandidates: 4 },
   })
   .node("appendStudent", {
     kind: "transform",
@@ -170,7 +186,15 @@ export default flow("teacher-charles-turn")
       model: "qwen3:4b",
       firstWordS: 0.9,
       wasS: 7.4,
-      lever: "the idle Intel iGPU",
+      // What bought the 7.4s -> 0.9s is PROMPT EVALUATION on the Arc iGPU
+      // through Ollama 0.35's Vulkan backend: 8-14x on a 3B, 13-18x on a 7B.
+      // Generation is a different story and the iGPU does not carry it —
+      // measured 0.91x on the 3B (a tie) and 1.50x on the 7B. So the tok/s
+      // below is the CPU-class figure the whole design is budgeted against,
+      // not something the iGPU improved.
+      lever: "prompt eval on the iGPU (Ollama 0.35 Vulkan)",
+      promptEvalSpeedup: "8-14x (3B)",
+      generationSpeedup: "0.91x (3B) — a tie",
       tokPerS: "7-8",
     },
   })
@@ -186,8 +210,8 @@ export default flow("teacher-charles-turn")
     at: [1700, 700],
     label: "G2P (teacher)",
     description:
-      "The whole reply at once, not sentence by sentence as the TTS does: the G2P finished before the first frame reached the page, so there is nothing to bring forward and a per-sentence line would be patched where two sentences meet.",
-    params: { scope: "the whole reply", perCallMs: 0.3 },
+      "Runs once the stream has closed, on the joined reply, and the whole reply at once rather than sentence by sentence as the TTS does. At ~0.3 ms there is nothing to bring forward by segmenting, and a per-sentence line would be patched where the last word of one sentence and the first of the next never meet.",
+    params: { scope: "the whole reply", after: "the last chunk", perCallMs: 0.3 },
   })
   // --- the analysis, and the guard that keeps it honest ------------------ //
   // Conversation first, analysis after the last chunk: Ollama serves one
@@ -198,11 +222,12 @@ export default flow("teacher-charles-turn")
     at: [1360, 1040],
     label: "Analyzer.analyze",
     description:
-      "The second model call, at temperature 0, asked for JSON only and retried once with a stricter instruction. It never raises: a dead analysis degrades to no correction, because the student's turn is worth more than its correction.",
+      "The second model call, at temperature 0, asked for JSON only. The one retry is for a reply that was not valid JSON or not in contract — a timeout or a provider failure breaks out at once, with no second attempt. It never raises: a dead analysis degrades to no correction, because the student's turn is worth more than its correction.",
     params: {
       temperature: 0.0,
       maxTokens: 320,
       timeoutS: 45.0,
+      retriesOn: "unparsable or out-of-contract JSON only",
       attempts: 2,
       medianS: 8.4,
       candidates: 4,
@@ -215,8 +240,16 @@ export default flow("teacher-charles-turn")
     at: [1700, 1040],
     label: "_Verifier",
     description:
-      "Locates each claimed span in the student's own text and keeps only findings citing a rule the curated base matched there. Everything else is refused — the model's rule id is checked, never trusted.",
-    params: { requireCuratedRule: true, maxFindings: { correction: 5, other: 2 } },
+      "Locates each claimed span in the student's own text, then decides the rule itself: the rule the base matched over that span, or — failing that — the id the model claimed, accepted only because it exists in the base. An id that exists nowhere is discarded, and with require_curated_rule on a finding with no rule at all is refused.",
+    params: {
+      requireCuratedRule: true,
+      // One cap per turn, whose value is the mode's — not 5 plus 2.
+      maxFindingsByMode: { conversation: 2, correction: 5, drill: 2 },
+      // The second branch of `_rule_for`, which is deliberate upstream and
+      // worth naming here: a rule the base did not match at that span can
+      // still be cited, if the model named one the base holds.
+      acceptsClaimedIdPresentInBase: true,
+    },
   })
   // --- what the turn leaves behind --------------------------------------- //
   .node("corrections", {
@@ -257,7 +290,18 @@ export default flow("teacher-charles-turn")
     label: "_observe_schedule",
     description:
       "Moves the review schedule with what this turn showed. An error by the rule counts in any mode; a clean turn counts as a hit only inside the drill, over the rule being trained, because there the exercise built the opportunity.",
-    params: { ladderDays: [0.5, 1, 3, 7, 16, 35], graduatedStreak: 3, noAnalysisNoReview: true },
+    params: {
+      ladderDays: [0.5, 1, 3, 7, 16, 35],
+      graduatedStreak: 3,
+      // The guard is `analysis is None`, which is NOT the same as "the analysis
+      // ran". A degraded analysis (timeout, provider down) is an Analysis
+      // object with no findings, so inside a drill it reads as a hit —
+      // measured, see turn-pipeline.md §"Finding: an analysis outage reads as
+      // a drill hit". `None` happens only with no analyzer at all, or a task
+      // that raised or was cancelled.
+      noReviewWhen: "analysis is None",
+      notTheSameAs: "the analysis ran",
+    },
   })
   .node("scheduleRows", {
     kind: "sink",
@@ -328,22 +372,31 @@ export default flow("teacher-charles-turn")
   .edge("studentText", "matchBase", { label: "normalised text" })
   .edge("studentText", "spellStudent")
   .edge("studentText", "analyze", { label: "the utterance, verbatim" })
+  .edge("studentText", "analyzeMatch", { label: "normalised text" })
   .edge("contrastiveBase", "matchBase", { label: "compiled patterns" })
-  .edge("contrastiveBase", "analyze", { label: "candidate rules" })
-  .edge("contrastiveBase", "verify", { label: "the only ids that pass" })
+  .edge("contrastiveBase", "analyzeMatch", { label: "compiled patterns" })
+  .edge("contrastiveBase", "verify", { label: "which ids exist at all" })
   .edge("contrastiveBase", "drillTarget", { label: "curated item" })
   .edge("matchBase", "ruleHint", { label: "matches" })
-  .edge("matchBase", "verify", { label: "spans that matched" })
+  .edge("analyzeMatch", "verify", { label: "spans that matched" })
   // With require_curated_rule on, no candidate means no model call: nothing the
   // model returned could reach the student, so it is not asked. Which is also
   // why every curation row comes from a turn where some other rule matched.
-  .edge("matchBase", "analyze", { label: "no candidate, no call" })
+  .edge("analyzeMatch", "analyze", { label: "candidates; none, no call" })
   .edge("promptFiles", "buildMessages", { label: "persona + partials" })
   .edge("promptFiles", "analyze", { label: "analysis prompt" })
   .edge("sessionRow", "buildMessages", { label: "cefr_level, mode" })
   .edge("sessionRow", "drillTarget", { label: "session.drill_rule_id" })
   .edge("sessionRow", "observeLevel", { label: "student_id" })
   .edge("sessionRow", "observeSchedule", { label: "student_id, mode" })
+  // The analysis is scoped by the profile too: the level goes in its prompt,
+  // and the mode sets the cap on how many findings may come back.
+  .edge("sessionRow", "analyze", { label: "cefr_level, and the mode's cap" })
+  // Every turn row is owned by a session, and the prompt's history is read
+  // back by that same id. Without these the writes look session-less.
+  .edge("sessionRow", "appendStudent", { label: "session_id" })
+  .edge("sessionRow", "appendTeacher", { label: "session_id" })
+  .edge("sessionRow", "history", { label: "session_id" })
   .edge("appendStudent", "history", { label: "the row just written" })
   .edge("appendStudent", "corrections", { label: "turn_id" })
   .edge("appendStudent", "gaps", { label: "turn_id" })
@@ -377,6 +430,17 @@ export default flow("teacher-charles-turn")
   .edge("observeSchedule", "scheduleRows", { label: "event, then state" })
   .edge("scheduleRows", "queue", { label: "due_at, box, streak" })
   .edge("corrections", "queue", { label: "the last tiebreak" })
+  // The rotation term: queue() asks which rules the last few drill sessions
+  // already trained, so one picked and left unanswered is not picked again.
+  .edge("sessionRow", "queue", { label: "the last drilled rules" })
+  // Resolving the session's rule into a target reads the student's own past
+  // sentences for it, and where it sits on the ladder.
+  .edge("corrections", "drillTarget", { label: "3 of the student's own spans" })
+  .edge("scheduleRows", "drillTarget", { label: "box, streak, due_at" })
+  // The rubric scores the utterance itself; the analysis only supplies the
+  // one negative signal. Without this edge the level looks derivable from
+  // the corrections alone.
+  .edge("studentText", "observeLevel", { label: "the text the rubric scores" })
   // The back edge, and the point of E13: the rule is chosen once per session,
   // at POST /api/mode, and lands in session.drill_rule_id. So what the student
   // got wrong today shapes a LATER session's prompt, never this turn's.

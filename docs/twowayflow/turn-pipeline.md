@@ -17,19 +17,18 @@ only source of truth, and the canvas is an editable projection over its syntax t
 copy in a Mermaid block would be the sidecar model that architecture exists to avoid — it would
 drift, and nothing would say which half was wrong.
 
-To look at it:
-
-```bash
-code /home/mpb/Documents/GitHub/twowayflow   # F5, then open the .flow.ts and run "twowayflow: Open Flow Canvas"
-```
+To look at it: open a [twowayflow](https://github.com/mpbarbosa/twowayflow) checkout in VS Code,
+press <kbd>F5</kbd> ("Run twowayflow extension"), and in the new window open this `.flow.ts` and
+run **twowayflow: Open Flow Canvas**. Or install the extension into your own editor with that
+repository's `scripts/twf-install` and skip the <kbd>F5</kbd>.
 
 Read without the canvas it is still a flat list: every node on one line, every edge on one line,
 the prose for each box in its `description`.
 
 ## What it says, in one paragraph
 
-29 nodes, 49 edges. Five sources (the prompt files, the curated base, the student's utterance, the
-profile-and-session row, the microphone), sixteen transforms, one fan-in (`buildMessages`), one
+30 nodes, 58 edges. Five sources (the prompt files, the curated base, the student's utterance, the
+profile-and-session row, the microphone), seventeen transforms, one fan-in (`buildMessages`), one
 filter (`_Verifier`), six sinks — the SSE frames, the audio queue, and four nodes covering the six
 analysis-and-schedule tables a turn writes. `turn` itself is written by `appendStudent` and
 `appendTeacher`, which are transforms rather than sinks because the `turn_id` they return is what
@@ -53,7 +52,8 @@ Pinned at `96e0249`, with `uv run pytest -m "not integration"` reporting 852 pas
 | `verify → sseFrames` carries findings only — never the rejected ones | *"test_the_rejected_finding_never_reaches_the_student_payload"* |
 | `verify → gaps` keeps the barred finding instead of only counting it | *"test_the_rejected_finding_is_kept_and_not_just_counted"*, *"test_the_turn_files_the_rejected_finding_in_the_queue"* |
 | a failed `gaps` write does not cost the lesson | *"test_a_broken_queue_write_does_not_cost_the_lesson"* |
-| no `verify → observeSchedule` edge when the analysis did not run — nothing graduates | *"test_sem_analise_nao_ha_revisao"* |
+| no `verify → observeSchedule` edge when there is **no analyzer at all** — nothing graduates | *"test_sem_analise_nao_ha_revisao"* |
+| but a **degraded** analysis does record a drill hit — the guard is `None`, not "it ran" | nothing; measured by the probe below, and the finding that came out of drawing this |
 | a correction citing no curated rule does not reach the schedule | *"test_correcao_sem_regra_curada_nao_entra_na_agenda"* |
 | `queue` is ordered by the schedule, with the error count as the last tiebreak | *"test_a_fila_e_a_agenda_e_nao_a_contagem"* |
 | the ladder's first rung is half a day, and a lapse lands there rather than at zero | *"test_a_escada_mede_os_intervalos_em_dias"*, *"test_o_lapso_cai_no_degrau_de_reaprendizado_e_nao_no_zero"* |
@@ -72,6 +72,17 @@ mutation test matters most (`verify → gaps`, and the absence of `rejected` fro
 payload), `tests/test_curation_queue.py` already does that, and
 [`mutation-test-guards`](../../CLAUDE.md) is the discipline the rest of the suite is held to.
 
+The resolver treats straight quotes inside italics as a cited test name and looks it up, so prose
+quotations in this file use typographic quotes instead. Two sentences quoted in the revisions
+table at the end were reported as missing tests until they were re-marked — the checker being
+right about its own convention and wrong about the document. Writing that convention out in this
+paragraph in its own notation made the paragraph fail too, which is the shortest demonstration of
+the point available.
+
+And a claims table says nothing about the claims it does not make. The row below it — the
+degraded analysis — is in this table *because* drawing it showed the row above was narrower than
+the sentence it was holding up.
+
 ## The probes, and what they printed
 
 **The curated base.** The count in `contrastiveBase.params`, through the project's own loader
@@ -87,13 +98,17 @@ uv run python -c "from pathlib import Path; from teacher_charles.teaching.contra
 run from a throwaway test inside the twowayflow checkout and deleted afterwards:
 
 ```
-nodes 29 edges 49
+nodes 30 edges 58
 unknownLinks []
 diagnostics []
-kinds {"source":5,"transform":16,"join":1,"filter":1,"sink":6}
+kinds {"source":5,"transform":17,"join":1,"filter":1,"sink":6}
 CONTROL (one edge retargeted at an undeclared node):
   [{"code":"dangling-edge","severity":"warning","message":"Edge to references undeclared node \"sttTypo\"."}]
 ```
+
+Counted a second way, off the source rather than the parse, because two numbers that should
+agree are worth more than either alone — `grep -c '^  \.edge('` gives 58 and
+`grep -c '^  \.node('` gives 30.
 
 The type system agrees independently: `tsc --build` over the examples workspace accepts the file,
 and rejects the same mutation with `TS2345: Argument of type '"sttTypo"' is not assignable`. The
@@ -112,6 +127,42 @@ entry points cli app    32 modules, 29 reachable
 `teacher_charles.store` is the package `__init__`, which only re-exports — `app.py` imports
 `.store.db` and `.store.repo` directly. The other two are findings, and both are recorded below
 rather than quietly fixed.
+
+### Finding: an analysis outage reads as a drill hit
+
+`CLAUDE.md` states the guard this way, and it is the one it calls the guard that matters most:
+
+> an analysis that did not run graduates nobody — without it, an analyzer that is down would turn
+> into a success, because it produces the same absence of corrections.
+
+The guard in `TurnRunner._observe_schedule` is `if analysis is None: return ()`. But
+`Analyzer.analyze` **never returns `None`**. On a timeout or a provider failure it returns
+`Analysis(degraded=True)`; when the base raised no candidate it returns `Analysis(skipped=True)`.
+Both are `Analysis` objects with no findings — which, inside a drill, is exactly the shape of a
+hit. `None` happens only when there is no analyzer at all, or when the task raised or was
+cancelled, and `test_sem_analise_nao_ha_revisao` covers the first of those.
+
+Measured, driving a real drill turn whose analysis provider raises `ProviderUnavailable` while the
+lesson streams normally:
+
+```
+DEGRADED (analysis provider down), clean drill turn
+  schedule -> box=1 streak=1 reviews=1 lapses=0 due_at=<tomorrow>
+  reviews recorded: [(hit=True, source='drill')]
+```
+
+So three turns during an outage graduate the rule, which is the failure the quoted sentence says
+cannot happen. The same probe confirms the `skipped=True` path records a hit too — but that one is
+the *already-documented* blind spot, pinned in
+*"test_uma_resposta_vazia_de_conteudo_conta_como_acerto"* and recorded as a Phase 2 debt. The
+degraded path is not covered anywhere.
+
+**Nothing was changed in the application for this.** Whether a degraded analysis should be silent
+is a pedagogical decision, not a diagram fix, and the one-line candidate
+(`if analysis is None or analysis.degraded`) would change what the drill graduates. The diagram
+and this document were corrected to say what the code does; the fix is the user's call. The probe
+lives outside the repository and was deliberately not committed — a test asserting today's
+behaviour would freeze the defect.
 
 ### Finding: the door is a string, so an import graph reads this project as dead
 
@@ -185,10 +236,25 @@ of `teaching/turn.py` actually has. But three claims this project cares about ar
   graph shows one edge into one sink.
 - **The order of the system messages is the measured design** — persona, capabilities, level,
   mode, drill data, then the notes at the very end, inside the student's message. `buildMessages`
-  is one fan-in node with six incoming edges, and fan-in has no order.
+  is one fan-in node with five incoming edges, and fan-in has no order.
 
 The notation for all three is a **sequence diagram with lifelines**, and it is the obvious next
 thing to draw here. It is not drawn in this pass.
+
+Two more claims about order came out of the review of this document, and they belong in the same
+place because the same limit applies — neither is visible in the graph, and neither was
+investigated here:
+
+- **Two tabs posting to one session.** Nothing serialises `/api/chat` per session. Two requests
+  can each append their student row before either model call finishes, so the later prompt sees
+  both utterances and the replies land in completion order. The graph draws one turn; it has no
+  way to draw two of them interleaved.
+- **A level change is two writes.** `set_level` then `log_change`, and the second is what closes
+  the window via `at_signal_id`. If the first lands and the second does not, the level has moved
+  with nothing marking the signals as spent. `observeLevel → levelRows` is one edge.
+
+Both are the shared-connection rule playing out — no request path opens a multi-statement
+transaction — and both are ordering claims a dataflow graph cannot carry.
 
 ## What was deliberately not drawn
 
@@ -211,8 +277,25 @@ thing to draw here. It is not drawn in this pass.
 
 ## Expiry
 
-This document describes `96e0249`. The counts (29 nodes, 49 edges, 44 curated items, 852 tests)
+This document describes `96e0249`. The counts (30 nodes, 58 edges, 44 curated items, 852 tests)
 are pinned to it, each with the probe that produced it. The sequence diagram named above as
 missing is missing *as of that revision*; when someone draws it, add the row rather than editing
 this section away — the argument for why the dataflow graph could not carry those three claims is
 the part worth keeping.
+
+### What the first version of this document got wrong
+
+Kept rather than quietly corrected, because the causes recur:
+
+| What it said | How it got there |
+|---|---|
+| “nothing graduates when the analysis did not run”, citing a test | the cited test is real and passes; it covers `analyzer=None`, and the sentence had generalised to "did not run". The instrument behind the claim was the defect — the claim was never measured against a *degraded* analysis until a reviewer asked |
+| `_Verifier` “keeps only findings citing a rule the curated base matched there” | read off the first branch of `_rule_for` and stopped; the second branch accepts an id the model claimed, if the base holds it |
+| `maxFindings: { correction: 5, other: 2 }` | true as a map of mode to cap, and read by a reviewer as "five corrections plus two others". Ambiguity in a params key is a wrong number waiting to be quoted |
+| `matchBase → verify` and `matchBase → analyze` | the analyzer recomputes `base.match` instead of consuming those results, so the graph drew a dependency the code does not have — §1's failure, an accurate drawing of a path that is never taken |
+| eight incoming edges invented for `buildMessages` (first "six", then "nine") | both written from memory of the node list instead of counted; `grep -c` says five |
+| `lever: "the idle Intel iGPU"` beside `tokPerS: "7-8"` | credits the iGPU for generation, which the measurement denies (0.91× on the 3B — a tie). The 7.4s → 0.9s came from prompt evaluation, 8–14× faster on the Vulkan backend |
+
+Five of the six were caught by review, not by the probes in this document — the probes checked
+that the graph parses, that its citations resolve and that its nodes are reachable, and none of
+them could check whether a sentence means what the code does.
