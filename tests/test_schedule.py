@@ -27,6 +27,7 @@ import pytest
 
 from teacher_charles.config import REPO_ROOT
 from teacher_charles.llm import FakeProvider
+from teacher_charles.llm.base import ProviderUnavailable
 from teacher_charles.prompts import PromptLibrary
 from teacher_charles.store import db
 from teacher_charles.store.models import RuleSchedule
@@ -51,6 +52,7 @@ from teacher_charles.teaching.schedule import (
     next_box,
     stamp,
 )
+from teacher_charles.teaching.turn import Analyzed, Done
 
 AGE_RULE = "calque.age-have"
 QUESTION_RULE = "calque.make-question"
@@ -527,6 +529,52 @@ async def test_sem_analise_nao_ha_revisao(conn, student, base, real_prompts):
     )
     async for _ in runner.run(session_id, "I am 35 years old.", student):
         pass
+
+    assert ScheduleRepo(conn).count() == 0
+    assert ScheduleRepo(conn).get(student.id, AGE_RULE) is None
+
+
+async def test_a_degraded_analysis_graduates_nobody(conn, student, base, real_prompts):
+    """The same guard, for the case `analysis is None` does not cover.
+
+    An absent analyzer gives `None`; an analyzer whose model timed out or whose
+    provider died gives `Analysis(degraded=True)` — an object with no findings,
+    which inside a drill is the exact shape of a hit. Guarding only on `None`
+    therefore let an outage graduate a rule, measured at three clean turns.
+
+    The lesson is asserted too, and that is the point of the test rather than a
+    courtesy: a turn that simply died would also record no review, and would
+    pass a test that only counted rows.
+    """
+    record_error(conn, student.id, AGE_RULE)
+    planner = DrillPlanner(conn, base)
+    session_id = await drill_session(conn, student, base, AGE_RULE)
+
+    # A aula sai inteira; só a análise cai.
+    provider = FakeProvider(
+        replies="Sure!",
+        errors_by_system={"You find mistakes": ProviderUnavailable("a análise caiu")},
+    )
+    runner = TurnRunner(
+        provider=provider,
+        prompts=real_prompts,
+        conn=conn,
+        analyzer=Analyzer(provider=provider, prompts=real_prompts, base=base),
+        planner=planner,
+    )
+    # Texto que a base CASA, senão a análise nem chama o modelo (`skipped`) e
+    # o caso degradado não acontece. E o aluno errou a própria regra do drill:
+    # é o pior momento possível para a agenda registrar acerto.
+    events = [event async for event in runner.run(session_id, "I have 35 years", student)]
+
+    done = [e for e in events if isinstance(e, Done)]
+    assert done, "o aluno tem que receber a aula mesmo com a análise caída"
+    assert done[0].reply == "Sure!"
+
+    analysed = [e for e in events if isinstance(e, Analyzed)]
+    assert analysed, "a análise degradada ainda é um evento"
+    assert analysed[0].analysis.degraded, "é o caso degradado que este teste cobre"
+    assert not analysed[0].analysis.findings
 
     assert ScheduleRepo(conn).count() == 0
     assert ScheduleRepo(conn).get(student.id, AGE_RULE) is None

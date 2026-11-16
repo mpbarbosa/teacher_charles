@@ -53,7 +53,7 @@ Pinned at `96e0249`, with `uv run pytest -m "not integration"` reporting 852 pas
 | `verify → gaps` keeps the barred finding instead of only counting it | *"test_the_rejected_finding_is_kept_and_not_just_counted"*, *"test_the_turn_files_the_rejected_finding_in_the_queue"* |
 | a failed `gaps` write does not cost the lesson | *"test_a_broken_queue_write_does_not_cost_the_lesson"* |
 | no `verify → observeSchedule` edge when there is **no analyzer at all** — nothing graduates | *"test_sem_analise_nao_ha_revisao"* |
-| but a **degraded** analysis does record a drill hit — the guard is `None`, not "it ran" | nothing; measured by the probe below, and the finding that came out of drawing this |
+| a **degraded** analysis graduates nobody either — the guard is two conditions, not `None` alone | *"test_a_degraded_analysis_graduates_nobody"*, and the three mutations below that turn it and the blind-spot test red |
 | a correction citing no curated rule does not reach the schedule | *"test_correcao_sem_regra_curada_nao_entra_na_agenda"* |
 | `queue` is ordered by the schedule, with the error count as the last tiebreak | *"test_a_fila_e_a_agenda_e_nao_a_contagem"* |
 | the ladder's first rung is half a day, and a lapse lands there rather than at zero | *"test_a_escada_mede_os_intervalos_em_dias"*, *"test_o_lapso_cai_no_degrau_de_reaprendizado_e_nao_no_zero"* |
@@ -143,26 +143,38 @@ hit. `None` happens only when there is no analyzer at all, or when the task rais
 cancelled, and `test_sem_analise_nao_ha_revisao` covers the first of those.
 
 Measured, driving a real drill turn whose analysis provider raises `ProviderUnavailable` while the
-lesson streams normally:
+lesson streams normally. The utterance matters and the first attempt at this probe got it wrong
+(see below): it has to be text the base **matches**, or the analyzer returns `skipped=True`
+without ever calling the model, and the degraded path is never reached. So the student writes the
+drill's own calque — the worst case available, because the rule being trained is the rule they
+just missed:
 
 ```
-DEGRADED (analysis provider down), clean drill turn
-  schedule -> box=1 streak=1 reviews=1 lapses=0 due_at=<tomorrow>
-  reviews recorded: [(hit=True, source='drill')]
+student: "I have 35 years"    (base matches calque.age-have; the drill is training it)
+analysis: degraded — "o modelo falhou na análise"
+  review: hit=True source=drill box 0->1
+  schedule: box=1 streak=1 reviews=1 lapses=0
 ```
 
-So three turns during an outage graduate the rule, which is the failure the quoted sentence says
-cannot happen. The same probe confirms the `skipped=True` path records a hit too — but that one is
-the *already-documented* blind spot, pinned in
-*"test_uma_resposta_vazia_de_conteudo_conta_como_acerto"* and recorded as a Phase 2 debt. The
-degraded path is not covered anywhere.
+The student missed the rule and the schedule credited them with getting it right. Three of those
+graduate it, which is the failure the quoted sentence says cannot happen.
 
-**Nothing was changed in the application for this.** Whether a degraded analysis should be silent
-is a pedagogical decision, not a diagram fix, and the one-line candidate
-(`if analysis is None or analysis.degraded`) would change what the drill graduates. The diagram
-and this document were corrected to say what the code does; the fix is the user's call. The probe
-lives outside the repository and was deliberately not committed — a test asserting today's
-behaviour would freeze the defect.
+**Fixed, after this was measured and recorded.** The order is in the git history and worth
+keeping: commit `cc4ebf3` recorded the finding while the application was untouched; the fix came
+after, as its own commit, once the repository's owner decided a degraded analysis should be
+silent. The guard is now `analysis is None or not analysis.is_evidence`, and
+`Analysis.is_evidence` is where the reasoning sits.
+
+`skipped=True` is deliberately **not** covered by it. There the base ran and matched nothing,
+which is a poor observation of the text rather than no observation — and it is the
+already-documented blind spot, pinned in
+*"test_uma_resposta_vazia_de_conteudo_conta_como_acerto"* and recorded as a Phase 2 debt.
+Narrowing `is_evidence` to exclude it as well turns that test red, which is how the scope is held.
+
+The new guard was mutation-tested three ways rather than trusted: reverting the condition to
+`analysis is None` turns *"test_a_degraded_analysis_graduates_nobody"* red, so does making
+`is_evidence` return `True`, and widening it to exclude `skipped` turns the blind-spot test red
+instead. A guard whose test cannot be made to fail is not evidence of anything.
 
 ### Finding: the door is a string, so an import graph reads this project as dead
 
@@ -289,7 +301,8 @@ Kept rather than quietly corrected, because the causes recur:
 
 | What it said | How it got there |
 |---|---|
-| “nothing graduates when the analysis did not run”, citing a test | the cited test is real and passes; it covers `analyzer=None`, and the sentence had generalised to "did not run". The instrument behind the claim was the defect — the claim was never measured against a *degraded* analysis until a reviewer asked |
+| “nothing graduates when the analysis did not run”, citing a test | the cited test is real and passes; it covers `analyzer=None`, and the sentence had generalised to “did not run”. The instrument behind the claim was the defect — the claim was never measured against a *degraded* analysis until a reviewer asked |
+| the finding above, in `cc4ebf3`, labelled its evidence `DEGRADED` | the probe used *”I am 35 years old.”* — correct English, so the base matched nothing, so the analyzer returned `skipped=True` and never called the model. The `hit=True` it printed was the known `skipped` blind spot wearing the new finding's name. The conclusion survived re-measurement with base-matching text; the evidence for it did not, and a reader checking the probe would have found the wrong mechanism |
 | `_Verifier` “keeps only findings citing a rule the curated base matched there” | read off the first branch of `_rule_for` and stopped; the second branch accepts an id the model claimed, if the base holds it |
 | `maxFindings: { correction: 5, other: 2 }` | true as a map of mode to cap, and read by a reviewer as "five corrections plus two others". Ambiguity in a params key is a wrong number waiting to be quoted |
 | `matchBase → verify` and `matchBase → analyze` | the analyzer recomputes `base.match` instead of consuming those results, so the graph drew a dependency the code does not have — §1's failure, an accurate drawing of a path that is never taken |

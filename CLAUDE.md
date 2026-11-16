@@ -133,6 +133,23 @@ because it produces the same absence of corrections. A known blind spot, noted
 in §6 of the plan: inside the drill, "did not err" and "did not try" are the
 same observation.
 
+**And that guard is two conditions, because `Analyzer` never returns `None`.**
+It was written as `analysis is None`, which covers only an absent analyzer: a
+model that times out or a provider that dies gives back
+`Analysis(degraded=True)` — zero findings, the same shape as a clean turn. So
+the sentence above was false for exactly the case it was written for, and it
+was measured at its worst: the student writes the drill's own calque, the base
+matches it, the analysis model falls over, and the review came out `hit=True`,
+crediting the rule to the student who had just missed it. Three of those
+graduate it. The condition is now `analysis is None or not
+analysis.is_evidence`, and that property is where the reasoning lives —
+including why `skipped` is deliberately *not* part of it: there the base ran
+and matched nothing, which is a poor observation rather than no observation,
+and it is the blind spot the paragraph above already names. Narrowing
+`is_evidence` to exclude `skipped` as well turns
+`test_uma_resposta_vazia_de_conteudo_conta_como_acerto` red, which is how the
+scope is held in place.
+
 **The first rung of the interval ladder is worth half a day, not zero**, and
 that is what replaces E6's rotation. With zero, a rule just missed falls due at
 once and goes back to being the most overdue one in the next session, forever —

@@ -42,6 +42,7 @@ class FakeProvider(ChatProvider):
         chunk_size: int = 4,
         error: Exception | None = None,
         replies_by_system: Mapping[str, str] | None = None,
+        errors_by_system: Mapping[str, Exception] | None = None,
     ) -> None:
         super().__init__(model)
         self.replies: list[str] = [replies] if isinstance(replies, str) else list(replies)
@@ -51,6 +52,12 @@ class FakeProvider(ChatProvider):
         # Para exercitar o tratamento de erro da camada de cima.
         self.error = error
         self.replies_by_system: dict[str, str] = dict(replies_by_system or {})
+        # Falha **de uma etapa só**, escolhida pelo system prompt. É o irmão do
+        # `replies_by_system` e existe pelo mesmo motivo: conversa e análise
+        # passam pelo mesmo provider, e `error` derruba as duas. Sem isto não há
+        # como exercitar a aula que sai inteira enquanto a análise cai — que é
+        # exatamente o estado em que a agenda não pode graduar ninguém.
+        self.errors_by_system: dict[str, Exception] = dict(errors_by_system or {})
         self.calls: list[RecordedCall] = []
         self.closed = False
 
@@ -89,6 +96,13 @@ class FakeProvider(ChatProvider):
 
         index = len(self.calls)
         self.calls.append(RecordedCall(messages=list(messages), options=options))
+
+        # A falha por etapa vem antes da global: ela é a mais específica, e
+        # quem passa as duas quer a etapa.
+        system = self._system_prompt(messages)
+        for needle, failure in self.errors_by_system.items():
+            if needle in system:
+                raise failure
 
         if self.error is not None:
             raise self.error

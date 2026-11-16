@@ -605,11 +605,26 @@ class TurnRunner:
         mesma lição da §3.3 do plano da Fase 2 — quando o avaliador não está
         entendendo, calar é a resposta.
 
+        **E são duas condições, não uma.** Por muito tempo esta guarda era só
+        ``analysis is None``, o que cobria o analisador ausente e mais nada: o
+        ``Analyzer`` nunca devolve ``None`` — devolve ``Analysis(degraded=True)``
+        quando o modelo cai ou estoura. A queda chegava aqui com zero achados, a
+        ausência contava como acerto, e três turnos de indisponibilidade
+        graduavam a regra: o contrário exato do que o parágrafo acima promete.
+        Medido no pior caso, que é o que fez a correção valer a pena — o aluno
+        escreve o próprio calque do drill, a base casa, o modelo da análise cai,
+        e a revisão saía ``hit=True``, creditando acerto justamente a quem
+        acabara de errar a regra em treino.
+
+        Daí ``Analysis.is_evidence``, que nomeia a pergunta em vez de deixá-la
+        implícita num ``is None``: a ausência de achados aqui diz alguma coisa?
+        Ver a propriedade para o motivo de ``skipped`` ficar de fora dela.
+
         A assimetria do sinal está em ``teaching/schedule.py``: correção pela
         regra é erro em qualquer modo; turno limpo só é acerto no drill, sobre a
         regra em treino, porque ali o exercício construiu a oportunidade.
         """
-        if analysis is None:
+        if analysis is None or not analysis.is_evidence:
             return ()
 
         try:
