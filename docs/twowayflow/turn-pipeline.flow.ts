@@ -28,13 +28,14 @@ import { flow } from "@twowayflow/dsl";
  *  2. **The microphone does not feed the turn.** `stt -> studentText` fills the
  *     text field; the student still presses send. An STT slip that became a turn
  *     would have Charles correcting a mistake the student never made.
- *  3. **An absent edge carries a claim, and this one is weaker than it looks.**
+ *  3. **An absent edge carries a claim, and drawing it found the claim false.**
  *     `verify -> observeSchedule` is labelled for the silence as well as the
  *     error: a hit in the drill *is* the absence of a finding citing the rule.
- *     The guard meant to stop a model outage from reading as learning tests
- *     `analysis is None` — and a degraded analysis is not None, so an outage
- *     during a clean drill turn *does* record a hit. Measured while drawing
- *     this; see `turn-pipeline.md`.
+ *     The guard meant to stop a model outage from reading as learning tested
+ *     `analysis is None`, and a degraded analysis is not None — so an outage
+ *     recorded a hit, measured on a turn where the student missed the very
+ *     rule being drilled. Fixed after it was recorded; the guard is now two
+ *     conditions. See `turn-pipeline.md`.
  *
  * Upstream: https://github.com/mpbarbosa/teacher_charles — `teaching/turn.py`
  * runs this, `app.py::chat` turns the events into SSE frames, and `CLAUDE.md`
@@ -293,14 +294,16 @@ export default flow("teacher-charles-turn")
     params: {
       ladderDays: [0.5, 1, 3, 7, 16, 35],
       graduatedStreak: 3,
-      // The guard is `analysis is None`, which is NOT the same as "the analysis
-      // ran". A degraded analysis (timeout, provider down) is an Analysis
-      // object with no findings, so inside a drill it reads as a hit —
-      // measured, see turn-pipeline.md §"Finding: an analysis outage reads as
-      // a drill hit". `None` happens only with no analyzer at all, or a task
-      // that raised or was cancelled.
-      noReviewWhen: "analysis is None",
-      notTheSameAs: "the analysis ran",
+      // Two conditions, because `Analyzer` never returns None: a timeout or a
+      // dead provider gives `Analysis(degraded=True)`, zero findings, the same
+      // shape as a clean turn. Guarding on None alone let an outage graduate
+      // a rule — measured at its worst (the student writes the drill's own
+      // calque and the review came out hit=True), then fixed. See
+      // turn-pipeline.md §"Finding: an analysis outage reads as a drill hit".
+      // `skipped` stays evidence on purpose: there the base ran and matched
+      // nothing, which is the blind spot §6 of the Phase 2 plan already names.
+      noReviewWhen: "analysis is None or not analysis.is_evidence",
+      skippedStillCounts: true,
     },
   })
   .node("scheduleRows", {

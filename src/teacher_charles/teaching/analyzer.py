@@ -161,6 +161,26 @@ class Analysis:
         return bool(self.findings)
 
     @property
+    def is_evidence(self) -> bool:
+        """Se a *ausência* de achados aqui diz alguma coisa sobre o aluno.
+
+        Existe porque a análise degradada é um ``Analysis`` sem achados, que é
+        exatamente a forma de uma análise limpa. Quem lê só os achados não
+        distingue "o aluno não errou" de "o modelo não respondeu" — e a agenda
+        lê ausência como acerto, então três quedas graduavam a regra. Medido no
+        pior caso possível: aluno escreve o próprio calque do drill, a base
+        casa, o modelo da análise cai, e a revisão sai ``hit=True``.
+
+        ``skipped`` **não** entra, e a diferença é o que torna esta
+        propriedade honesta: ali a base rodou e não casou nada, o que é uma
+        observação do texto — fraca, e é o ponto cego pinado em
+        ``test_uma_resposta_vazia_de_conteudo_conta_como_acerto`` —, enquanto
+        ``degraded`` quer dizer que o modelo não respondeu. Uma é uma medição
+        pobre; a outra não é medição nenhuma.
+        """
+        return not self.degraded
+
+    @property
     def rule_ids(self) -> tuple[str, ...]:
         return tuple(f.rule_id for f in self.findings if f.rule_id)
 
