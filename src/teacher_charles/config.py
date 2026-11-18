@@ -54,9 +54,15 @@ class Settings(BaseSettings):
 
     # Default da Fase 1. Nesta classe de hardware o gargalo é banda de
     # memória, e o Ollama oficial roda em CPU pura (não usa a iGPU Intel).
-    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B, o que põe um 4B em ~7-8 tok/s
-    # e um 8B em ~3,5. Ver docs/plano-fase-1.md §1.3.
-    llm_model: str = "qwen3:4b"
+    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B (docs/plano-fase-1.md §1.3). O
+    # 4B foi medido depois, lado a lado com o 3B (§5.5): gera a ~55% da vazão
+    # dele, e não aos ~80% que a extrapolação por tamanho prometia.
+    #
+    # `-instruct`, e não `qwen3:4b`: a tag sem sufixo é o build Thinking-2507,
+    # cujo template abre `<think>` em todo turno, peça o cliente ou não. Com
+    # ele a primeira palavra espera centenas de tokens de raciocínio e a
+    # análise gasta o orçamento inteiro sem devolver JSON (§5.5).
+    llm_model: str = "qwen3:4b-instruct"
 
     ollama_url: str = "http://localhost:11434"
     request_timeout_s: float = 120.0

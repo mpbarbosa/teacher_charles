@@ -78,8 +78,13 @@ uv sync --extra dev
 ```
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3:4b-instruct
 ```
+
+O sufixo importa. `qwen3:4b`, sem ele, é outro modelo: o build *Thinking*, que
+raciocina antes de toda resposta e não deixa desligar. Medido aqui, são minutos
+até a primeira palavra e nenhuma correção estruturada — ver
+[docs/plano-fase-1.md](docs/plano-fase-1.md) §5.5.
 
 ```bash
 uv run teacher-charles --reload
@@ -134,18 +139,24 @@ diferença.
 
 ### Já tem outro modelo baixado?
 
-Não precisa baixar o `qwen3:4b` só para experimentar. Aponte para o que você tem:
+Não precisa baixar o `qwen3:4b-instruct` só para experimentar. Aponte para o que você tem:
 
 ```bash
 TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles
 ```
 
-Um 3B dá para desenvolver. Para uso de verdade, 4B é o default por um motivo: nesta
-classe de hardware o gargalo é banda de memória, e a vazão cai rápido com o tamanho.
-Medido nesta máquina (Intel Core Ultra 5 135U, **Ollama em CPU pura**): **9,3 tok/s num
-3B e 4,0 num 7B**, o que põe um 4B em ~7–8 tok/s e um 8B em ~3,5. Com streaming, 4B é
-tolerável para texto; 8B não é.
+Um 3B dá para desenvolver. O default é 4B-class porque nesta classe de hardware o
+gargalo é banda de memória, e a vazão cai rápido com o tamanho. Medido nesta máquina
+(Intel Core Ultra 5 135U, **Ollama em CPU pura**): **9,3 tok/s num 3B e 4,0 num 7B**.
+Com streaming, 4B é tolerável para texto; 8B não é.
 Ver [docs/plano-fase-1.md](docs/plano-fase-1.md) §1.3 para o método da medição.
+
+O 4B entrava nessa conta por extrapolação (~7–8 tok/s) e foi medido depois, lado a
+lado com o 3B: **gera a ~55% da vazão dele**, não aos ~80% esperados. Na mesma medição
+o 3B empatou com o `qwen3:4b-instruct` na correção estruturada (27 contra 28 de 31
+frases, nenhum falso positivo nos dois) e ganhou em todos os números de latência. O
+que o 4B deveria comprar é a prosa do professor, e isso ainda não foi medido — a
+tabela dos três modelos está na §5.5 do plano.
 
 **A iGPU Intel muda metade dessa conta — ver [a seção da iGPU](#a-igpu-intel-opcional-e-recomendada).**
 A avaliação de prompt fica 13× mais rápida, e é ela que domina a espera pela primeira
@@ -347,6 +358,12 @@ erro e frase correta — `uv run python scripts/measure_latency.py`:
 | Turno completo, frase com erro | 12–16s, porque inclui a análise |
 | Análise, isolada | ~10s, **depois** da resposta — o aluno lê enquanto ela corre |
 | Primeiro turno, com o modelo aquecido | 0,9s |
+
+Esses números são do 3B. O default, `qwen3:4b-instruct`, é mais lento: medido lado
+a lado com ele, leva 11,1s contra 6,6s até a primeira palavra e gera a 2,5–2,8
+tok/s contra 4,9–5,1. Os dois valores são bem maiores que os 2,7s da tabela
+porque nesse dia a máquina estava no perfil de economia de energia — o que vale
+ali é a comparação entre os modelos (plano §5.5).
 
 Dois detalhes de implementação estão por trás desses números, e os dois saíram
 de medição, não de intuição (§5.5):

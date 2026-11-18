@@ -353,8 +353,8 @@ nobody has to download 2.5 GB to get the suite green.
 
 The minimum target is CPU/iGPU without CUDA, and official Ollama does not use
 the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
-7B**, which puts a 4B at ~7–8 and an 8B at ~3.5 — which is why the default is
-4B-class and not 14B. This is a project premise, not a configuration detail:
+7B** — which is why the default is 4B-class and not 14B. This is a project
+premise, not a configuration detail:
 
 - Streaming is not an ornament: it is what makes 7–8 tok/s tolerable. Do not
   accumulate the response before relaying it.
@@ -365,6 +365,25 @@ the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
 - Python is pinned to `>=3.12,<3.13` on purpose: the `ctranslate2` and
   `onnxruntime` wheels, which Phase 1.5's voice will need, lag behind the new
   versions. Do not change the interpreter.
+
+**The 4B figure was an interpolation until it was measured, and it came in
+low.** The plans put a 4B at ~7–8 tok/s by size ratio (~80% of the 3B). Measured
+side by side on the same day (`docs/plano-fase-1.md` §5.5), `qwen3:4b-instruct`
+generates at **~55% of the 3B's rate**. Every "7–8 tok/s" above and in the plans
+is that estimate, not a measurement. The same table says the 3B ties the 4B on
+structured correction (27 vs 28 of 31, no false positive in either) and beats it
+on every latency line — so the 4B default rests on decision 1.3's bet about the
+teacher's prose, which no script here measures. That is an open debt, and if
+the prose ties, the 3B is the better default.
+
+**The default is `qwen3:4b-instruct`, and the suffix is load-bearing.** Bare
+`qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
+with an unconditional `<think>` and never reads the request's `think` field. It
+was the default from E0 while every number in the plans came from a 3B or a
+7B; measured at last, its first word took 231s at the median (479–1124 tokens
+of reasoning per turn) and all 31 analysis calls hit the 45s deadline with no
+JSON. Before "fixing" a model name by dropping the suffix, read `/api/show`'s
+`general.finetune`.
 
 ## Where the data lives
 
