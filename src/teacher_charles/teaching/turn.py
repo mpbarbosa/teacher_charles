@@ -64,6 +64,8 @@ from .modes import partial_name as mode_partial_name
 from .phonetics import Phonetics
 from .phonetics import partial_name as phonetics_partial_name
 from .schedule import Review, Scheduler
+from .syntax import partial_name as syntax_partial_name
+from .syntax import request_note as syntax_request_note
 
 log = logging.getLogger(__name__)
 
@@ -215,6 +217,7 @@ class TurnRunner:
         planner: DrillPlanner | None = None,
         voice_enabled: bool = False,
         phonetics: Phonetics | None = None,
+        syntax_enabled: bool = False,
     ) -> None:
         self._provider = provider
         self._prompts = prompts
@@ -250,6 +253,11 @@ class TurnRunner:
         # mesmo estado de primeira classe do ``voice=None``: a aula funciona
         # inteira sem, e é assim que os testes de conversa seguem simples.
         self._phonetics = phonetics
+        # A ``bool``, like the voice and unlike the G2P: the turn never parses
+        # anything — the syntax view runs from its own route, when the student
+        # presses the button. All the turn needs is whether that button is on
+        # screen, so the teacher can point at it instead of typing an analysis.
+        self._syntax_enabled = syntax_enabled
 
     # --- prompt da resposta ---------------------------------------------- #
 
@@ -303,6 +311,13 @@ class TurnRunner:
         phonetics_partial = phonetics_partial_name(self._phonetics is not None)
         if phonetics_partial is not None:
             blocks.append(self._optional_prompt(phonetics_partial))
+
+        # The Structure button. Rides in this same message for the reason the
+        # IPA partial does: a truth about the product, fixed at startup, and
+        # the prefix keeps its message count.
+        syntax_partial = syntax_partial_name(self._syntax_enabled)
+        if syntax_partial is not None:
+            blocks.append(self._optional_prompt(syntax_partial))
 
         return "\n\n".join(block for block in blocks if block)
 
@@ -420,6 +435,11 @@ class TurnRunner:
         notes = [self.rule_hint(student_text)]
         if mode == "drill":
             notes.append(drill_reminder(drill))
+        # The student asked for a breakdown and the Structure button is on
+        # screen: the teacher is told here, next to the point of generation,
+        # to point at it. At the top of the prompt the same instruction made
+        # things worse — measured, see ``syntax.REQUEST_NOTE``.
+        notes.append(syntax_request_note(self._syntax_enabled, student_text))
 
         return self._with_notes(messages, [note for note in notes if note])
 

@@ -171,6 +171,72 @@ main {
    nao remocao do elemento. */
 body.no-ipa .ipa { display: none; }
 
+/* --- The structure of the sentence ---------------------------------------- */
+/*
+ * On demand, so the button is small and quiet: most bubbles are read, not
+ * analysed. The panel is a real table -- part, function, words -- because that
+ * is what it is, and a screen reader can walk it by row.
+ */
+.tools { margin-top: 0.35rem; }
+
+/* While the teacher is still writing there is no finished sentence to parse. */
+.what.streaming ~ .tools,
+.what.failed ~ .tools { display: none; }
+
+button.structure {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  color: var(--muted);
+}
+
+button.structure[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+.syntax {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.syntax .sentence { margin: 0.6rem 0 0.25rem; font-weight: 600; }
+.syntax .sentence:first-child { margin-top: 0; }
+
+/* Fixed layout: a message of three sentences is three tables, and columns
+   that each sized to their own content would not line up down the panel. */
+.syntax table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.syntax thead th:nth-child(1) { width: 28%; }
+.syntax thead th:nth-child(2) { width: 27%; }
+.syntax td, .syntax th { overflow-wrap: anywhere; }
+
+.syntax th,
+.syntax td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.3rem 0.8rem 0.3rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.syntax thead th {
+  border-top: 0;
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.syntax .chunk { font-weight: 600; }
+.syntax .role { color: var(--accent); }
+.syntax .token { font-weight: 600; }
+.syntax .pos { color: var(--muted); }
+.syntax .relation { color: var(--muted); font-size: 0.78rem; }
+.syntax .relation::before { content: "· "; }
+
+.syntax .note {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 form {
   display: flex;
   gap: 0.6rem;

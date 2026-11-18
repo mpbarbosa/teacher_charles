@@ -1303,6 +1303,41 @@ ausência de correção no drill. `TC_REQUIRE_CURATED_RULE=false` inverte a sond
 ao custo da latência que o default protege — rodada de curadoria deliberada, não
 uso normal.
 
+**A análise sintática também entrou fora da tabela**, e pelo mesmo motivo das
+duas acima. É `teaching/syntax.py`, a rota `POST /api/syntax` e o botão
+**Structure** embaixo de cada fala: o aluno aperta e vê a sentença dividida em
+partes — sujeito, verbo, objetos, sintagmas — com a classe de cada palavra.
+
+Quem analisa é um parser (o pipeline pequeno do spaCy), **nunca o modelo**: é a
+regra da gramática e do IPA aplicada pela terceira vez. Um 4B rotulando
+constituintes devolve uma tabela confiante, e nada adiante distingue rótulo
+certo de errado — o verificador da E4 só aceita achado com regra curada, e não
+existe regra curada para "esta palavra é o sujeito". O parser também erra, mas
+devolve a mesma resposta toda vez, de um conjunto fechado de rótulos, e todo
+texto que o aluno lê é escolhido em tabela no código.
+
+Ela **não depende da E9** pela razão do IPA: lê a palavra escrita. E tem a sua
+versão da assimetria da §6: *I didn't went to the party* sai tão arrumada quanto
+uma frase correta, porque a estrutura está certa e o erro está na forma do
+verbo. Por isso todo resultado carrega a nota de que o painel mostra como a
+sentença é **construída**, não se ela está **correta**.
+
+Três números, medidos nesta máquina: o extra `syntax` leva o ambiente de 92 MB
+para 359 MB (daí ser extra e desligado por default, como a voz); importar o
+spaCy e carregar o pipeline custa ~3,5 s e ~100 MB de RSS, pagos no
+aquecimento; e uma análise custa ~3 ms. Nada disso está no caminho do turno —
+só roda quando o aluno aperta o botão.
+
+**E o prompt foi medido, e a primeira versão piorou o modelo.** Com um partial
+que descrevia o painel, o qwen2.5 3B digitou a própria análise em 3 de 3
+tentativas (*Verb phrase: am in*, *Present Continuous Tense*); sem partial
+nenhum, 0 de 3. Com a instrução dentro da última fala do aluno, só no turno em
+que ele pede, o modelo apontou para o botão em 6 de 6 e não analisou em
+nenhuma. É o que a E4 e a E6 já tinham medido — instrução longe do ponto de
+geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*. O
+4B default não estava baixado na máquina da medição, e três tentativas por
+condição é amostra pequena.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte

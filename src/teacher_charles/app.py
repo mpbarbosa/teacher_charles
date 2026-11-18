@@ -58,6 +58,8 @@ from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
 from .teaching.phonetics import Phonetics, build_phonetics
 from .teaching.schedule import is_graduated
+from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
+from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice
 
@@ -183,6 +185,16 @@ class SpeakRequest(BaseModel):
     voice: str | None = None
 
 
+class SyntaxRequest(BaseModel):
+    """A message to break down.
+
+    Same ceiling as ``ChatRequest``: what gets analysed is a bubble, and a
+    bubble is a chat message.
+    """
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
 def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -238,6 +250,11 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # derrubar a aula.
         phonetics = build_phonetics(settings)
 
+        # ``None`` with the syntax view off, which is the default. Building
+        # loads nothing; whether the extra is even installed is asked of the
+        # import system, not found out by importing 3 s of spaCy here.
+        syntax = build_syntax(settings)
+
         app.state.settings = settings
         app.state.db = conn
         # Em app.state, e não fechado na rota: é aqui que o teste troca o
@@ -246,6 +263,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.provider = chat
         app.state.voice = voice
         app.state.phonetics = phonetics
+        app.state.syntax = syntax
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.base = base if analyzer is not None else None
@@ -269,6 +287,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # o dono do módulo — IPA é texto virando texto, não áudio (ver
             # ``teaching/phonetics.py``).
             phonetics=phonetics,
+            # Whether the Structure button is on screen — asked for *and*
+            # installed. The same function the page uses, so the teacher
+            # never points at a button the page did not draw.
+            syntax_enabled=syntax_on_screen(syntax),
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
@@ -303,10 +325,23 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             asyncio.create_task(phonetics.warm_up()) if phonetics is not None else None
         )
 
+        # Importing spaCy and loading the pipeline cost ~3.5 s, which would
+        # otherwise land on the first press of the button. Only when the extra
+        # is there: warming up a parser that is not installed would just log
+        # the failure `/health` already reports.
+        app.state.syntax_warmup = (
+            asyncio.create_task(syntax.warm_up()) if syntax_on_screen(syntax) else None
+        )
+
         try:
             yield
         finally:
-            for task in (warmup, app.state.voice_warmup, app.state.phonetics_warmup):
+            for task in (
+                warmup,
+                app.state.voice_warmup,
+                app.state.phonetics_warmup,
+                app.state.syntax_warmup,
+            ):
                 if task is not None and not task.done():
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -486,6 +521,18 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "ready": phonetics.ready,
         }
 
+    def syntax_payload() -> dict[str, Any]:
+        """What the page needs to know before drawing the Structure button.
+
+        ``enabled`` here means *on screen*: asked for and installed. Asked for
+        without the extra is ``False`` — `/health` carries the reason, and the
+        student is not handed a button that answers 503 every time.
+        """
+        syntax: Syntax | None = app.state.syntax
+        if syntax is None or not syntax_on_screen(syntax):
+            return {"enabled": False}
+        return {"enabled": True, "model": syntax.model, "ready": syntax.ready}
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -531,6 +578,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "session": session_payload(conn),
                 "voice": voice_payload(),
                 "phonetics": phonetics_payload(),
+                "syntax": syntax_payload(),
                 # A saudação com a transcrição junto: a tela vazia também é
                 # inglês escrito, e a linha vale ali como em qualquer outra.
                 "greeting": {"content": GREETING, "ipa": spell(GREETING)},
@@ -765,6 +813,41 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "X-Audio-Seconds": f"{speech.duration_s:.2f}",
             },
         )
+
+    @app.post("/api/syntax")
+    async def syntax_breakdown(payload: SyntaxRequest) -> JSONResponse:
+        """How one message is built, for the Structure button under it.
+
+        POST with a JSON body for the reason ``/api/chat`` is: what the student
+        wrote is personal data and does not go in a query string.
+
+        **It records nothing.** No turn, no correction, no review: the student
+        looked at a sentence, and looking is not evidence of anything. The
+        text is not even checked against the session — a breakdown is a pure
+        function of the words.
+
+        The parse runs in a thread. It takes ~3 ms once the pipeline is up,
+        but the first one after a failed or skipped warm-up loads spaCy, and
+        that is seconds the event loop cannot spend frozen.
+        """
+        syntax: Syntax | None = app.state.syntax
+        if syntax is None:
+            return JSONResponse(
+                {
+                    "detail": "the syntax view is off on this server",
+                    "how": "start with TC_SYNTAX_ENABLED=true "
+                    "(and `uv sync --extra syntax` first, if it is the first time)",
+                },
+                status_code=503,
+            )
+
+        try:
+            breakdown = await asyncio.to_thread(syntax.parse, payload.text)
+        except SyntaxUnavailable as exc:
+            # Typed, never by substring — same rule as the voice routes.
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+
+        return JSONResponse(breakdown.as_dict())
 
     @app.get("/api/voice")
     async def voice_status() -> JSONResponse:
@@ -1003,6 +1086,26 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "detail": phonetics.last_error,
             }
 
+        # The syntax view does not count towards the status either, for the
+        # IPA line's reason: the lesson is whole without the panel. Asked for
+        # and not installed is the case worth the block — the button is absent
+        # from the page, and this is the only place that says why.
+        syntax: Syntax | None = app.state.syntax
+        if syntax is None:
+            syntax_info: dict[str, Any] = {"ok": True, "enabled": False}
+        else:
+            installed = syntax.installed
+            syntax_info = {
+                "ok": installed and syntax.last_error is None,
+                "enabled": True,
+                "model": syntax.model,
+                "installed": installed,
+                "ready": syntax.ready,
+                "detail": syntax.last_error
+                if installed
+                else "spaCy or the pipeline is not installed; run `uv sync --extra syntax`",
+            }
+
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
             # modelo e base contrastiva. Separar os três evita um health verde
@@ -1025,6 +1128,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "provider": type(app.state.provider).__name__,
             "voice": voice_info,
             "phonetics": phonetics_info,
+            "syntax": syntax_info,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
 

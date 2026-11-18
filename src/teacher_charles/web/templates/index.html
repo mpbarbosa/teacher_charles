@@ -74,7 +74,11 @@
   {# A saudacao vem em `data-`, e nao escrita no app.js, porque ela tem IPA:
      a transcricao sai do espeak no servidor, e a conversa nova precisa dela
      sem ter a bolha de abertura na tela para copiar. #}
+  {# `data-syntax` and not a button in each bubble below: the bubbles the
+     template draws and the ones app.js creates during a turn must get the
+     same control, and one place that builds it cannot disagree with itself. #}
   <main id="transcript" aria-live="polite" aria-label="Conversation"
+        {% if syntax.enabled %}data-syntax="on"{% endif %}
         data-greeting="{{ greeting.content }}" data-greeting-ipa="{{ greeting.ipa }}">
     {% for turn in history %}
     <article class="turn {{ turn.role }}">

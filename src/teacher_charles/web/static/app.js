@@ -53,8 +53,151 @@ function addTurn(role, text, ipa = "") {
   transcript.append(article);
   const bundle = { article, what };
   if (ipa) setIpa(bundle, ipa);
+  addStructureButton(article);
   scrollToEnd();
   return bundle;
+}
+
+// --- The Structure button --------------------------------------------------- //
+//
+// How the sentence is built, on demand: nothing is parsed until the student
+// asks. The breakdown comes from /api/syntax -- a parser on the server, never
+// the model -- and this file only draws what it is given: every label on the
+// panel, and the note under it, is the server's string.
+const syntaxOn = transcript.dataset.syntax === "on";
+
+function addStructureButton(article) {
+  if (!syntaxOn || article.querySelector(".tools")) return;
+  const what = article.querySelector(".what");
+  if (!what) return;
+
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "structure";
+  button.textContent = "Structure";
+  button.title = "How this sentence is built";
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", () => toggleStructure(article, button));
+  tools.append(button);
+
+  // After the IPA line when there is one, so the two lines about the same
+  // words stay together; before the corrections either way.
+  (article.querySelector(".ipa") ?? what).after(tools);
+}
+
+async function toggleStructure(article, button) {
+  const existing = article.querySelector(".syntax");
+  if (existing) {
+    existing.hidden = !existing.hidden;
+    button.setAttribute("aria-expanded", String(!existing.hidden));
+    return;
+  }
+
+  const text = article.querySelector(".what").textContent.trim();
+  if (!text) return;
+
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/syntax", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail ?? `HTTP ${response.status}`);
+
+    article.querySelector(".tools").after(renderStructure(body));
+    button.setAttribute("aria-expanded", "true");
+    setStatus("");
+  } catch (error) {
+    setStatus(`Could not show the structure: ${error.message}`, true);
+  } finally {
+    // A page that froze while the request was out keeps every control off.
+    button.disabled = document.body.classList.contains("stopped");
+  }
+}
+
+function renderStructure(breakdown) {
+  const panel = document.createElement("div");
+  panel.className = "syntax";
+
+  const sentences = breakdown.sentences ?? [];
+  for (const sentence of sentences) {
+    // One sentence needs no heading: it is the bubble right above.
+    if (sentences.length > 1) {
+      const heading = document.createElement("div");
+      heading.className = "sentence";
+      heading.textContent = sentence.text;
+      panel.append(heading);
+    }
+
+    const table = document.createElement("table");
+    const head = table.createTHead().insertRow();
+    for (const title of ["Part", "Function", "Words"]) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.textContent = title;
+      head.append(cell);
+    }
+
+    const rows = table.createTBody();
+    for (const part of sentence.parts) {
+      const row = rows.insertRow();
+      const chunk = document.createElement("th");
+      chunk.scope = "row";
+      chunk.className = "chunk";
+      chunk.textContent = part.text;
+      row.append(chunk);
+      const role = row.insertCell();
+      role.className = "role";
+      role.textContent = part.role;
+
+      const words = row.insertCell();
+      words.className = "words";
+      for (const word of part.words) {
+        const line = document.createElement("div");
+        const token = document.createElement("span");
+        token.className = "token";
+        token.textContent = word.text;
+        const pos = document.createElement("span");
+        pos.className = "pos";
+        pos.textContent = word.pos;
+        line.append(token, " ", pos);
+        // A one-word part already says what the word does, one column over.
+        if (part.words.length > 1) {
+          const relation = document.createElement("span");
+          relation.className = "relation";
+          relation.textContent = word.head ? `${word.role} → ${word.head}` : word.role;
+          line.append(" ", relation);
+        }
+        words.append(line);
+      }
+    }
+    panel.append(table);
+  }
+
+  if (sentences.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "note";
+    empty.textContent = "There is no sentence here to break down.";
+    panel.append(empty);
+  }
+
+  if (breakdown.note) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = breakdown.note;
+    panel.append(note);
+  }
+  return panel;
+}
+
+// The bubbles the template drew -- history and the greeting -- get the same
+// button as the ones a turn creates.
+for (const article of transcript.querySelectorAll("article.turn")) {
+  addStructureButton(article);
 }
 
 /**
