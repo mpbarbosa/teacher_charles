@@ -52,6 +52,7 @@ from .teaching import (
     TurnRunner,
 )
 from .teaching.contrastive import ContrastiveError, load_base
+from .teaching.lessons import ASPECTS, Lesson, LessonError, LessonShelf, load_shelf
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
@@ -255,6 +256,16 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # import system, not found out by importing 3 s of spaCy here.
         syntax = build_syntax(settings)
 
+        # Lessons are curated content like the two bases, and the same policy
+        # holds: a broken shelf is reported by /health and leaves the page
+        # empty, it does not bring the conversation down.
+        try:
+            lessons: LessonShelf | None = load_shelf(settings.data_dir / "lessons")
+            log.info("lessons: %d", len(lessons))
+        except LessonError as exc:
+            log.error("lessons did not load, the shelf stays empty: %s", exc)
+            lessons = None
+
         app.state.settings = settings
         app.state.db = conn
         # Em app.state, e não fechado na rota: é aqui que o teste troca o
@@ -264,6 +275,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.voice = voice
         app.state.phonetics = phonetics
         app.state.syntax = syntax
+        app.state.lessons = lessons
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.base = base if analyzer is not None else None
@@ -533,6 +545,33 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             return {"enabled": False}
         return {"enabled": True, "model": syntax.model, "ready": syntax.ready}
 
+    def lesson_card(lesson: Lesson) -> dict[str, Any]:
+        """What the shelf shows of a lesson before it is opened."""
+        return {
+            "slug": lesson.slug,
+            "title": lesson.title,
+            "summary": lesson.summary,
+            "cefr": lesson.cefr,
+            "source": lesson.source.model_dump(mode="json"),
+        }
+
+    def lesson_payload(lesson: Lesson) -> dict[str, Any]:
+        """A whole lesson for the page and the API, with the IPA filled in.
+
+        The IPA is the one thing not in the YAML: it is computed here by the
+        same espeak that draws the line under every chat bubble, so the lesson
+        and the conversation can never disagree about a word.
+        """
+        body = lesson.model_dump(mode="json", exclude={"notes", "sections"})
+        body["slug"] = lesson.slug
+        body["sections"] = [s.model_dump(mode="json") for s in lesson.ordered_sections()]
+        for note in body["words"] + body["sounds"]:
+            note["ipa"] = spell(note["word"])
+        return body
+
+    def shelf() -> LessonShelf | None:
+        return app.state.lessons
+
     def profile_payload(conn: sqlite3.Connection) -> dict[str, Any]:
         student = active_student(conn)
         changes = LevelRepo(conn).changes(student.id, limit=10)
@@ -612,7 +651,55 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             },
         )
 
+    @app.get("/lessons", response_class=HTMLResponse)
+    async def lessons_page(request: Request) -> HTMLResponse:
+        """The shelf: every curated lesson, for every student."""
+        lessons = shelf()
+        return templates.TemplateResponse(
+            request=request,
+            name="lessons.html",
+            context={
+                "version": __version__,
+                "level": active_student(app.state.db).cefr_level,
+                "lessons": [lesson_card(x) for x in lessons] if lessons is not None else [],
+                "lesson": None,
+            },
+        )
+
+    @app.get("/lessons/{slug}", response_class=HTMLResponse)
+    async def lesson_page(request: Request, slug: str) -> HTMLResponse:
+        lessons = shelf()
+        lesson = lessons.get(slug) if lessons is not None else None
+        if lesson is None:
+            return HTMLResponse("No such lesson.", status_code=404)
+        return templates.TemplateResponse(
+            request=request,
+            name="lessons.html",
+            context={
+                "version": __version__,
+                "level": active_student(app.state.db).cefr_level,
+                "lessons": [],
+                "lesson": lesson_payload(lesson),
+                "aspects": ASPECTS,
+            },
+        )
+
     # --- API -------------------------------------------------------------- #
+
+    @app.get("/api/lessons")
+    async def get_lessons() -> JSONResponse:
+        lessons = shelf()
+        return JSONResponse(
+            {"lessons": [lesson_card(x) for x in lessons] if lessons is not None else []}
+        )
+
+    @app.get("/api/lessons/{slug}")
+    async def get_lesson(slug: str) -> JSONResponse:
+        lessons = shelf()
+        lesson = lessons.get(slug) if lessons is not None else None
+        if lesson is None:
+            return JSONResponse({"error": f"no lesson {slug!r}"}, status_code=404)
+        return JSONResponse(lesson_payload(lesson))
 
     @app.get("/api/progress")
     async def get_progress() -> JSONResponse:
@@ -1106,6 +1193,21 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 else "spaCy or the pipeline is not installed; run `uv sync --extra syntax`",
             }
 
+        # Lessons do not count towards the status, for the IPA line's reason:
+        # the conversation is whole without them. But a shelf that failed to
+        # load would otherwise only be an empty page, so the reason shows here.
+        lessons_shelf: LessonShelf | None = app.state.lessons
+        if lessons_shelf is not None:
+            lessons_info: dict[str, Any] = {"ok": True, "items": len(lessons_shelf)}
+        else:
+            try:
+                lessons_info = {
+                    "ok": True,
+                    "items": len(load_shelf(settings.data_dir / "lessons")),
+                }
+            except LessonError as exc:
+                lessons_info = {"ok": False, "items": 0, "detail": str(exc)}
+
         body = {
             # O serviço está de pé, mas "pronto para ensinar" exige banco,
             # modelo e base contrastiva. Separar os três evita um health verde
@@ -1129,6 +1231,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "voice": voice_info,
             "phonetics": phonetics_info,
             "syntax": syntax_info,
+            "lessons": lessons_info,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
 

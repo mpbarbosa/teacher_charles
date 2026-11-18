@@ -85,6 +85,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/phonetics.py` | The G2P behind the IPA line that runs under every message. Text in, text out — no audio anywhere, which is why it is here and not in `voice/`. Lazy, and a failure costs the line, never the turn. |
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
 | `web/` | Single page: Jinja template + JS/CSS with no build step. |
@@ -431,7 +432,8 @@ Five destinations, and confusing them is a category error:
   ships its models as packages, so there is no cache to choose and nothing to
   fetch after `uv sync`. Bump it together with spaCy's minor version, never
   alone: a pipeline only loads under the minor it was trained for.
-- **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
+- **Curated knowledge** — `data/contrastive/*.yaml`, and with it `data/vocab/`
+  and `data/lessons/`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
   base arrives in E3.
 - **Third-party material** — `corpus/`, outside version control, `corpus/*` in
@@ -510,6 +512,12 @@ student said it, which is measurement over audio.
 **The syntax view has no number either** — the Structure button under each
 message, `teaching/syntax.py` and `POST /api/syntax`. It was in no plan, and it
 does not depend on E9 for the IPA line's reason: it reads the written words.
+
+**Lessons have no number either** — `/lessons`, `teaching/lessons.py` and
+`data/lessons/`. A lesson is a reading of somebody else's text, so it links to
+the source and versions only the analysis; the loader refuses a lesson whose
+citations grow past the budget. It stays out of the prompt, so it costs the
+prefix cache nothing. §5 of `docs/plano-fase-2.md` records it.
 
 **The curation queue has no number either**, and it is recorded in the same
 place for the same reason. It keeps the correction the verifier barred instead

@@ -1,0 +1,365 @@
+"""Lessons: a curated reading of an authentic text, laid out by linguistic level.
+
+A lesson is the third kind of curated content, next to ``contrastive.py`` and
+``vocabulary.py``, and it follows the project's principle one step further:
+**the analysis the student reads is data a curator wrote and a test checked,
+not prose the model improvised.** Charles never sees a lesson. The page shows
+it as it is, and the only thing computed at serve time is the IPA, which comes
+from espeak like every other IPA on screen (``teaching/phonetics.py``).
+
+## The source text is linked, never copied
+
+A lesson is *about* somebody else's text — a speech, an article, a scene. The
+repository is public, so the rule in ``corpus/README.md`` applies whole:
+derive into ``data/``, never copy into it. ``Source`` therefore has a URL and
+a word count and **no field for the text**; ``extra="forbid"`` refuses a
+``text:`` key the way the vocabulary base refuses an ``ipa:`` key. The student
+reads the original where its owner published it.
+
+What a lesson may carry from the source is the short phrase an analysis has to
+point at — *heavy heart*, *took place* against *happened*. Those live in
+``Point.cites`` and nowhere else, and two limits hold them to quotation and
+keep them from becoming a copy by instalments:
+
+- each citation is at most ``MAX_CITE_WORDS`` words, and
+- all citations together are at most ``CITE_BUDGET`` of the source's length.
+
+Both are checked at load time, so a lesson that drifts towards reproducing its
+source fails to load instead of being published. ``tests/test_lessons.py``
+deletes each guard in turn to prove a test is holding it.
+
+## Why the aspects are a fixed list
+
+``Aspect`` is the six levels a reading is analysed at, in teaching order: from
+the word (lexicon, vocabulary) through the sentence (grammar, syntax) to
+meaning (semantics) and sound (phonetics). A free-text heading would let two
+lessons call the same level by two names, and the page orders sections by
+this list, not by the order the curator happened to type.
+
+## What this module does not do
+
+It does not decide which lesson a student sees, and it does not track whether
+a lesson was read. Every lesson is on the shelf for every student; the CEFR
+label is shown, not enforced, because reading above one's level with the
+analysis beside it is the point of a lesson, while a *word* above one's level
+is a lost lesson (``VocabularyBase.at_or_below``). Practice prompts hand a
+starter sentence to the chat input and stop there: what the student writes
+then goes through the ordinary turn, correction and all.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterator, Sequence
+from datetime import date
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from ..config import get_settings
+from ..store.models import CefrLevel
+from .contrastive import RULE_ID_PATTERN
+from .vocabulary import ITEM_ID_PATTERN as VOCAB_ID_PATTERN
+
+LESSON_ID_PATTERN = r"^lesson\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+
+# A citation longer than this is no longer pointing at a phrase; it is
+# reproducing a sentence.
+MAX_CITE_WORDS = 5
+
+# All citations together may not exceed this fraction of the source. A tenth
+# of a 269-word speech is 26 words — room for the phrases an analysis names,
+# and no room for the passage around them.
+CITE_BUDGET = 0.10
+
+Aspect = Literal["lexicon", "vocabulary", "grammar", "syntax", "semantics", "phonetics"]
+
+# Teaching order: word, sentence, meaning, sound. The page sorts by this.
+ASPECTS: tuple[Aspect, ...] = (
+    "lexicon",
+    "vocabulary",
+    "grammar",
+    "syntax",
+    "semantics",
+    "phonetics",
+)
+
+
+class LessonError(ValueError):
+    """The shelf did not load. Carries every problem, not just the first."""
+
+
+def word_count(text: str) -> int:
+    """Words as a reader counts them: runs of letters, digits and apostrophes."""
+    return len(re.findall(r"[A-Za-z0-9’']+", text))
+
+
+class Source(BaseModel):
+    """Where the analysed text lives — a pointer, never the text itself."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # The piece the student opens: headline, outlet, byline, date.
+    title: str = Field(min_length=1)
+    publication: str = Field(min_length=1)
+    author: str = Field(min_length=1)
+    published: date
+    url: str = Field(pattern=r"^https://\S+$")
+
+    # What the piece is about, when that is a work of its own (a show, a
+    # speech): shown under the title so the student knows what they will read.
+    work: str | None = None
+
+    # Length of the analysed text, in words. It is the denominator of the
+    # citation budget, so it is required: without it the budget means nothing.
+    words: int = Field(gt=0)
+
+
+class Point(BaseModel):
+    """One observation about the text."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    heading: str = Field(min_length=1)
+    # The curator's own analysis. Goes to the student, so in English.
+    body: str = Field(min_length=1)
+    # Phrases from the source this point is about, shown as quoted. The only
+    # place source wording may sit, and the place the budget counts.
+    cites: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _cites_are_short(self) -> Point:
+        for cite in self.cites:
+            n = word_count(cite)
+            if n == 0:
+                raise ValueError("an empty citation")
+            if n > MAX_CITE_WORDS:
+                raise ValueError(f"citation {cite!r} has {n} words; the limit is {MAX_CITE_WORDS}")
+        return self
+
+
+class Section(BaseModel):
+    """The analysis at one linguistic level."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    aspect: Aspect
+    title: str = Field(min_length=1)
+    points: list[Point] = Field(min_length=1)
+
+
+class WordNote(BaseModel):
+    """A word from the text worth learning, with what a Brazilian reader needs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    word: str = Field(min_length=1)
+    gloss: str = Field(min_length=1)
+    # The trap or nuance — a false friend, an unusual sense. Optional.
+    note: str | None = None
+    # Bridges to the other two bases, so the lesson and the chat teach the
+    # same thing about the same word. Checked against the bases in tests.
+    vocab_id: str | None = Field(default=None, pattern=VOCAB_ID_PATTERN)
+    rule_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _rule_ids_look_like_rule_ids(self) -> WordNote:
+        for rule_id in self.rule_ids:
+            if not re.match(RULE_ID_PATTERN, rule_id):
+                raise ValueError(f"{self.word}: {rule_id!r} is not shaped like a rule_id")
+        return self
+
+
+class SoundNote(BaseModel):
+    """A pronunciation trap. No IPA field: the transcription comes from espeak."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    word: str = Field(min_length=1)
+    trap: str = Field(min_length=1)
+
+
+class Question(BaseModel):
+    """A self-check question with one right option."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    prompt: str = Field(min_length=1)
+    options: list[str] = Field(min_length=2, max_length=4)
+    # Index into ``options``.
+    answer: int = Field(ge=0)
+    why: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _answer_is_an_option(self) -> Question:
+        if self.answer >= len(self.options):
+            raise ValueError(f"answer {self.answer} but only {len(self.options)} options")
+        if len(set(self.options)) != len(self.options):
+            raise ValueError("two options are the same")
+        return self
+
+
+class Practice(BaseModel):
+    """A writing task the student takes to Charles."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task: str = Field(min_length=1)
+    # Goes into the chat input, unsent. The student finishes the sentence.
+    starter: str = Field(min_length=1, max_length=200)
+
+
+class Lesson(BaseModel):
+    """A curated lesson. One per YAML file in ``data/lessons/``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(pattern=LESSON_ID_PATTERN)
+    title: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    cefr: CefrLevel
+    source: Source
+    sections: list[Section] = Field(min_length=1)
+    words: list[WordNote] = Field(default_factory=list)
+    sounds: list[SoundNote] = Field(default_factory=list)
+    questions: list[Question] = Field(default_factory=list)
+    practice: list[Practice] = Field(default_factory=list)
+    # Curation note. Never reaches the student.
+    notes: str | None = None
+
+    @property
+    def slug(self) -> str:
+        return self.id.removeprefix("lesson.")
+
+    @property
+    def cited_words(self) -> int:
+        return sum(word_count(c) for s in self.sections for p in s.points for c in p.cites)
+
+    def ordered_sections(self) -> list[Section]:
+        return sorted(self.sections, key=lambda s: ASPECTS.index(s.aspect))
+
+    @model_validator(mode="after")
+    def _one_section_per_aspect(self) -> Lesson:
+        aspects = [s.aspect for s in self.sections]
+        repeated = sorted({a for a in aspects if aspects.count(a) > 1})
+        if repeated:
+            raise ValueError(f"more than one section for {', '.join(repeated)}")
+        return self
+
+    @model_validator(mode="after")
+    def _citations_fit_the_budget(self) -> Lesson:
+        """The whole lesson may quote at most ``CITE_BUDGET`` of its source.
+
+        Per-citation length alone would let a lesson rebuild the source five
+        words at a time; this is the guard that stops that.
+        """
+        budget = int(self.source.words * CITE_BUDGET)
+        if self.cited_words > budget:
+            raise ValueError(
+                f"{self.cited_words} cited words; the budget for a "
+                f"{self.source.words}-word source is {budget}"
+            )
+        return self
+
+
+class LessonShelf:
+    """The loaded lessons, by slug, in file order."""
+
+    def __init__(self, lessons: Sequence[Lesson]) -> None:
+        self._lessons = tuple(lessons)
+        self._by_slug = {lesson.slug: lesson for lesson in self._lessons}
+        if len(self._by_slug) != len(self._lessons):
+            raise LessonError("two lessons share an id")
+
+    def __len__(self) -> int:
+        return len(self._lessons)
+
+    def __iter__(self) -> Iterator[Lesson]:
+        return iter(self._lessons)
+
+    def get(self, slug: str) -> Lesson | None:
+        return self._by_slug.get(slug)
+
+
+# --- loading --------------------------------------------------------------- #
+
+
+def load_lessons(directory: Path) -> list[Lesson]:
+    """Validate and return every lesson in ``directory``, in file order.
+
+    Collects the problems of every file before failing, like the other two
+    bases: whoever is curating wants the whole list of what to fix.
+    """
+    if not directory.is_dir():
+        raise LessonError(f"no lesson directory at {directory}")
+
+    lessons: list[Lesson] = []
+    problems: list[str] = []
+
+    for path in sorted(directory.glob("*.yaml")):
+        source = path.name
+        try:
+            document: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            problems.append(f"{source}: invalid YAML — {exc}")
+            continue
+        if not isinstance(document, dict):
+            problems.append(f"{source}: the top of the file must be a mapping")
+            continue
+        try:
+            lesson = Lesson.model_validate(document)
+        except Exception as exc:  # pydantic.ValidationError and ValueError
+            problems.append(f"{source}: {exc}")
+            continue
+        # The file name is the URL: a lesson whose id disagrees with its file
+        # would be served at one address and logged under another.
+        if lesson.slug != path.stem:
+            problems.append(f"{source}: id {lesson.id!r} must be 'lesson.{path.stem}'")
+            continue
+        lessons.append(lesson)
+
+    if problems:
+        raise LessonError(
+            f"{len(problems)} problem(s) in the lessons at {directory}:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return lessons
+
+
+def load_shelf(directory: Path | None = None) -> LessonShelf:
+    """Load the shelf from ``directory`` (default: ``data/lessons/``)."""
+    if directory is None:
+        directory = get_settings().data_dir / "lessons"
+    return LessonShelf(load_lessons(directory))
+
+
+@lru_cache(maxsize=4)
+def get_shelf(directory: Path | None = None) -> LessonShelf:
+    """The process's shelf, loaded once — same policy as the other bases."""
+    return load_shelf(directory)
+
+
+__all__ = [
+    "ASPECTS",
+    "CITE_BUDGET",
+    "LESSON_ID_PATTERN",
+    "MAX_CITE_WORDS",
+    "Aspect",
+    "Lesson",
+    "LessonError",
+    "LessonShelf",
+    "Point",
+    "Practice",
+    "Question",
+    "Section",
+    "SoundNote",
+    "Source",
+    "WordNote",
+    "get_shelf",
+    "load_lessons",
+    "load_shelf",
+    "word_count",
+]
