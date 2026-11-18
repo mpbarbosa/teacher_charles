@@ -340,7 +340,7 @@ def settings_for(tmp_path, **overrides) -> Settings:
 def test_build_provider_defaults_to_ollama(tmp_path):
     provider = build_provider(settings_for(tmp_path))
     assert isinstance(provider, OllamaProvider)
-    assert provider.model == "qwen3:4b"
+    assert provider.model == "qwen3:4b-instruct"
     assert provider.name == "ollama"
 
 
