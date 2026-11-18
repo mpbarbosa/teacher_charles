@@ -627,5 +627,16 @@ shutdownButton.addEventListener("click", async () => {
   }
 });
 
+// A lesson's "Write it to Charles" arrives as ?draft=: the starter goes into
+// the box unsent, for the student to finish. The query is dropped from the
+// address right away so a reload does not paste it a second time.
+const draft = new URLSearchParams(window.location.search).get("draft");
+if (draft) {
+  input.value = draft;
+  autoGrow();
+  window.history.replaceState(null, "", window.location.pathname);
+}
+
 input.focus();
+if (draft) input.setSelectionRange(input.value.length, input.value.length);
 scrollToEnd();
