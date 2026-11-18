@@ -113,6 +113,21 @@ class Settings(BaseSettings):
     # não a emite.
     phonetics_stress: bool = True
 
+    # --- Syntax ----------------------------------------------------------
+    # The Structure button under each message: the sentence split into its
+    # parts by a parser (teaching/syntax.py), never by the model.
+    #
+    # **Off** by default, like the voice and unlike the IPA line, and for the
+    # voice's reason: it needs an extra (`uv sync --extra syntax`, +267 MB) and
+    # loads a pipeline into the process. Asked for without the extra, the
+    # button stays off the page and `/health` says why.
+    syntax_enabled: bool = False
+
+    # The spaCy pipeline, by package name. The extra installs the small one;
+    # a larger one (`en_core_web_md`, `_trf`) parses better and has to be
+    # installed by hand.
+    syntax_model: str = "en_core_web_sm"
+
     # --- Voz (Fase 1.5) --------------------------------------------------
     # Desligada por default. Ligar baixa dois modelos e carrega dois runtimes
     # (ctranslate2 e onnxruntime) na memória do processo; quem só quer o chat

@@ -58,6 +58,8 @@ não prosa que o modelo improvisa.
   (`phonemizer` e o espeak-ng do `espeakng_loader`), sem peso para baixar
 - Para a voz (opcional): mais ~400 MB de wheels e ~120 MB de pesos, e um
   microfone
+- Para o botão **Structure** (opcional): mais ~267 MB de wheels — o spaCy e o
+  pipeline `en_core_web_sm`, que vem como wheel e não como download à parte
 
 ## Rodar em desenvolvimento
 
@@ -167,6 +169,14 @@ O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
 Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_MODEL`,
 `TC_STT_CPU_THREADS`. Cada default tem uma medição atrás dele — ver a seção
 "Falar com o Charles".
+
+Da análise sintática: `TC_SYNTAX_ENABLED` (desligada por default) e
+`TC_SYNTAX_MODEL`. Com `uv sync --extra dev --extra syntax` e
+`TC_SYNTAX_ENABLED=true` — ou `scripts/run.sh --sync --syntax` —, cada fala
+ganha um botão **Structure** que abre a sentença dividida em partes (sujeito,
+verbo, objetos, sintagmas) com a classe de cada palavra. Quem analisa é um
+parser, não o modelo, e o painel diz isso: mostra como a sentença é
+construída, não se ela está correta.
 
 ### A iGPU Intel: opcional, e recomendada
 
@@ -569,6 +579,7 @@ Vulkan — ele diz o comando quando não encontra o segundo.
 | Turno de 15s em frase com erro | A análise custa ~8-10s e roda **depois** da resposta. O aluno lê enquanto ela corre; a anotação aparece quando fica pronta. |
 | A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
 | A linha de IPA não aparece embaixo das falas | Veja o interruptor **Phonetics** no cabeçalho; se ele nem existe, o `/health` diz por quê no bloco `phonetics` (espeak que não carregou, ou `TC_PHONETICS_ENABLED=false`). |
+| O botão **Structure** não aparece embaixo das falas | A análise sintática vem desligada. `uv sync --extra dev --extra syntax` e suba com `TC_SYNTAX_ENABLED=true`. Ligada sem o extra, o botão continua fora da página: o bloco `syntax` do `/health` diz `installed: false`. |
 | O microfone não aparece na página | A voz vem desligada. `uv sync --extra voice`, baixe os pesos e suba com `TC_VOICE_ENABLED=true`. |
 | A voz está ligada mas o Charles não fala | Veja `/health`: o bloco `voice` diz qual motor não carregou e por quê. Peso ausente é o caso comum. |
 | O Charles escreve mas o navegador não toca som | O navegador bloqueia áudio sem gesto do usuário. Clique em qualquer lugar da página e mande outro turno. |
@@ -592,6 +603,7 @@ src/         o código
     level.py     fala do aluno -> nível CEFR estimado, com histerese
     modes.py     os três modos; o drill escolhe a regra no error log do aluno
     phonetics.py texto -> IPA do espeak: a linha de pronúncia de cada fala
+    syntax.py    texto -> partes da sentença, do parser: o botão Structure
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única (conversa) e a tela /progress; JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

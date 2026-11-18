@@ -29,6 +29,14 @@ uv run python scripts/fetch_voice_models.py      # Kokoro; Whisper downloads its
 TC_VOICE_ENABLED=true uv run teacher-charles
 ```
 
+The Structure button (the syntax view) is an **extra and off by default** too,
+for the voice's reason — ~267 MB of wheels, spaCy and its small pipeline:
+
+```bash
+uv sync --extra dev --extra syntax
+TC_SYNTAX_ENABLED=true uv run teacher-charles    # or scripts/run.sh --syntax
+```
+
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
 uv run pytest -m "not integration"       # 721 tests, ~20s, no model at all
@@ -75,6 +83,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `voice/` | The two ends of Phase 1.5 — STT and TTS — behind `base.SpeechToText` / `base.TextToSpeech`, in the same arrangement as `llm/`. **It does not import `teaching/`**: it takes bytes and returns text; it takes text and returns PCM. |
 | `store/` | SQLite through the stdlib's `sqlite3`. Schema in numbered `.sql` files, no ORM; the dataclasses in `models.py` only give the rows names. |
 | `teaching/phonetics.py` | The G2P behind the IPA line that runs under every message. Text in, text out — no audio anywhere, which is why it is here and not in `voice/`. Lazy, and a failure costs the line, never the turn. |
+| `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
@@ -235,6 +244,46 @@ writes sentence 2; here there is nothing to bring forward, because the G2P
 finished before the frame reached the page. Per sentence it would only produce a
 patched line where the last word of one and the first of the next never meet.
 
+**The syntax breakdown comes from a parser, never from the model** — the same
+rule a third time, after grammar and sounds. `teaching/syntax.py` runs spaCy's
+small pipeline and every word the student reads on the panel is chosen in its
+closed tables (`PARTS_OF_SPEECH`, `WORD_ROLES`); a tag outside them shows as
+`other (tag)` instead of being guessed. Two things are left out on purpose.
+Person, number and tense: the pipeline tagged *was* in *I was tired* as third
+person, and there is no telling which of its morphology calls are the wrong
+ones. And meaning: *in a sewer* is "prepositional phrase", never "place".
+
+**A breakdown is not a verdict, and `NOTE` is what says so.** *I didn't went to
+the party* parses as cleanly as a correct sentence — the structure is fine, the
+mistake is in the verb form — so a tidy panel under a wrong sentence would read
+as approval. The note travels in the payload (`Breakdown.as_dict`) and not as a
+string in the template, so a test can hold it there. §6's asymmetry again: the
+absence of a complaint is not a pass.
+
+**The button is on screen only when asked for *and* installed**, and one
+function decides it for the page and for the prompt (`syntax.on_screen`).
+Asked for without the extra, the lesson is whole, the button is absent, and
+`/health` carries the reason without changing the status. `installed` asks the
+import system (`find_spec`) and imports nothing: importing spaCy costs ~3 s,
+which is also why the warm-up runs in a thread, unlike the IPA's.
+
+**Telling Charles about the button at the top of the prompt made him worse,
+and the partial is short because of it.** Measured on qwen2.5 3B, three runs
+each way, asked for a syntax analysis: with no partial he answered in two
+sentences of prose; with a partial that described the panel ("subject, verb,
+objects… the part of speech of each word") he typed a breakdown three times out
+of three — *Verb phrase: am in*, *Present Continuous Tense*. The description
+primed the thing it forbade. What works is what E4 and E6 already measured:
+the instruction goes **inside the student's last message**
+(`syntax.request_note`, through `_with_notes`), only on a turn where a pattern
+says the student asked, and then he pointed at the button six times out of
+six. `partials/app/syntax.md` names the button and nothing else, and a test
+keeps the priming words out of it. The default 4B was not downloaded on the
+machine that measured this.
+
+**`/api/syntax` records nothing** — no turn, no correction, no review. Looking
+at a sentence is not evidence, for the reason `/api/stt` records no turn.
+
 **The student's level is decided by code, not by the model.** `teaching/level.py`
 has a deterministic rubric (sentence length, long words, connectives,
 structures, fewer errors with a curated rule) calibrated in
@@ -368,7 +417,7 @@ the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
 
 ## Where the data lives
 
-Four destinations, and confusing them is a category error:
+Five destinations, and confusing them is a category error:
 
 - **Model weights** — in `~/.ollama`, never in the repo. The voice ones neither:
   Kokoro in `$XDG_CACHE_HOME/teacher-charles/voice` (a cache, re-downloadable)
@@ -377,6 +426,11 @@ Four destinations, and confusing them is a category error:
   a cache. **Never in `XDG_DATA_HOME`**, which is the student's personal data.
 - **Student progress** — `$XDG_DATA_HOME/teacher-charles/charles.db`, outside
   the repo. It is personal data. `*.db` is in `.gitignore`.
+- **The syntax pipeline** — in the virtualenv, as a wheel (`en_core_web_sm`,
+  from spaCy's GitHub releases, pinned by URL in the `syntax` extra). spaCy
+  ships its models as packages, so there is no cache to choose and nothing to
+  fetch after `uv sync`. Bump it together with spaCy's minor version, never
+  alone: a pipeline only loads under the minor it was trained for.
 - **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
   base arrives in E3.
@@ -452,6 +506,10 @@ something else. §5 of `docs/plano-fase-2.md` records it under the table. It
 does not depend on E9 either, and for the reason the gate exists: the line says
 how the written word is pronounced, which is a table; E11 would judge how the
 student said it, which is measurement over audio.
+
+**The syntax view has no number either** — the Structure button under each
+message, `teaching/syntax.py` and `POST /api/syntax`. It was in no plan, and it
+does not depend on E9 for the IPA line's reason: it reads the written words.
 
 **The curation queue has no number either**, and it is recorded in the same
 place for the same reason. It keeps the correction the verifier barred instead
