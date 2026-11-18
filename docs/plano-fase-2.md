@@ -1334,9 +1334,30 @@ tentativas (*Verb phrase: am in*, *Present Continuous Tense*); sem partial
 nenhum, 0 de 3. Com a instrução dentro da última fala do aluno, só no turno em
 que ele pede, o modelo apontou para o botão em 6 de 6 e não analisou em
 nenhuma. É o que a E4 e a E6 já tinham medido — instrução longe do ponto de
-geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*. O
-4B default não estava baixado na máquina da medição, e três tentativas por
-condição é amostra pequena.
+geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*.
+
+**O 4B default foi medido depois**, com a mesma pergunta, e concorda com o que
+foi entregue, mas não com o motivo:
+
+| Arranjo (qwen3:4b) | Apontou para o botão | Digitou análise |
+|---|---|---|
+| Sem análise sintática (nem partial nem nota) | — | 0 de 3 |
+| Partial descritivo, sem nota | 3 de 3 | 0 de 3 |
+| Partial curto, sem nota | 2 de 3 | 0 de 3 |
+| Partial curto + nota (o entregue) | 9 de 9 | 0 de 9 |
+
+A indução **não se repetiu**: um modelo de raciocínio relê a proibição que o 3B
+pulou. E o partial curto sozinho não basta nele — a terceira resposta mudou de
+assunto. Então é a nota que carrega o comportamento nos dois modelos, e o
+partial descritivo fica descartado só pelo 3B. Três tentativas por condição
+continua sendo amostra pequena.
+
+Duas ressalvas sobre essa medição. Das 9 respostas do arranjo entregue, 6
+foram com `think=false` e 3 com o default do servidor; nas de `think=false` o
+Ollama 0.35.0 devolveu o raciocínio do modelo dentro do conteúdo, antes de um
+`</think>`, e a contagem acima é sobre o texto depois dele. E a maioria das
+respostas levou de 2 a 5 minutos (uma chegou a 15), mas com outro servidor do
+Charles dividindo a máquina — não serve como número de latência.
 
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
