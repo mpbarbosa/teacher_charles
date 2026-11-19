@@ -670,11 +670,17 @@ main.lesson .full-text .reading .now-reading {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-/* With a voice, a sentence is a place to start reading from (lesson.js). */
+/* With a voice, a word is a place to start reading from (lesson.js). */
 main.lesson .full-text .reading.clickable .sentence { cursor: pointer; }
 main.lesson .full-text .reading.clickable .sentence:hover:not(.now-reading) {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 0.2rem;
+}
+/* ...and the word under the pointer is where the reading would begin. */
+main.lesson .full-text .reading.clickable .w:hover {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  text-underline-offset: 0.18em;
 }
 main.lesson .full-text .reading .w.now-word {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
