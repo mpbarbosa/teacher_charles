@@ -35,7 +35,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd .claude/worktrees/the-lesson-shelf && TC_LLM_MODEL=qwen3:4b-instruct uv run teacher-charles --port 8001"
+        "TC_VOICE_ENABLED=true uv run teacher-charles --port 8001"
       ],
       "port": 8001
     }
