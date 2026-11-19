@@ -65,9 +65,19 @@ script that reads one of them can be understood without the file present.
 | path | content | cues | runtime |
 |---|---|---|---|
 | `subtitles/friends/friends-1x01.en.srt` | *Friends*, season 1 episode 1, English, from a BluRay release | 365 | 22m38s |
+| `lessons/mon-mothma-senate-speech.txt` | Mon Mothma's Senate speech, *Andor* season 2 episode 9, 3 paragraphs, 266 words | — | — |
 
-Imported 2026-11-10 from a local archive supplied by the person running the
-project. Rights are theirs to hold; this repo asserts none.
+The subtitles were imported 2026-11-10 from a local archive supplied by the
+person running the project. Rights are theirs to hold; this repo asserts none.
+
+The speech was pasted in by hand on 2026-11-18 by the person running the
+project, from "Figures of Speech: Andor's Monologues" (Brandon Wainerdi,
+StarWars.com, 2025-06-27, `starwars.com/news/andor-monologues`), which gives
+it as one unbroken block quote. That is a web page, not the local archive the
+paragraph above describes; the copy is theirs to hold, as above. Its 266 words
+are three fewer than the 269 the lesson was analysed against
+(`source.words`), within the tolerance the page allows; the difference was
+not traced to a line.
 
 ## What was looked at and not imported
 
