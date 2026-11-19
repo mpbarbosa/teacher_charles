@@ -157,6 +157,21 @@ class Settings(BaseSettings):
     stt_model: str = "base.en"
     stt_compute_type: str = "int8"
 
+    # The Whisper that times each word of the lesson reader's audio, so the
+    # page can light the word being said; empty, or the same as `stt_model`,
+    # times with the STT itself. Measured on the Mon Mothma lesson read by
+    # Kokoro (21 sentences, 80 s of audio), against small.en as the referee:
+    #
+    #     model     CPU per second of audio   word starts vs small.en (median)
+    #     base.en   0.22-0.36                 0.06 s
+    #     tiny.en   0.13-0.14                 0.12 s
+    #
+    # Synthesis alone is 0.57-0.62, so base.en put the pair at or past real
+    # time and the reader stalled 1.5-2.5 s between sentences; tiny.en leaves
+    # room. A tenth of a second is a third of a short word, and the light is
+    # on the word, not on its syllables.
+    stt_timing_model: str = "tiny.en"
+
     # Feixe 1 é busca gulosa. Numa frase curta de aluno o ganho de qualidade
     # do feixe 5 não paga o tempo nesta CPU — medido em §5.6.
     stt_beam_size: int = 1

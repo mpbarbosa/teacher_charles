@@ -208,3 +208,26 @@ class TestAnteparos:
         await tts.warm_up()
         assert not tts.ready
         assert "fetch_voice_models" in (tts.last_error or "")
+
+
+# --- the engine that times the reader's words -------------------------------- #
+
+
+def test_words_are_timed_by_a_smaller_whisper_than_the_students():
+    """base.en beside the synthesis stalled the reader; tiny.en keeps up."""
+    voice = build_voice(make_settings(voice_enabled=True))
+    assert voice.timer is not None
+    assert voice.timer.model == "tiny.en"
+    assert voice.stt.model == "base.en"
+    assert voice.word_timer is voice.timer
+
+
+def test_the_same_model_twice_is_one_engine():
+    voice = build_voice(make_settings(voice_enabled=True, stt_timing_model="base.en"))
+    assert voice.timer is None
+    assert voice.word_timer is voice.stt
+
+
+def test_no_timing_model_times_with_the_stt():
+    voice = build_voice(make_settings(voice_enabled=True, stt_timing_model=""))
+    assert voice.word_timer is voice.stt

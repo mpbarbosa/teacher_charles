@@ -37,9 +37,14 @@
 // sentence per call -- 600 characters at most, the same ceiling the chat's
 // voice lives under -- so the text goes out sentence by sentence, the next one
 // synthesising while the current one plays. The sentence being spoken is lit,
-// in the text and in its IPA line, so the eye can follow the voice. Nothing of
-// it is cached: a reading is minutes of audio, and a second one is rare enough
-// to pay for again.
+// in the text and in its IPA line, so the eye can follow the voice, and inside
+// it the word being said is lit stronger. Kokoro gives no timings, so they are
+// measured: each sentence's audio is kept on the server (`timings: true`),
+// and a second request has Whisper listen to it and say when each word starts
+// (/api/tts/{id}/words) while the audio already plays. The page follows the
+// playhead against them; without them it lights the sentence alone. Nothing
+// of it is cached: a reading is minutes of audio, and a second one is rare
+// enough to pay for again.
 
 (() => {
   const cache = new Map(); // word -> Promise<Blob>, Charles's audio
@@ -113,6 +118,31 @@
     }).then((response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.blob();
+    });
+  }
+
+  /**
+   * One sentence for the reader: its audio, and a promise of when each word
+   * starts. The audio comes first and can play at once; the timings are a
+   * second request, made as soon as the audio is in, because measuring them
+   * is a Whisper pass the sound should not wait for. They resolve to [] when
+   * the server could not time the sentence -- then only the sentence is lit.
+   */
+  function speakTimed(text, voice) {
+    return fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice, timings: true }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const id = response.headers.get("X-Speech-Id");
+      const starts = id
+        ? fetch(`/api/tts/${encodeURIComponent(id)}/words`)
+            .then((r) => (r.ok ? r.json() : { starts: [] }))
+            .then((body) => (Array.isArray(body.starts) ? body.starts : []))
+            .catch(() => [])
+        : Promise.resolve([]);
+      return { blob: await response.blob(), starts };
     });
   }
 
@@ -419,6 +449,11 @@
   // Under the route's 600 with room to spare: a sentence longer than this is
   // cut at a word, and its parts light the same sentence one after another.
   const READ_MAX_CHARS = 400;
+  // How many sentences are fetched before they are needed. Synthesis runs at
+  // about half real time, but a run of short sentences plays faster than the
+  // long one after it synthesises: measured on the lesson, two ahead left a
+  // 4.5 s silence before "And as I look around me now...". Four covers it.
+  const READ_AHEAD = 4;
 
   let reader = null; // { button, label }, while the reader has the floor
 
@@ -452,6 +487,67 @@
     for (const el of lit) el.classList.add("now-reading");
   }
 
+  /**
+   * Lights word `index` of `sentence`, and the IPA words it is part of; -1
+   * lights none. The IPA words are named by the word's `data-ipa`, inside the
+   * IPA span that shares the sentence's `data-s`.
+   */
+  function markWord(sentence, index) {
+    const lit = [];
+    const word = index >= 0 ? sentence?.querySelector(`.w[data-w="${index}"]`) : null;
+    if (word) {
+      lit.push(word);
+      const ipa = document.querySelector(`.full-text .ipa [data-s="${sentence.dataset.s}"]`);
+      for (const t of (word.dataset.ipa ?? "").split(" ").filter(Boolean)) {
+        const token = ipa?.querySelector(`.w[data-t="${t}"]`);
+        if (token) lit.push(token);
+      }
+    }
+    for (const el of document.querySelectorAll(".full-text .now-word")) {
+      if (!lit.includes(el)) el.classList.remove("now-word");
+    }
+    for (const el of lit) el.classList.add("now-word");
+  }
+
+  /**
+   * Keeps the lit word on the one being said, for as long as `audio` is the
+   * one playing. `timings` is the promise of the piece's word starts; the
+   * audio may be playing before they arrive, and then the light joins in on
+   * the word being said, not the first one. `first` is the index of the
+   * piece's first word in the sentence (non-zero only for the second part of
+   * a sentence too long for one call).
+   *
+   * Driven by animation frames, which track the voice closely, and by the
+   * audio's own `timeupdate`, a few times a second: frames stop in a hidden
+   * tab, and the light must not freeze when the student looks away.
+   */
+  function follow(audio, sentence, timings, first) {
+    let starts = [];
+    let shown = -2;
+    const update = () => {
+      if (current?.audio !== audio || !starts.length) return;
+      const t = audio.currentTime;
+      let k = -1;
+      while (k + 1 < starts.length && starts[k + 1] <= t) k += 1;
+      const index = k < 0 ? -1 : first + k;
+      if (index !== shown) {
+        markWord(sentence, index);
+        shown = index;
+      }
+    };
+    const frame = () => {
+      if (current?.audio !== audio) return;
+      update();
+      requestAnimationFrame(frame);
+    };
+    audio.addEventListener("timeupdate", update);
+    timings.then((resolved) => {
+      starts = resolved;
+      update();
+    });
+    requestAnimationFrame(frame);
+  }
+
   function endReading() {
     if (!reader) return;
     const { button, label } = reader;
@@ -460,6 +556,7 @@
     button.classList.remove("loading");
     button.setAttribute("aria-pressed", "false");
     mark(null);
+    markWord(null, -1);
   }
 
   async function readAloud(button) {
@@ -469,9 +566,17 @@
     if (wasReading) return;
 
     // One piece per sentence the server cut, so what is heard, what is lit
-    // in the text and what is lit in the IPA are the same sentence.
+    // in the text and what is lit in the IPA are the same sentence. `first`
+    // is the piece's first word in its sentence, for the word timings.
     const queue = [...document.querySelectorAll(".full-text .reading .sentence")].flatMap(
-      (sentence) => wrap(sentence.textContent).map((text) => ({ sentence, text }))
+      (sentence) => {
+        let first = 0;
+        return wrap(sentence.textContent).map((text) => {
+          const piece = { sentence, text, first };
+          first += text.split(/\s+/).length;
+          return piece;
+        });
+      }
     );
     if (!queue.length) return;
 
@@ -483,20 +588,22 @@
     button.setAttribute("aria-pressed", "true");
     button.textContent = "■ Stop";
 
-    // The next piece synthesises while this one plays. A failure waits to be
+    // The next pieces synthesise while this one plays. A failure waits to be
     // awaited, so a piece the student never reaches never reports one.
+    const pending = new Map(); // index -> Promise<{ blob, starts }>
     const ahead = (i) => {
-      if (i >= queue.length) return null;
-      const pending = speak(queue[i].text, voice);
-      pending.catch(() => {});
-      return pending;
+      if (i >= queue.length || pending.has(i)) return;
+      const request = speakTimed(queue[i].text, voice);
+      request.catch(() => {});
+      pending.set(i, request);
     };
-    let next = ahead(0);
     for (let i = 0; i < queue.length; i += 1) {
-      let blob;
+      for (let k = i; k <= i + READ_AHEAD; k += 1) ahead(k);
+      let piece;
       button.classList.add("loading");
       try {
-        blob = await next;
+        piece = await pending.get(i);
+        pending.delete(i);
       } catch (error) {
         if (reader !== run) return;
         endReading();
@@ -507,11 +614,15 @@
         button.classList.remove("loading");
       }
       if (reader !== run) return;
-      next = ahead(i + 1);
-      mark(queue[i].sentence);
-      queue[i].sentence.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const { sentence, first } = queue[i];
+      mark(sentence);
+      markWord(sentence, -1);
+      sentence.scrollIntoView({ block: "nearest", behavior: "smooth" });
       try {
-        if (!(await play(blob, button))) return; // cut: stop() already tidied up
+        const playing = play(piece.blob, button);
+        // `play` sets `current` before it returns, so its audio is at hand.
+        follow(current.audio, sentence, piece.starts, first);
+        if (!(await playing)) return; // cut: stop() already tidied up
       } catch (error) {
         if (reader === run) endReading();
         blocked(button, error);

@@ -65,15 +65,29 @@ class Voice:
 
     stt: SpeechToText
     tts: TextToSpeech
+    # The engine that times the words of synthesised speech for the lesson
+    # reader, when it is not ``stt`` itself. A second, smaller Whisper: the
+    # timing runs beside the synthesis on the same CPU, and with base.en the
+    # two together needed about as much CPU as the audio lasts, so the reader
+    # stalled between sentences. ``None`` means ``stt`` times the words.
+    timer: SpeechToText | None = None
+
+    @property
+    def word_timer(self) -> SpeechToText:
+        return self.timer or self.stt
 
     async def warm_up(self) -> None:
         """Aquece os dois. Nenhum dos dois propaga erro — ver ``base``."""
         await self.stt.warm_up()
         await self.tts.warm_up()
+        if self.timer is not None:
+            await self.timer.warm_up()
 
     async def aclose(self) -> None:
         await self.stt.aclose()
         await self.tts.aclose()
+        if self.timer is not None:
+            await self.timer.aclose()
 
 
 def build_voice(settings: Settings) -> Voice | None:
@@ -99,7 +113,17 @@ def build_voice(settings: Settings) -> Voice | None:
     from .kokoro import KokoroTTS
     from .whisper import WhisperSTT
 
+    timer = None
+    if settings.stt_timing_model and settings.stt_timing_model != settings.stt_model:
+        timer = WhisperSTT(
+            model=settings.stt_timing_model,
+            compute_type=settings.stt_compute_type,
+            beam_size=1,
+            cpu_threads=settings.stt_cpu_threads,
+        )
+
     return Voice(
+        timer=timer,
         stt=WhisperSTT(
             model=settings.stt_model,
             compute_type=settings.stt_compute_type,

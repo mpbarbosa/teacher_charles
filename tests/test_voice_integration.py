@@ -200,3 +200,31 @@ async def test_a_resposta_do_professor_vira_fala_sentenca_por_sentenca(tts):
     audio = sum(piece.duration_s for piece in pieces)
     # Folga de verdade, não empate: é o que faz a fala sair contínua.
     assert synthesis < audio
+
+
+# --- word timings for the lesson reader ------------------------------------- #
+
+
+async def test_whisper_times_every_word_of_kokoros_reading(stt, tts):
+    """The reader's word highlight, end to end: Kokoro speaks, Whisper times it.
+
+    Each written word gets a start, the starts run forward inside the audio,
+    and the pauses Kokoro makes at the commas show up between the words around
+    them -- the timings are of this audio, not spread evenly over it.
+    """
+    from teacher_charles.voice.align import word_starts
+
+    await warmed(tts)
+    await warmed(stt)
+    text = "When truth leaves us, when we let it slip away, we become vulnerable."
+    speech = await tts.speak(text, "bf_emma")
+    words = text.split()
+    starts = word_starts(words, await stt.word_times(speech), speech.duration_s)
+
+    assert len(starts) == len(words)
+    assert starts == sorted(starts)
+    assert 0.0 <= starts[0] < 0.5
+    assert starts[-1] < speech.duration_s
+    # Two words either side of the first comma: the gap across "us," is
+    # wider than the gap inside "truth leaves".
+    assert starts[4] - starts[3] > starts[2] - starts[1]

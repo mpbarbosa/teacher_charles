@@ -86,13 +86,19 @@
 
         Both lines are cut into the same sentences (app.full_text_sentences),
         and a sentence and its IPA share a `data-s`: that is what lets the
-        reader light the one it is speaking in both (lesson.js).
+        reader light the one it is speaking in both (lesson.js). Inside, each
+        written word is a `.w` with its index, the one the route's timings
+        use, and `data-ipa` names the IPA words (`data-t`) it is part of.
       #}
       <div class="reading" id="full-text-reading">
         {% for paragraph in full_text_sentences %}{% set p = loop.index0 %}<p>
-          {%- for s in paragraph %}<span class="sentence" data-s="{{ p }}.{{ loop.index0 }}">{{ s.text }}</span>{{ " " if not loop.last }}{% endfor -%}
+          {%- for s in paragraph %}<span class="sentence" data-s="{{ p }}.{{ loop.index0 }}">
+            {%- for w in s.words %}<span class="w" data-w="{{ loop.index0 }}"{% if s.ipa_of %} data-ipa="{{ s.ipa_of[loop.index0] }}"{% endif %}>{{ w }}</span>{{ " " if not loop.last }}{% endfor -%}
+          </span>{{ " " if not loop.last }}{% endfor -%}
         </p>{% if paragraph|map(attribute="ipa")|select|first %}<div class="ipa" hidden>/
-          {%- for s in paragraph %}<span data-s="{{ p }}.{{ loop.index0 }}">{{ s.ipa }}</span>{{ " " if not loop.last }}{% endfor -%}
+          {%- for s in paragraph %}<span data-s="{{ p }}.{{ loop.index0 }}">
+            {%- for t in s.ipa_words %}<span class="w" data-t="{{ loop.index0 }}">{{ t }}</span>{{ " " if not loop.last }}{% endfor -%}
+          </span>{{ " " if not loop.last }}{% endfor -%}
         /</div>{% endif %}{% endfor %}
       </div>
       <p class="byline">

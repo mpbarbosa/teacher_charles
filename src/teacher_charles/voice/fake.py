@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .base import Speech, SpeechToText, TextToSpeech, Transcript, VoiceError
+from .base import Speech, SpeechToText, TextToSpeech, TimedWord, Transcript, VoiceError
 
 # Taxa do Kokoro. O falso usa a mesma para o código de borda que monta WAV ver
 # o mesmo número que veria em produção.
@@ -38,8 +38,12 @@ class FakeSTT(SpeechToText):
         transcripts: list[str] | str = "I have 30 years.",
         model: str = "fake-stt",
         error: Exception | None = None,
+        heard: list[TimedWord] | None = None,
     ) -> None:
         self.model = model
+        # What `word_times` reports, for a test of the reader's timings.
+        self.heard = list(heard or [])
+        self.timed: list[Speech] = []
         self.transcripts = [transcripts] if isinstance(transcripts, str) else list(transcripts)
         if not self.transcripts:
             raise ValueError("FakeSTT precisa de ao menos uma transcrição")
@@ -70,6 +74,12 @@ class FakeSTT(SpeechToText):
             elapsed_ms=1.0,
             confidence=0.9,
         )
+
+    async def word_times(self, speech: Speech) -> list[TimedWord]:
+        self.timed.append(speech)
+        if self.error is not None:
+            raise self.error
+        return list(self.heard)
 
     async def warm_up(self) -> None:
         self.warmed = True
