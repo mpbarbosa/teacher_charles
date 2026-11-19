@@ -54,6 +54,7 @@
       before a secondary one{% endif %}. This is how the <em>written words</em>
       are pronounced — it is not a check of how you say them.
     </p>
+    {% if voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
     <script src="/static/phonetics.js" defer></script>
     {% else %}
     <p class="lead empty">

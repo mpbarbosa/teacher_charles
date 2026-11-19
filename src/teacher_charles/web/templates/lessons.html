@@ -252,6 +252,7 @@
     <p class="lead empty">No lessons on the shelf yet.</p>
   {% endif %}
   </main>
+  {% if lesson and voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
   {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
   {#
