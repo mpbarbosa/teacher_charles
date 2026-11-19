@@ -171,6 +171,72 @@ main {
    nao remocao do elemento. */
 body.no-ipa .ipa { display: none; }
 
+/* --- The structure of the sentence ---------------------------------------- */
+/*
+ * On demand, so the button is small and quiet: most bubbles are read, not
+ * analysed. The panel is a real table -- part, function, words -- because that
+ * is what it is, and a screen reader can walk it by row.
+ */
+.tools { margin-top: 0.35rem; }
+
+/* While the teacher is still writing there is no finished sentence to parse. */
+.what.streaming ~ .tools,
+.what.failed ~ .tools { display: none; }
+
+button.structure {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  color: var(--muted);
+}
+
+button.structure[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+.syntax {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.syntax .sentence { margin: 0.6rem 0 0.25rem; font-weight: 600; }
+.syntax .sentence:first-child { margin-top: 0; }
+
+/* Fixed layout: a message of three sentences is three tables, and columns
+   that each sized to their own content would not line up down the panel. */
+.syntax table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.syntax thead th:nth-child(1) { width: 28%; }
+.syntax thead th:nth-child(2) { width: 27%; }
+.syntax td, .syntax th { overflow-wrap: anywhere; }
+
+.syntax th,
+.syntax td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.3rem 0.8rem 0.3rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.syntax thead th {
+  border-top: 0;
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.syntax .chunk { font-weight: 600; }
+.syntax .role { color: var(--accent); }
+.syntax .token { font-weight: 600; }
+.syntax .pos { color: var(--muted); }
+.syntax .relation { color: var(--muted); font-size: 0.78rem; }
+.syntax .relation::before { content: "· "; }
+
+.syntax .note {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 form {
   display: flex;
   gap: 0.6rem;
@@ -504,3 +570,57 @@ main.progress .lead.empty { font-size: 0.95rem; }
 
 .level-history .why,
 .level-history .when { color: var(--muted); margin-left: 0.5rem; }
+
+/* Lessons. They reuse the progress page's frame and cards; what is new is the
+   reading layout — a source box, section tags and the word tables. */
+main.lesson > section { max-width: 70ch; }
+main.lesson h2 { font-size: 1rem; margin: 0.6rem 0 0.5rem; }
+main.lesson h3 { font-size: 0.9rem; margin: 0.9rem 0 0.4rem; }
+main.lesson .aspect { display: grid; gap: 0.6rem; scroll-margin-top: 1rem; }
+main.lesson .point p, main.lesson .practice p { margin: 0.35rem 0 0; }
+main.lesson .point .headline { font-weight: 600; }
+main.lesson .tag {
+  font: 0.7rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curated);
+  text-transform: uppercase;
+  margin-right: 0.3rem;
+}
+main.lesson .source {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+  background: var(--student);
+}
+main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
+main.lesson .aspects { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.85rem; }
+main.lesson .cites { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
+main.lesson .cites q { font-style: italic; color: var(--accent); }
+main.lesson table.notes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+main.lesson table.notes th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.3rem 0.5rem;
+}
+main.lesson table.notes td {
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  padding: 0.45rem 0.5rem;
+}
+main.lesson table.notes td:first-child { width: 34%; }
+main.lesson table.notes .ipa { margin: 0.1rem 0 0; }
+main.lesson .trap { color: var(--loose); font-size: 0.82rem; margin-top: 0.15rem; }
+main.lesson .questions, main.lesson .practice {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+main.lesson .options { margin: 0.35rem 0 0.2rem; padding-left: 1.6rem; }
+main.lesson details summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+main.lesson details .right { margin: 0.35rem 0 0; }
+main.lesson .practice .button { display: inline-block; margin-top: 0.5rem; }
+main.lesson a:not(.button) { color: var(--accent); }

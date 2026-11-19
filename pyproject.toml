@@ -49,6 +49,22 @@ voice = [
     # versao que fale com a API nova.
     "av<19",
 ]
+# The on-demand syntax view (teaching/syntax.py). An extra, and not a base
+# dependency like the IPA line, because of what it weighs: measured on this
+# machine, spaCy plus its small English model take a 92 MB environment to
+# 359 MB. The IPA line cost 21 MB and runs under every message; this is a
+# panel the student opens on purpose, and the install everybody does should
+# not triple for it.
+#
+# The model is a wheel and not a download step: spaCy publishes its pipelines
+# as pip packages on GitHub releases, not on PyPI, hence the direct URL (and
+# `allow-direct-references` below). It is pinned to the exact release because
+# a spaCy pipeline only loads under the minor version it was trained for --
+# bump the two together, never one alone.
+syntax = [
+    "spacy>=3.8,<3.9",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -61,6 +77,11 @@ teacher-charles = "teacher_charles.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# The `syntax` extra names its model by URL (see above); hatchling refuses a
+# direct reference in the metadata unless told it is deliberate.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/teacher_charles"]

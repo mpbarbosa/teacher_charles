@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Charles — {{ lesson.title if lesson else "lessons" }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>{{ lesson.title if lesson else "Lessons" }}</h1>
+    <div class="meta">
+      <span class="model" title="Your level">{{ level }}</span>
+      {% if lesson %}<a class="button" href="/lessons">All lessons</a>{% endif %}
+      <a class="button" href="/">Back to the conversation</a>
+    </div>
+  </header>
+
+  <main class="progress lesson">
+  {% if lesson %}
+    {#
+      The source is only a pointer: the analysed text lives where its owner
+      published it, and the student reads it there. The lesson carries the
+      analysis and the few short citations the loader lets through
+      (teaching/lessons.py).
+    #}
+    <p class="lead">{{ lesson.summary }}</p>
+
+    <section class="source">
+      <div><strong>Read the text first:</strong>
+        <a href="{{ lesson.source.url }}" target="_blank" rel="noopener noreferrer">{{ lesson.source.title }}</a>
+      </div>
+      <div class="byline">
+        {{ lesson.source.author }} · {{ lesson.source.publication }} · {{ lesson.source.published }}
+        · {{ lesson.source.words }} words · level {{ lesson.cefr }}
+      </div>
+      {% if lesson.source.work %}<div class="byline">{{ lesson.source.work }}</div>{% endif %}
+    </section>
+
+    <nav class="aspects" aria-label="Sections">
+      {% for section in lesson.sections %}<a href="#{{ section.aspect }}">{{ section.aspect|capitalize }}</a>{% endfor %}
+      {% if lesson.questions %}<a href="#check">Check yourself</a>{% endif %}
+      {% if lesson.practice %}<a href="#practice">Practice</a>{% endif %}
+    </nav>
+
+    {% for section in lesson.sections %}
+    <section class="aspect" id="{{ section.aspect }}">
+      <h2><span class="tag">{{ section.aspect }}</span> {{ section.title }}</h2>
+      {% for point in section.points %}
+      <div class="rule-card point">
+        <div class="headline">{{ point.heading }}</div>
+        {% if point.cites %}
+        <div class="cites">{% for cite in point.cites %}<q>{{ cite }}</q>{% endfor %}</div>
+        {% endif %}
+        <p>{{ point.body }}</p>
+      </div>
+      {% endfor %}
+
+      {% if section.aspect == "vocabulary" and lesson.words %}
+      <table class="notes">
+        <thead><tr><th>Word</th><th>Meaning</th></tr></thead>
+        <tbody>
+        {% for note in lesson.words %}
+          <tr>
+            <td><strong>{{ note.word }}</strong>{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
+            <td>{{ note.gloss }}{% if note.note %}<div class="trap">{{ note.note }}</div>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      {% if section.aspect == "phonetics" and lesson.sounds %}
+      <h3>Pronunciation traps</h3>
+      <table class="notes">
+        <thead><tr><th>Word</th><th>Watch out</th></tr></thead>
+        <tbody>
+        {% for note in lesson.sounds %}
+          <tr>
+            <td><strong>{{ note.word }}</strong>{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
+            <td>{{ note.trap }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    {% if lesson.questions %}
+    <section class="aspect" id="check">
+      <h2>Check yourself</h2>
+      <ol class="questions">
+        {% for q in lesson.questions %}
+        <li class="rule-card">
+          <div class="headline">{{ q.prompt }}</div>
+          <ol class="options" type="a">
+            {% for option in q.options %}<li>{{ option }}</li>{% endfor %}
+          </ol>
+          <details>
+            <summary>Show the answer</summary>
+            <div class="right"><strong>{{ q.options[q.answer] }}</strong> — {{ q.why }}</div>
+          </details>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
+    {% if lesson.practice %}
+    <section class="aspect" id="practice">
+      <h2>Practice with Charles</h2>
+      <p class="byline">The sentence goes into the chat box unsent. Finish it in your own words, and Charles corrects it as usual.</p>
+      <ul class="practice">
+        {% for p in lesson.practice %}
+        <li class="rule-card">
+          <p>{{ p.task }}</p>
+          <a class="button" href="/?draft={{ p.starter|urlencode }}">Write it to Charles</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+  {% elif lessons %}
+    <p class="lead">Authentic English, read closely. Open the text, then go through the analysis level by level.</p>
+    <ul class="rules">
+      {% for card in lessons %}
+      <li class="rule-card">
+        <div class="headline"><a href="/lessons/{{ card.slug }}">{{ card.title }}</a></div>
+        <p>{{ card.summary }}</p>
+        <div class="footnote">
+          <span class="rule">{{ card.cefr }}</span>
+          <span class="category">{{ card.source.publication }}, {{ card.source.published }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="lead empty">No lessons on the shelf yet.</p>
+  {% endif %}
+  </main>
+</body>
+</html>

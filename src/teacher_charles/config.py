@@ -54,9 +54,15 @@ class Settings(BaseSettings):
 
     # Default da Fase 1. Nesta classe de hardware o gargalo é banda de
     # memória, e o Ollama oficial roda em CPU pura (não usa a iGPU Intel).
-    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B, o que põe um 4B em ~7-8 tok/s
-    # e um 8B em ~3,5. Ver docs/plano-fase-1.md §1.3.
-    llm_model: str = "qwen3:4b"
+    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B (docs/plano-fase-1.md §1.3). O
+    # 4B foi medido depois, lado a lado com o 3B (§5.5): gera a ~55% da vazão
+    # dele, e não aos ~80% que a extrapolação por tamanho prometia.
+    #
+    # `-instruct`, e não `qwen3:4b`: a tag sem sufixo é o build Thinking-2507,
+    # cujo template abre `<think>` em todo turno, peça o cliente ou não. Com
+    # ele a primeira palavra espera centenas de tokens de raciocínio e a
+    # análise gasta o orçamento inteiro sem devolver JSON (§5.5).
+    llm_model: str = "qwen3:4b-instruct"
 
     ollama_url: str = "http://localhost:11434"
     request_timeout_s: float = 120.0
@@ -115,6 +121,21 @@ class Settings(BaseSettings):
     # motivo oposto — lá a tônica inventaria erro contra um reconhecedor que
     # não a emite.
     phonetics_stress: bool = True
+
+    # --- Syntax ----------------------------------------------------------
+    # The Structure button under each message: the sentence split into its
+    # parts by a parser (teaching/syntax.py), never by the model.
+    #
+    # **Off** by default, like the voice and unlike the IPA line, and for the
+    # voice's reason: it needs an extra (`uv sync --extra syntax`, +267 MB) and
+    # loads a pipeline into the process. Asked for without the extra, the
+    # button stays off the page and `/health` says why.
+    syntax_enabled: bool = False
+
+    # The spaCy pipeline, by package name. The extra installs the small one;
+    # a larger one (`en_core_web_md`, `_trf`) parses better and has to be
+    # installed by hand.
+    syntax_model: str = "en_core_web_sm"
 
     # --- Voz (Fase 1.5) --------------------------------------------------
     # Desligada por default. Ligar baixa dois modelos e carrega dois runtimes

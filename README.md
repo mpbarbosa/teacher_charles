@@ -58,6 +58,8 @@ não prosa que o modelo improvisa.
   (`phonemizer` e o espeak-ng do `espeakng_loader`), sem peso para baixar
 - Para a voz (opcional): mais ~400 MB de wheels e ~120 MB de pesos, e um
   microfone
+- Para o botão **Structure** (opcional): mais ~267 MB de wheels — o spaCy e o
+  pipeline `en_core_web_sm`, que vem como wheel e não como download à parte
 
 ## Rodar em desenvolvimento
 
@@ -78,8 +80,13 @@ uv sync --extra dev
 ```
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3:4b-instruct
 ```
+
+O sufixo importa. `qwen3:4b`, sem ele, é outro modelo: o build *Thinking*, que
+raciocina antes de toda resposta e não deixa desligar. Medido aqui, são minutos
+até a primeira palavra e nenhuma correção estruturada — ver
+[docs/plano-fase-1.md](docs/plano-fase-1.md) §5.5.
 
 ```bash
 uv run teacher-charles --reload
@@ -134,18 +141,24 @@ diferença.
 
 ### Já tem outro modelo baixado?
 
-Não precisa baixar o `qwen3:4b` só para experimentar. Aponte para o que você tem:
+Não precisa baixar o `qwen3:4b-instruct` só para experimentar. Aponte para o que você tem:
 
 ```bash
 TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles
 ```
 
-Um 3B dá para desenvolver. Para uso de verdade, 4B é o default por um motivo: nesta
-classe de hardware o gargalo é banda de memória, e a vazão cai rápido com o tamanho.
-Medido nesta máquina (Intel Core Ultra 5 135U, **Ollama em CPU pura**): **9,3 tok/s num
-3B e 4,0 num 7B**, o que põe um 4B em ~7–8 tok/s e um 8B em ~3,5. Com streaming, 4B é
-tolerável para texto; 8B não é.
+Um 3B dá para desenvolver. O default é 4B-class porque nesta classe de hardware o
+gargalo é banda de memória, e a vazão cai rápido com o tamanho. Medido nesta máquina
+(Intel Core Ultra 5 135U, **Ollama em CPU pura**): **9,3 tok/s num 3B e 4,0 num 7B**.
+Com streaming, 4B é tolerável para texto; 8B não é.
 Ver [docs/plano-fase-1.md](docs/plano-fase-1.md) §1.3 para o método da medição.
+
+O 4B entrava nessa conta por extrapolação (~7–8 tok/s) e foi medido depois, lado a
+lado com o 3B: **gera a ~55% da vazão dele**, não aos ~80% esperados. Na mesma medição
+o 3B empatou com o `qwen3:4b-instruct` na correção estruturada (27 contra 28 de 31
+frases, nenhum falso positivo nos dois) e ganhou em todos os números de latência. O
+que o 4B deveria comprar é a prosa do professor, e isso ainda não foi medido — a
+tabela dos três modelos está na §5.5 do plano.
 
 **A iGPU Intel muda metade dessa conta — ver [a seção da iGPU](#a-igpu-intel-opcional-e-recomendada).**
 A avaliação de prompt fica 13× mais rápida, e é ela que domina a espera pela primeira
@@ -167,6 +180,14 @@ O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
 Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_MODEL`,
 `TC_STT_CPU_THREADS`. Cada default tem uma medição atrás dele — ver a seção
 "Falar com o Charles".
+
+Da análise sintática: `TC_SYNTAX_ENABLED` (desligada por default) e
+`TC_SYNTAX_MODEL`. Com `uv sync --extra dev --extra syntax` e
+`TC_SYNTAX_ENABLED=true` — ou `scripts/run.sh --sync --syntax` —, cada fala
+ganha um botão **Structure** que abre a sentença dividida em partes (sujeito,
+verbo, objetos, sintagmas) com a classe de cada palavra. Quem analisa é um
+parser, não o modelo, e o painel diz isso: mostra como a sentença é
+construída, não se ela está correta.
 
 ### A iGPU Intel: opcional, e recomendada
 
@@ -347,6 +368,12 @@ erro e frase correta — `uv run python scripts/measure_latency.py`:
 | Turno completo, frase com erro | 12–16s, porque inclui a análise |
 | Análise, isolada | ~10s, **depois** da resposta — o aluno lê enquanto ela corre |
 | Primeiro turno, com o modelo aquecido | 0,9s |
+
+Esses números são do 3B. O default, `qwen3:4b-instruct`, é mais lento: medido lado
+a lado com ele, leva 11,1s contra 6,6s até a primeira palavra e gera a 2,5–2,8
+tok/s contra 4,9–5,1. Os dois valores são bem maiores que os 2,7s da tabela
+porque nesse dia a máquina estava no perfil de economia de energia — o que vale
+ali é a comparação entre os modelos (plano §5.5).
 
 Dois detalhes de implementação estão por trás desses números, e os dois saíram
 de medição, não de intuição (§5.5):
@@ -570,6 +597,7 @@ Vulkan — ele diz o comando quando não encontra o segundo.
 | Turno de 15s em frase com erro | A análise custa ~8-10s e roda **depois** da resposta. O aluno lê enquanto ela corre; a anotação aparece quando fica pronta. |
 | A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
 | A linha de IPA não aparece embaixo das falas | Veja o interruptor **Phonetics** no cabeçalho; se ele nem existe, o `/health` diz por quê no bloco `phonetics` (espeak que não carregou, ou `TC_PHONETICS_ENABLED=false`). |
+| O botão **Structure** não aparece embaixo das falas | A análise sintática vem desligada. `uv sync --extra dev --extra syntax` e suba com `TC_SYNTAX_ENABLED=true`. Ligada sem o extra, o botão continua fora da página: o bloco `syntax` do `/health` diz `installed: false`. |
 | O microfone não aparece na página | A voz vem desligada. `uv sync --extra voice`, baixe os pesos e suba com `TC_VOICE_ENABLED=true`. |
 | A voz está ligada mas o Charles não fala | Veja `/health`: o bloco `voice` diz qual motor não carregou e por quê. Peso ausente é o caso comum. |
 | O Charles escreve mas o navegador não toca som | O navegador bloqueia áudio sem gesto do usuário. Clique em qualquer lugar da página e mande outro turno. |
@@ -593,6 +621,7 @@ src/         o código
     level.py     fala do aluno -> nível CEFR estimado, com histerese
     modes.py     os três modos; o drill escolhe a regra no error log do aluno
     phonetics.py texto -> IPA do espeak: a linha de pronúncia de cada fala
+    syntax.py    texto -> partes da sentença, do parser: o botão Structure
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única (conversa) e a tela /progress; JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

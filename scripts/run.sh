@@ -34,11 +34,12 @@ Modos
   (nenhuma opção)   Ollama local, como o README documenta
   --fake            sem modelo nenhum, para trabalhar na interface
   --voice           liga a voz: extra, pesos e TC_VOICE_ENABLED=true
+  --syntax          liga o botão Structure: extra e TC_SYNTAX_ENABLED=true
   --model NOME      usa um modelo já baixado (TC_LLM_MODEL)
 
 Antes de subir
   --check           roda scripts/check_env.py e para se houver bloqueio
-  --sync            instala as dependências (com --voice, inclui o extra voice)
+  --sync            instala as dependências (com --voice e --syntax, inclui os extras)
 
 Repassadas ao servidor
   --reload          recarrega a cada mudança de arquivo
@@ -61,6 +62,7 @@ die() {
 
 fake=false
 voice=false
+syntax=false
 check=false
 sync=false
 model=""
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fake) fake=true ;;
         --voice) voice=true ;;
+        --syntax) syntax=true ;;
         --check) check=true ;;
         --sync) sync=true ;;
         --model)
@@ -132,6 +135,7 @@ command -v uv >/dev/null 2>&1 ||
 if $sync; then
     extras=(--extra dev)
     $voice && extras+=(--extra voice)
+    $syntax && extras+=(--extra syntax)
     echo "==> uv sync ${extras[*]}"
     uv sync "${extras[@]}"
 fi
@@ -151,6 +155,17 @@ if $voice; then
         die "a voz pede o extra: rode outra vez com --sync --voice"
 
     export TC_VOICE_ENABLED=true
+fi
+
+if $syntax; then
+    # Same guard as the voice, and for the same reason: with the flag on and
+    # the extra absent the server comes up and teaches, the Structure button
+    # is simply not on the page, and the reason is only in `/health`. Checked
+    # with `find_spec` so this does not pay spaCy's ~3 s import just to ask.
+    uv run python -c 'import importlib.util as u, sys; sys.exit(0 if u.find_spec("spacy") and u.find_spec("en_core_web_sm") else 1)' ||
+        die "o botão Structure pede o extra: rode outra vez com --sync --syntax"
+
+    export TC_SYNTAX_ENABLED=true
 fi
 
 # `exec`, so Ctrl-C reaches uvicorn instead of this shell, and so the server is
