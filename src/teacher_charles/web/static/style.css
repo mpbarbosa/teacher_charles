@@ -672,7 +672,8 @@ main.lesson .full-text .reading .now-reading {
   box-decoration-break: clone;
 }
 /* With a voice, a word is a place to start reading from (lesson.js). */
-main.lesson .full-text .reading.clickable .sentence { cursor: pointer; }
+main.lesson .full-text .reading.clickable .sentence,
+main.lesson .full-text .reading.clickable .ipa .w { cursor: pointer; }
 main.lesson .full-text .reading.clickable .sentence:hover:not(.now-reading) {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 0.2rem;
