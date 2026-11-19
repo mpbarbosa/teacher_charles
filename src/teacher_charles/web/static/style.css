@@ -1,3 +1,7 @@
+/* Every colour that carries text holds 4.5:1 (WCAG AA) on --bg, --teacher and
+   --student, in both themes. The light --accent was 4.2:1 on the source box,
+   and --curated and --loose were left out of the dark block, so the lesson's
+   section tags and false-friend notes sat at ~3.1:1 on the dark cards. */
 :root {
   --bg: #fbfbfa;
   --fg: #1f2328;
@@ -5,7 +9,7 @@
   --line: #e4e4e2;
   --student: #eef3fb;
   --teacher: #ffffff;
-  --accent: #1f6feb;
+  --accent: #175bc2;
   --danger: #a40e26;
   --curated: #1a7f52;
   --loose: #8a6d1f;
@@ -22,6 +26,8 @@
     --teacher: #1c1f24;
     --accent: #589bff;
     --danger: #ff9492;
+    --curated: #3fb950;
+    --loose: #d29922;
   }
 }
 
