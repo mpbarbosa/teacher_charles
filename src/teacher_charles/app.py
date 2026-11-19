@@ -57,6 +57,7 @@ from .teaching.lessons import (
     Lesson,
     LessonError,
     LessonShelf,
+    LocalText,
     load_shelf,
     read_local_text,
 )
@@ -69,7 +70,7 @@ from .teaching.schedule import is_graduated
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
-from .voice import SentenceAssembler, Voice, VoiceError, build_voice
+from .voice import SentenceAssembler, Voice, VoiceError, build_voice, split_sentences
 
 log = logging.getLogger(__name__)
 
@@ -592,6 +593,31 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             note["ipa"] = spell(note["word"])
         return body
 
+    def full_text_sentences(full_text: LocalText | None) -> list[list[dict[str, str]]]:
+        """Each paragraph of the copy as sentences, each with its IPA.
+
+        ## Why the sentences are cut here, once, and not in the page
+
+        The reader speaks one sentence per ``/api/tts`` call and lights the
+        sentence it is on, in the text and in the IPA line under it. That only
+        lines up if the three agree on where a sentence ends, so there is one
+        cut and it is ``voice/segment.py``'s — the one the chat's voice already
+        uses, which keeps "Mr. Smith" whole and lets "Yes!" ride with the next
+        sentence. It joins back to the paragraph exactly, so the page shows
+        the text as it is.
+
+        Sentence, not word: Kokoro returns the audio and no timings, so a
+        word-by-word highlight could only be guessed from the clock.
+
+        The IPA is espeak's, per sentence; empty with the IPA off.
+        """
+        if full_text is None:
+            return []
+        return [
+            [{"text": s, "ipa": spell(s)} for s in split_sentences(p) or [p]]
+            for p in full_text.paragraphs
+        ]
+
     def shelf() -> LessonShelf | None:
         return app.state.lessons
 
@@ -709,10 +735,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # of lesson_payload on purpose: that is also /api/lessons, and
                 # the copy is not ours to serve (teaching/lessons.py).
                 "full_text": full_text,
-                # One IPA line per paragraph, under it, drawn by the espeak that
-                # draws every other IPA line here; empty strings with the IPA
-                # off, and then the page has no Phonetics button.
-                "full_text_ipa": [spell(p) for p in full_text.paragraphs] if full_text else [],
+                # The copy cut into sentences, each with its IPA, so the reader
+                # can light the sentence it is speaking in both lines at once.
+                "full_text_sentences": full_text_sentences(full_text),
                 # The speaker beside each word asks /api/tts, which answers
                 # 503 with voice off — so with voice off there is no button.
                 "voice": voice_payload(),
