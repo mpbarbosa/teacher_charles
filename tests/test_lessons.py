@@ -601,6 +601,9 @@ def test_with_ipa_the_full_text_has_a_phonetics_button_and_hidden_lines(tmp_path
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
     assert 'class="show-ipa"' in page
+    # The layout switch (after the paragraph / between the lines) waits,
+    # hidden, until the IPA is showing (full-text.js).
+    assert 'class="ipa-layout"' in page
     assert "/static/full-text.js" in page
     # One line per paragraph, hidden until asked for, and the paragraph's own
     # markup untouched.
@@ -618,6 +621,7 @@ def test_without_ipa_the_full_text_has_no_phonetics(tmp_path):
         page = c.get(f"/lessons/{SLUG}").text
     assert 'id="full-text"' in page
     assert "show-ipa" not in page
+    assert "ipa-layout" not in page
     assert "full-text.js" not in page
     assert '<div class="ipa" hidden>' not in page
 

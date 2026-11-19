@@ -78,7 +78,8 @@
       #}
       <h2>Full text{% if voice and voice.enabled %}
         <button type="button" class="read-aloud" data-voice="{{ reader_voice }}" aria-label="Listen to the full text" title="Listen to the full text">🔊 Listen</button>{% endif %}{% if has_ipa %}
-        <button type="button" class="show-ipa" aria-pressed="false" aria-controls="full-text-reading" title="Show how the text is pronounced, in IPA">/ə/ Phonetics</button>{% endif %}</h2>
+        <button type="button" class="show-ipa" aria-pressed="false" aria-controls="full-text-reading" title="Show how the text is pronounced, in IPA">/ə/ Phonetics</button>
+        <button type="button" class="ipa-layout" aria-pressed="false" aria-controls="full-text-reading" title="Show the IPA under each line instead of after each paragraph" hidden>⇅ Between lines</button>{% endif %}</h2>
       {#
         The IPA rides in the page, hidden, one line under each paragraph: the
         button only shows it, so it costs no request (full-text.js). It is
