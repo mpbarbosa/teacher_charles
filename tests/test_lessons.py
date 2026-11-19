@@ -386,3 +386,11 @@ def test_the_section_links_are_separate_words(client):
 def test_the_module_exports_what_it_promises():
     for name in lessons_module.__all__:
         assert hasattr(lessons_module, name)
+
+
+def test_the_stylesheet_is_revalidated_not_cached_blind(client):
+    # Without this the browser kept a stale style.css and the lesson's links
+    # came out in its default blue on the dark background.
+    response = client.get("/static/style.css")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
