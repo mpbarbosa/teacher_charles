@@ -91,7 +91,10 @@ def test_the_conversation_links_to_the_page(client):
 
 
 def test_the_conversation_links_to_the_ipa_chart(client):
-    assert 'href="https://www.ipachart.com/"' in client.get("/").text
+    page = client.get("/").text
+    assert 'href="https://www.ipachart.com/"' in page
+    # The class the Phonetics switch hides it by, with the IPA lines.
+    assert 'class="button ipa-chart"' in page
 
 
 def test_with_the_ipa_off_the_page_says_how_and_the_route_answers_503(tmp_path):

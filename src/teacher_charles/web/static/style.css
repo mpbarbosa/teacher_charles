@@ -175,7 +175,8 @@ main {
 /* O interruptor do cabecalho so esconde. O dado ja veio com a pagina ou com o
    turno, entao reaparecer nao custa pedido nenhum -- e por isso e `display`,
    nao remocao do elemento. */
-body.no-ipa .ipa { display: none; }
+body.no-ipa .ipa,
+body.no-ipa .ipa-chart { display: none; }
 
 /* --- The structure of the sentence ---------------------------------------- */
 /*
