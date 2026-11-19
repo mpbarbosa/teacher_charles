@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -345,6 +346,88 @@ def read_local_text(corpus_dir: Path, lesson: Lesson) -> LocalText | None:
         words=words,
         matches=abs(words - expected) <= expected * LOCAL_TEXT_TOLERANCE,
     )
+
+
+# A run of a passage: its text, and whether it is the phrase the point cites.
+Run = tuple[str, bool]
+
+
+@dataclass(frozen=True)
+class Passages:
+    """Where in the copy a point's citations sit.
+
+    ``passages`` are the copy's sentences that hold at least one citation, in
+    the order the text has them, each cut into runs so the page can mark the
+    cited phrase inside it. ``unplaced`` are the citations no sentence holds —
+    a copy that is a different version of the text — which the page still
+    shows as bare quotes, so a point never loses what it is about.
+    """
+
+    passages: tuple[tuple[Run, ...], ...]
+    unplaced: tuple[str, ...]
+
+
+def _fold(text: str) -> str:
+    """Lower case with typographic apostrophes as plain ones, length unchanged.
+
+    The curator types *we've*; the copy says *WE’VE*. Each replacement is one
+    character for one, so an offset in the folded text is an offset in the
+    original, which is what lets the match mark the original's own letters.
+    """
+    return text.lower().replace("’", "'").replace("‘", "'")
+
+
+def place_cites(sentences: Sequence[str], cites: Sequence[str]) -> Passages:
+    """The sentences of ``sentences`` that ``cites`` quote, with the quotes marked.
+
+    ## Why this is computed per request and never stored
+
+    The sentences come from this machine's copy (``read_local_text``), so the
+    passage beside a point is the copy, shown on the page that already shows
+    the copy whole — not a longer citation. Nothing of it reaches the
+    ``Lesson`` or ``/api/lessons``, and a clone without the copy gets the bare
+    quotes it always had. ``MAX_CITE_WORDS`` and ``CITE_BUDGET`` still hold
+    the YAML, which is the only thing versioned.
+
+    A citation matches as whole words, ignoring case — the speech shouts its
+    climax in capitals — and every sentence that holds it is a passage: the
+    curator who cites a word that recurs is pointing at the recurrence.
+    """
+    folded = [_fold(s) for s in sentences]
+    spans: dict[int, list[tuple[int, int]]] = {}
+    unplaced: list[str] = []
+    for cite in cites:
+        needle = _fold(" ".join(cite.split()))
+        if not needle:
+            continue
+        pattern = re.compile(r"(?<![\w'])" + re.escape(needle) + r"(?![\w'])")
+        found = False
+        for i, text in enumerate(folded):
+            for m in pattern.finditer(text):
+                spans.setdefault(i, []).append(m.span())
+                found = True
+        if not found:
+            unplaced.append(cite)
+    passages = []
+    for i in sorted(spans):
+        sentence = sentences[i]
+        runs: list[Run] = []
+        at = 0
+        for start, end in sorted(spans[i]):
+            if start < at:  # overlaps the previous mark: extend it
+                if end > at:
+                    text, _ = runs.pop()
+                    runs.append((text + sentence[at:end], True))
+                    at = end
+                continue
+            if start > at:
+                runs.append((sentence[at:start], False))
+            runs.append((sentence[start:end], True))
+            at = end
+        if at < len(sentence):
+            runs.append((sentence[at:], False))
+        passages.append(tuple(runs))
+    return Passages(passages=tuple(passages), unplaced=tuple(unplaced))
 
 
 # --- loading --------------------------------------------------------------- #
