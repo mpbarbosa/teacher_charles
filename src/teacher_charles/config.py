@@ -138,6 +138,18 @@ class Settings(BaseSettings):
     # installed by hand.
     syntax_model: str = "en_core_web_sm"
 
+    # --- Word cards ------------------------------------------------------
+    # The card under the pointer on a lesson's full text: what the word
+    # means in English and the Portuguese for it (teaching/dictionary.py),
+    # read from WordNet, never from the model.
+    #
+    # **On** by default, unlike the syntax view, because asking costs
+    # nothing: there is no extra and nothing is loaded until a hover. What
+    # decides whether the card is on screen is the lookup file, which
+    # `scripts/fetch_dictionary.py` builds once; without it the words are
+    # plain text and `/health` says why.
+    dictionary_enabled: bool = True
+
     # --- Voz (Fase 1.5) --------------------------------------------------
     # Desligada por default. Ligar baixa dois modelos e carrega dois runtimes
     # (ctranslate2 e onnxruntime) na memória do processo; quem só quer o chat
@@ -231,6 +243,10 @@ class Settings(BaseSettings):
     # empty directory instead of reading whatever the developer has on disk.
     corpus_dir: Path | None = Field(default=None)
 
+    # The word cards' lookup file. A cache, like the voice weights: it is
+    # rebuilt from two public lexicons, and holds nothing about the student.
+    dictionary_path: Path | None = Field(default=None)
+
     @property
     def resolved_db_path(self) -> Path:
         """Onde fica o progresso do aluno.
@@ -270,6 +286,14 @@ class Settings(BaseSettings):
     @property
     def data_dir(self) -> Path:
         return REPO_ROOT / "data"
+
+    @property
+    def resolved_dictionary_path(self) -> Path:
+        """Where the word cards' lookup lives: the cache, never the repo or
+        ``XDG_DATA_HOME`` — it is re-downloadable and nobody's personal data."""
+        if self.dictionary_path is not None:
+            return self.dictionary_path.expanduser()
+        return xdg_cache_home() / APP_DIR_NAME / "dictionary" / "wordnet-en-pt.sqlite"
 
     @property
     def resolved_corpus_dir(self) -> Path:

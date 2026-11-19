@@ -129,7 +129,8 @@
       </div>
       <p class="byline">
         From your local copy ({{ full_text.words }} words).{% if voice and voice.enabled %}
-        <span class="read-hint">Click any word to hear the text from there.</span>{% endif %}
+        <span class="read-hint">Click any word to hear the text from there.</span>{% endif %}{% if word_cards %}
+        <span class="define-hint">Rest the pointer on a word for its meaning and its Portuguese.</span>{% endif %}
         {% if not full_text.matches %}
         <span class="trap">The lesson was written against a {{ lesson.source.words }}-word text, so this copy may be a different version.</span>
         {% endif %}
@@ -254,5 +255,10 @@
   {% if lesson and voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
   {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
+  {#
+    The word card (word-card.js) only with a full text to hover and the
+    lookup file fetched: without the file every hover would be a 503.
+  #}
+  {% if lesson and full_text and word_cards %}<script src="/static/word-card.js" defer></script>{% endif %}
 </body>
 </html>
