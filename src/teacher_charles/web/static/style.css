@@ -624,6 +624,17 @@ main.lesson table.notes td {
 }
 main.lesson table.notes td:first-child { width: 34%; }
 main.lesson table.notes .ipa { margin: 0.1rem 0 0; }
+/* The speaker beside a word: small, so the word stays the thing you read. */
+main.lesson button.say {
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  margin-left: 0.4rem;
+  vertical-align: 0.05rem;
+}
+main.lesson button.say.loading { opacity: 0.6; cursor: progress; }
+main.lesson button.say.playing { border-color: var(--accent); color: var(--accent); }
+main.lesson button.say.failed { border-color: var(--danger); }
 main.lesson .trap { color: var(--loose); font-size: 0.82rem; margin-top: 0.15rem; }
 main.lesson .questions, main.lesson .practice {
   margin: 0;

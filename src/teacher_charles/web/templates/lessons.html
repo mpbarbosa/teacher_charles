@@ -7,6 +7,15 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  {#
+    A speaker beside a word, only when the server has a voice: /api/tts
+    answers 503 without one, and a button that always fails is worse than
+    none. The audio is Kokoro, the same voice Charles speaks with, so the
+    sound and the IPA under the word come from one G2P (teaching/phonetics.py).
+  #}
+  {% macro say(word) -%}
+    {% if voice and voice.enabled %}<button type="button" class="say" data-say="{{ word }}" aria-label="Hear “{{ word }}”" title="Hear it">🔊</button>{% endif %}
+  {%- endmacro %}
   <header>
     <h1>{{ lesson.title if lesson else "Lessons" }}</h1>
     <div class="meta">
@@ -84,7 +93,7 @@
         <tbody>
         {% for note in lesson.words %}
           <tr>
-            <td><strong>{{ note.word }}</strong>{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
+            <td><strong>{{ note.word }}</strong>{{ say(note.word) }}{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
             <td>{{ note.gloss }}{% if note.note %}<div class="trap">{{ note.note }}</div>{% endif %}</td>
           </tr>
         {% endfor %}
@@ -99,7 +108,7 @@
         <tbody>
         {% for note in lesson.sounds %}
           <tr>
-            <td><strong>{{ note.word }}</strong>{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
+            <td><strong>{{ note.word }}</strong>{{ say(note.word) }}{% if note.ipa %}<div class="ipa">/{{ note.ipa }}/</div>{% endif %}</td>
             <td>{{ note.trap }}</td>
           </tr>
         {% endfor %}
@@ -162,5 +171,6 @@
     <p class="lead empty">No lessons on the shelf yet.</p>
   {% endif %}
   </main>
+  {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
 </body>
 </html>

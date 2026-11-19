@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from html import escape
 from pathlib import Path
 
 import pytest
@@ -394,3 +395,34 @@ def test_the_stylesheet_is_revalidated_not_cached_blind(client):
     response = client.get("/static/style.css")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-cache"
+
+
+# --- the speaker beside each word ------------------------------------------ #
+
+
+def test_without_voice_the_words_have_no_speaker(client):
+    """/api/tts is 503 with voice off, so a button would only ever fail."""
+    body = client.get(f"/lessons/{SLUG}").text
+    assert 'class="say"' not in body
+    assert "lesson.js" not in body
+
+
+def test_with_voice_every_word_and_sound_has_a_speaker(tmp_path):
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/lessons/{SLUG}").text
+        assert "/static/lesson.js" in body
+        for note in [*lesson.words, *lesson.sounds]:
+            assert f'data-say="{escape(note.word)}"' in body
+        # The button's text goes to the same route the chat's voice uses.
+        word = lesson.words[0].word
+        spoken = c.post("/api/tts", json={"text": word})
+        assert spoken.status_code == 200
+        assert spoken.headers["content-type"] == "audio/wav"
+
+
+def test_the_shelf_page_has_no_speaker_even_with_voice(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        assert "lesson.js" not in c.get("/lessons").text
