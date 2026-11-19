@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Charles — sentence phonetics</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {#
+    A box for a sentence and its IPA under it. The IPA is espeak's — the same
+    G2P as the line under every chat bubble and in every lesson
+    (teaching/phonetics.py) — so the three never disagree about a word.
+
+    The sentence goes to /api/phonetics in a POST body, never in a query
+    string: what the student types is personal data. Nothing is recorded.
+  #}
+  <header>
+    <h1>Sentence phonetics</h1>
+    <div class="meta">
+      <span class="model" title="Your level">{{ level }}</span>
+      <a class="button" href="/lessons">Lessons</a>
+      <a class="button" href="/">Back to the conversation</a>
+    </div>
+  </header>
+
+  <main class="phonetics">
+    <p class="lead">
+      Type a sentence in English to see how it is pronounced, written in the
+      International Phonetic Alphabet. Each word shows its own IPA under it.
+    </p>
+
+    {% if phonetics.enabled %}
+    <form id="phonetics-form" class="phonetics-form" autocomplete="off">
+      <label for="phonetics-text" class="visually-hidden">Sentence</label>
+      <textarea id="phonetics-text" name="text" rows="3" maxlength="{{ max_chars }}"
+                placeholder="e.g. I thought it through, though it was tough."
+                required autofocus></textarea>
+      <button type="submit">Show phonetics</button>
+    </form>
+    <p class="hint">Enter shows the IPA; Shift+Enter starts a new line.</p>
+
+    <section id="phonetics-result" class="phonetics-result" aria-live="polite" hidden></section>
+
+    {# The same disclaimer the IPA partial gives Charles: this is the written
+       words read by a dictionary, not a judgement of anybody's voice. #}
+    <p class="footnote">
+      Accent: <code>{{ phonetics.language }}</code>{% if phonetics.stress %}, with
+      stress marks: <code>ˈ</code> before the stressed syllable, <code>ˌ</code>
+      before a secondary one{% endif %}. This is how the <em>written words</em>
+      are pronounced — it is not a check of how you say them.
+    </p>
+    <script src="/static/phonetics.js" defer></script>
+    {% else %}
+    <p class="lead empty">
+      The IPA is off on this server. Start Charles without
+      <code>TC_PHONETICS_ENABLED=false</code> to use this page.
+    </p>
+    {% endif %}
+  </main>
+</body>
+</html>

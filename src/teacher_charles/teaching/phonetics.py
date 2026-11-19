@@ -242,6 +242,8 @@ __all__ = [
     "Phonetics",
     "PhoneticsUnavailable",
     "build_phonetics",
+    "ipa_owners",
+    "ipa_pairs",
     "partial_name",
 ]
 
@@ -331,3 +333,25 @@ def ipa_owners(words: list[str], tokens: list[str], per_word: list[str]) -> list
             owners[w] = list(range(j - dt, j))
         i, j = i - dw, j - dt
     return owners
+
+
+def ipa_pairs(words: list[str], tokens: list[str], owners: list[list[int]]) -> list[dict[str, str]]:
+    """The written words and their IPA side by side, joined where espeak joins.
+
+    ``owners`` is what :func:`ipa_owners` returned for the same ``words`` and
+    ``tokens``. Its pairings are one written word to several IPA words, or
+    several written words to one IPA word (*on the* -> ``ɔnðə``), so a run of
+    written words owning the same IPA words is one pair: the page draws
+    ``on the`` over ``ɔnðə`` rather than ``ɔnðə`` twice.
+
+    A written word that owns nothing gets an empty IPA, never a guess.
+    """
+    pairs: list[dict[str, str]] = []
+    last: list[int] | None = None
+    for word, owned in zip(words, owners, strict=True):
+        if owned and owned == last:
+            pairs[-1]["text"] += f" {word}"
+            continue
+        pairs.append({"text": word, "ipa": " ".join(tokens[j] for j in owned)})
+        last = owned
+    return pairs
