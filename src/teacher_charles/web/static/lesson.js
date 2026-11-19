@@ -847,9 +847,13 @@
   }
 
   // A word of the full text is a place to start reading from, and so is the
-  // gap between two words, which starts its sentence. Not when
-  // the click ends a text selection: the student was copying a phrase or
-  // looking one up, and a voice starting up would be in the way.
+  // gap between two words, which starts its sentence. So is a word of the
+  // IPA: under the line it is the written word's own `::after`, and so the
+  // written word is what the click lands on; after the paragraph it is a
+  // `.w[data-t]` of its own, and starts the reading at the first written
+  // word it is part of. Not when the click ends a text selection: the student
+  // was copying a phrase or looking one up, and a voice starting up would be
+  // in the way.
   const readButton = document.querySelector("button.read-aloud");
   const fullText = document.getElementById("full-text-reading");
   if (readButton && fullText) {
@@ -857,13 +861,32 @@
     fullText.title = "Click a word to hear the text from there";
   }
 
-  document.addEventListener("click", (event) => {
-    const sentence = readButton && event.target.closest?.(".full-text .reading .sentence");
+  /** Where a click on the full text starts the reading, or null. */
+  function startAt(target) {
+    const sentence = target.closest?.(".full-text .reading .sentence");
     if (sentence) {
+      const word = target.closest(".w[data-w]");
+      return { sentence, word: word && sentence.contains(word) ? Number(word.dataset.w) : 0 };
+    }
+    const span = target.closest?.(".full-text .reading .ipa [data-s]");
+    if (!span) return null;
+    const written = fullText?.querySelector(`.sentence[data-s="${span.dataset.s}"]`);
+    if (!written) return null;
+    const t = target.closest(".w[data-t]")?.dataset.t;
+    const owner =
+      t === undefined
+        ? null
+        : [...written.querySelectorAll(".w[data-w]")].find((w) =>
+            (w.dataset.ipa ?? "").split(" ").includes(t)
+          );
+    return { sentence: written, word: owner ? Number(owner.dataset.w) : 0 };
+  }
+
+  document.addEventListener("click", (event) => {
+    const start = readButton && startAt(event.target);
+    if (start) {
       if (!window.getSelection()?.isCollapsed) return;
-      const word = event.target.closest(".w[data-w]");
-      const index = word && sentence.contains(word) ? Number(word.dataset.w) : 0;
-      readAloud(readButton, { sentence, word: index });
+      readAloud(readButton, start);
       return;
     }
     const target = event.target.closest(
