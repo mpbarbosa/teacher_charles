@@ -184,7 +184,7 @@ export default flow("teacher-charles-turn")
     description:
       "The teacher's reply, token by token, from Ollama behind llm/base.ChatProvider. Nothing above this node knows whether the model is local or in the cloud.",
     params: {
-      model: "qwen3:4b",
+      model: "qwen3:4b-instruct",
       firstWordS: 0.9,
       wasS: 7.4,
       // What bought the 7.4s -> 0.9s is PROMPT EVALUATION on the Arc iGPU

@@ -1359,6 +1359,28 @@ Ollama 0.35.0 devolveu o raciocínio do modelo dentro do conteúdo, antes de um
 respostas levou de 2 a 5 minutos (uma chegou a 15), mas com outro servidor do
 Charles dividindo a máquina — não serve como número de latência.
 
+**As lições também entraram fora da tabela**, pelo mesmo motivo das três
+acima. Uma lição é uma leitura curada de um texto autêntico, analisada em seis
+níveis — léxico, vocabulário, gramática, sintaxe, semântica e fonética — com
+palavras, armadilhas de pronúncia, perguntas de autoverificação e tarefas que
+levam uma frase inicial para a caixa do chat, sem enviar. É
+`teaching/lessons.py`, `data/lessons/*.yaml`, a página `/lessons` e a API
+`/api/lessons`. A primeira é o discurso de Mon Mothma no Senado (*Andor*), a
+partir da anotação do Dan Gilroy publicada no LA Times.
+
+O texto analisado **não entra no repositório**: é a regra do `corpus/README.md`
+aplicada a um artigo. `Source` tem URL e contagem de palavras e nenhum campo
+para o texto (`extra="forbid"` recusa um `text:`), e o que a lição cita da fonte
+fica em `Point.cites`, com dois limites conferidos na carga — no máximo cinco
+palavras por citação e um décimo da fonte no total. Os dois guardas têm teste
+por mutação em `tests/test_lessons.py`. O IPA das tabelas sai do espeak na hora
+de servir, como o resto da tela.
+
+O Charles **não vê** a lição: ela não entra no prompt, então não mexe no
+prefixo cacheado. O que liga a lição à conversa é a frase inicial da tarefa; o
+que o aluno escreve a partir dela passa pelo turno normal, com correção. Ela
+**não depende da E9** pela razão do IPA: lê a palavra escrita.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte

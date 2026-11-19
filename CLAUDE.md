@@ -85,6 +85,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/phonetics.py` | The G2P behind the IPA line that runs under every message. Text in, text out — no audio anywhere, which is why it is here and not in `voice/`. Lazy, and a failure costs the line, never the turn. |
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
 | `web/` | Single page: Jinja template + JS/CSS with no build step. |
@@ -411,8 +412,8 @@ nobody has to download 2.5 GB to get the suite green.
 
 The minimum target is CPU/iGPU without CUDA, and official Ollama does not use
 the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
-7B**, which puts a 4B at ~7–8 and an 8B at ~3.5 — which is why the default is
-4B-class and not 14B. This is a project premise, not a configuration detail:
+7B** — which is why the default is 4B-class and not 14B. This is a project
+premise, not a configuration detail:
 
 - Streaming is not an ornament: it is what makes 7–8 tok/s tolerable. Do not
   accumulate the response before relaying it.
@@ -423,6 +424,25 @@ the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
 - Python is pinned to `>=3.12,<3.13` on purpose: the `ctranslate2` and
   `onnxruntime` wheels, which Phase 1.5's voice will need, lag behind the new
   versions. Do not change the interpreter.
+
+**The 4B figure was an interpolation until it was measured, and it came in
+low.** The plans put a 4B at ~7–8 tok/s by size ratio (~80% of the 3B). Measured
+side by side on the same day (`docs/plano-fase-1.md` §5.5), `qwen3:4b-instruct`
+generates at **~55% of the 3B's rate**. Every "7–8 tok/s" above and in the plans
+is that estimate, not a measurement. The same table says the 3B ties the 4B on
+structured correction (27 vs 28 of 31, no false positive in either) and beats it
+on every latency line — so the 4B default rests on decision 1.3's bet about the
+teacher's prose, which no script here measures. That is an open debt, and if
+the prose ties, the 3B is the better default.
+
+**The default is `qwen3:4b-instruct`, and the suffix is load-bearing.** Bare
+`qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
+with an unconditional `<think>` and never reads the request's `think` field. It
+was the default from E0 while every number in the plans came from a 3B or a
+7B; measured at last, its first word took 231s at the median (479–1124 tokens
+of reasoning per turn) and all 31 analysis calls hit the 45s deadline with no
+JSON. Before "fixing" a model name by dropping the suffix, read `/api/show`'s
+`general.finetune`.
 
 ## Where the data lives
 
@@ -440,7 +460,8 @@ Five destinations, and confusing them is a category error:
   ships its models as packages, so there is no cache to choose and nothing to
   fetch after `uv sync`. Bump it together with spaCy's minor version, never
   alone: a pipeline only loads under the minor it was trained for.
-- **Curated knowledge** — `data/contrastive/*.yaml`, **versioned**: it is
+- **Curated knowledge** — `data/contrastive/*.yaml`, and with it `data/vocab/`
+  and `data/lessons/`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
   base arrives in E3.
 - **Third-party material** — `corpus/`, outside version control, `corpus/*` in
@@ -519,6 +540,12 @@ student said it, which is measurement over audio.
 **The syntax view has no number either** — the Structure button under each
 message, `teaching/syntax.py` and `POST /api/syntax`. It was in no plan, and it
 does not depend on E9 for the IPA line's reason: it reads the written words.
+
+**Lessons have no number either** — `/lessons`, `teaching/lessons.py` and
+`data/lessons/`. A lesson is a reading of somebody else's text, so it links to
+the source and versions only the analysis; the loader refuses a lesson whose
+citations grow past the budget. It stays out of the prompt, so it costs the
+prefix cache nothing. §5 of `docs/plano-fase-2.md` records it.
 
 **The curation queue has no number either**, and it is recorded in the same
 place for the same reason. It keeps the correction the verifier barred instead

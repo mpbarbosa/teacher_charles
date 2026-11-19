@@ -471,6 +471,9 @@ O que apareceu foi um ganho que mora num lugar diferente do esperado:
   parecia dar no 3B — o 7B *ganha* 50% em geração —, mas porque o ganho não
   chega ao suficiente: 4,2 tok/s num 7B segue abaixo do piso de ~7–8 tok/s.
   Vale medir um 4B antes de assumir o número extrapolado; não foi feito aqui.
+  *(Feito depois, na §5.5 do plano da Fase 1: o 4B gera a ~55% da vazão do 3B,
+  abaixo do que a extrapolação dava. O default segue 4B-class, agora
+  `qwen3:4b-instruct`.)*
 - **A dívida da análise (~10 s) não é tocada** (1,3×: ela *gera* 63–83 tokens
   de JSON) e passa a ser a maior fatia isolada do turno completo. O caminho
   continua sendo o que a §5.5 apontou — um modelo melhor só para ela —, agora

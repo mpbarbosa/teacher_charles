@@ -1,0 +1,307 @@
+# A curated lesson (model in src/teacher_charles/teaching/lessons.py).
+#
+# The speech and the article are someone else's text, and this repository is
+# public: nothing here copies them. `source` points at the article; `cites`
+# holds the few short phrases the analysis names, and the loader refuses the
+# lesson if they grow past a tenth of the speech (corpus/README.md: derive into
+# data/, never copy into it). Gilroy's comments are paraphrased and attributed,
+# never quoted.
+#
+# No IPA anywhere in this file: the transcriptions on the page come from espeak
+# (teaching/phonetics.py), the same G2P the voice speaks with.
+
+id: lesson.mon-mothma-senate-speech
+title: "Mon Mothma's Senate speech"
+summary: >-
+  A 269-word political speech from the series Andor, read at six levels: where
+  the words come from, which ones to learn, the grammar, how the sentences are
+  built, what they mean, and how they sound. The speech moves from formal to
+  blunt, from abstract to concrete, and from cautious to certain — and every
+  level of the language moves with it.
+cefr: C1
+
+source:
+  title: "Mon Mothma's 'Andor' Senate speech, annotated by Dan Gilroy"
+  publication: Los Angeles Times (The Envelope)
+  author: Matt Brennan
+  published: 2025-08-19
+  url: https://www.latimes.com/entertainment-arts/awards/story/2025-08-19/andor-disney-mon-mothma-senate-speech-annotated-dan-gilroy
+  work: >-
+    Andor, season 2, episode "Welcome to the Rebellion" — written by Dan
+    Gilroy, performed by Genevieve O'Reilly
+  words: 269
+
+sections:
+  - aspect: lexicon
+    title: Where the words come from
+    points:
+      - heading: The opening speaks Latin, the climax speaks Old English
+        body: >-
+          The first half is full of long words that came into English through
+          Latin and French: constituents, credibility, honorably, affection,
+          objective, reality. That is the language of institutions, and it tells
+          the Senate she belongs there. The climax uses short words with old
+          Germanic roots — death, truth, slip, ripped, screams, loud. Most are
+          one syllable. They are harder to argue with.
+      - heading: The register breaks in the middle of a sentence
+        body: >-
+          At the turning point she begins with a formal, distant phrase, stops,
+          and starts again with the plain everyday verb. You can watch the
+          official language being abandoned while she speaks — it is the whole
+          speech in two words.
+        cites: ["took place", "happened"]
+      - heading: The list of addressees runs from near to far
+        body: >-
+          She opens by naming her audience, from the closest relationship to the
+          most hostile. The last two words begin with the same sound and mean
+          opposite things, so the list ends on a contrast you can hear.
+        cites: ["allies, adversaries"]
+
+  - aspect: vocabulary
+    title: Words worth learning
+    points:
+      - heading: Political vocabulary
+        body: >-
+          Chamber, constituents, code of conduct, crisis, genocide, emperor. The
+          speech is set in a parliament, and these are the words any news story
+          about a parliament uses. The word list below explains the harder ones,
+          with the traps for Portuguese speakers.
+
+  - aspect: grammar
+    title: Grammar in use
+    points:
+      - heading: A concession with the verb first
+        body: >-
+          This is a formal way of saying "although we may disagree": the verb
+          comes first, then "as", then the subject and a modal. The pattern is
+          productive — "Tired as I was, I kept going", "Strange as it may
+          sound, it worked".
+        cites: ["Disagree as we might"]
+      - heading: The present perfect carries the history
+        body: >-
+          The speech keeps describing past actions whose results are still true
+          now: a life spent in the chamber, a distance that has become an abyss,
+          a truth that has been exiled. That is exactly what the present perfect
+          is for — the past, seen from today.
+      - heading: '"Help" without "to"'
+        body: >-
+          After help, the "to" of the infinitive is optional: help create and
+          help to create mean the same. Notice too that the relative pronoun is
+          missing — "the monster (that) we've helped create". English drops it
+          freely when it is the object of the clause.
+        cites: ["we've helped create"]
+      - heading: '"What" meaning "the thing that"'
+        body: >-
+          She contrasts what is said with what is known to be true. Each "what"
+          means "the thing that", and putting the two phrases side by side is
+          how she builds the gap between them.
+
+  - aspect: syntax
+    title: How the sentences are built
+    points:
+      - heading: Three "when" clauses, three different actors
+        body: >-
+          In the three clauses about losing the truth, the grammar changes who
+          acts. First the truth is the subject and leaves by itself. Then "we"
+          let it go — now we are responsible. Then it is torn from us in the
+          passive, and the attacker is not named. Accident, then our fault, then
+          violence. The unnamed attacker is named at the end of the speech.
+        cites: ["when"]
+      - heading: The last sentence makes you wait for its subject
+        body: >-
+          The final sentence repeats its subject three times, adding more
+          detail each time, and only reaches its verb and the emperor's name in
+          its last words. This is end-weight: English puts the heaviest, newest
+          information last.
+        cites: ["the monster"]
+      - heading: Sentence length follows the stages
+        body: >-
+          The opening uses long sentences with clauses inside clauses. The thesis
+          is six short words. The climax is fragments with no verb at all,
+          punctuated as questions and exclamations. Length is doing the work of
+          tone.
+      - heading: From "I" to "all of us"
+        body: >-
+          The pronouns widen as the speech goes: I (her own testimony), we (a
+          shared crisis), us (a shared loss), all of us (a shared danger). The
+          audience is drawn in a step at a time.
+
+  - aspect: semantics
+    title: What it means
+    points:
+      - heading: The monster goes from vague to named
+        body: >-
+          It starts as any monster at all, becomes the monster, then the monster
+          we created, and finally a proper name. Naming him is the act of
+          rebellion.
+        cites: ["whatever monster"]
+      - heading: Certainty grows through the speech
+        body: >-
+          Early on she hedges — I believe, I'm hopeful, almost. At the climax
+          every hedge is gone and the claim is stated flatly. The early caution
+          builds the credibility she then spends.
+        cites: ["perhaps"]
+      - heading: Truth is a person, tyranny is a beast
+        body: >-
+          Truth can leave, be thrown out, be torn away; the Senate has lost its
+          hold on it. The Senate itself is a boiling pot, the gap between words
+          and facts is a bottomless pit, and tyranny is a hungry, screaming
+          monster.
+        cites: ["abyss"]
+      - heading: Saying the word is the act
+        body: >-
+          In the article, Gilroy explains that the word genocide is dangerous
+          for her to say — using it in that chamber is what puts her life at
+          risk. He also says the speech has two audiences: the cowardly senators
+          she condemns, and the people of the galaxy she wants to wake up. That
+          is why the language gets plainer as it goes: the second half is for
+          the people outside the room.
+
+  - aspect: phonetics
+    title: How it sounds
+    points:
+      - heading: Sound patterns
+        body: >-
+          The opening repeats the h sound. Later, two stressed one-syllable
+          words both end in the th of "thin", which makes the phrase short and
+          memorable. Spoken aloud, the three "when" clauses form a rising
+          three-part rhythm.
+        cites: ["heavy heart", "the death of truth"]
+      - heading: The delivery
+        body: >-
+          According to Gilroy, the actor holds her voice steady with visible
+          effort at first, and the deliberate breath before the climax divides
+          the speech in two. The capital letters in the script mark a jump in
+          pitch and volume — the same turn from formal to blunt, heard in the
+          voice instead of the words.
+
+words:
+  - word: cleave
+    gloss: To stick closely to something or someone.
+    note: >-
+      A word with two opposite meanings: "to split apart" and "to cling to".
+      Here it means cling.
+  - word: predate
+    gloss: To exist or happen before something else.
+    note: Not related to "predator".
+  - word: vouch for
+    gloss: To say publicly that someone is honest or reliable.
+    note: The preposition is always "for".
+  - word: cauldron
+    gloss: A very large pot for boiling.
+    note: >-
+      Portuguese "caldeirão". Used as a metaphor, it suggests heat, mixing and
+      danger.
+  - word: abyss
+    gloss: A hole or gap so deep it seems to have no bottom.
+  - word: exiled
+    gloss: Forced to leave one's country and not allowed back.
+    note: Here it is used about truth, which treats truth as a person.
+  - word: unprovoked
+    gloss: Done without anyone attacking first.
+    note: It removes the excuse that the violence was a response.
+  - word: realize
+    gloss: To become aware of something.
+    note: A false friend. It means "perceber", not "realizar".
+    vocab_id: vocab.realize
+    rule_ids: [false-friend.realize-realizar]
+  - word: heavy heart
+    gloss: A feeling of sadness, especially about something one has to do.
+  - word: bonds of affection
+    gloss: The ties of love and loyalty that hold people together.
+    note: An allusion to Abraham Lincoln's first inaugural address.
+  - word: constituents
+    gloss: The people a politician represents.
+
+sounds:
+  - word: genocide
+    trap: >-
+      The stress is on the first syllable, and it begins with the "j" of
+      "jump", not the soft "j" of Portuguese "gente".
+  - word: abyss
+    trap: The stress is on the second syllable — unlike Portuguese "abismo".
+  - word: truth
+    trap: Ends in the "th" of "thin". Not "f", not "t".
+  - word: death
+    trap: Same final "th". "Death" and "deaf" are different words.
+  - word: constituents
+    trap: The "tu" sounds like "chu", and the final cluster has three consonants.
+  - word: honorably
+    trap: The "h" is silent.
+  - word: chamber
+    trap: Begins with the "ch" of "church", not the "sh" of "shoe".
+  - word: cauldron
+    trap: Do not drop the "l".
+  - word: cleave
+    trap: A long vowel, and a "v" at the end — not "f".
+
+questions:
+  - prompt: In this speech, what does "cleave" mean?
+    options: [split apart, cling closely, cut down, leave behind]
+    answer: 1
+    why: >-
+      "Cleave" has two opposite meanings. Bonds of affection that cleave
+      tightly are bonds that hold on.
+  - prompt: What does "Disagree as we might" mean?
+    options:
+      - Because we disagree
+      - Although we may disagree
+      - As long as we disagree
+      - If we ever disagree
+    answer: 1
+    why: >-
+      Verb first, then "as", then subject and modal, is a formal concession —
+      the same as "although".
+  - prompt: Why does she abandon "took place" and say "happened" instead?
+    options:
+      - '"Took place" is grammatically wrong there'
+      - She drops the formal register for plain words
+      - '"Happened" is more polite in a parliament'
+    answer: 1
+    why: >-
+      Both are correct. The switch is from distant, institutional language to
+      plain speech — the turn the whole speech makes.
+  - prompt: >-
+      In the third "when" clause, the truth is torn away in the passive. What
+      does the passive do there?
+    options:
+      - It makes the sentence more polite
+      - It leaves the attacker unnamed until the end
+      - It moves the action into the future
+    answer: 1
+    why: >-
+      A passive can drop the agent. The speech keeps the attacker unnamed until
+      its final words, where the name lands with full force.
+  - prompt: How do you say "realize" in Portuguese?
+    options: [realizar, perceber, reler]
+    answer: 1
+    why: >-
+      "Realize" means to become aware. For "realizar um evento", English says
+      hold, carry out or organize.
+  - prompt: Which syllable is stressed in "genocide"?
+    options: [GEN-o-cide, ge-NO-cide, ge-no-CIDE]
+    answer: 0
+    why: The stress falls on the first syllable.
+
+practice:
+  - task: >-
+      Write a concession with the verb (or adjective) first, like "Disagree as
+      we might". Finish the sentence below.
+    starter: "Tired as I was, "
+  - task: >-
+      Write three sentences that start with "When" and build up, each one
+      stronger than the last.
+    starter: "When "
+  - task: Use "realize" in its English meaning — becoming aware of something.
+    starter: "Last week I realized that "
+  - task: >-
+      Describe something that changed and is still changed now, using the
+      present perfect.
+    starter: "Over the last few years, "
+
+notes: >-
+  Written from the article of 2025-08-19, read on 2026-11-18. The text of the
+  speech is not in the repository: only the phrases in `cites`, inside the 10%
+  budget the loader checks. Questions and tasks repeat cited phrases and add no
+  new source wording. Gilroy's comments are paraphrased and attributed, never
+  quoted.

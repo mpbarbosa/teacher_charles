@@ -69,6 +69,11 @@ carregado, 150 tokens gerados, usando `eval_count`/`eval_duration` do próprio s
 
 Extrapolando pela razão de tamanho: **4B ≈ 7–8 tok/s, 8B ≈ 3,5 tok/s, 14B ≈ 2 tok/s.**
 
+> O 4B foi medido depois, lado a lado com o 3B, e a extrapolação saiu otimista:
+> ele gera a ~55% da vazão do 3B, não aos ~80% que a razão de tamanho dava. Os
+> "7–8 tok/s" que este documento e os seguintes repetem são essa estimativa, não
+> uma medida. Ver §5.5.
+
 A causa está medida também: `/api/ps` reporta `size_vram=0.00GB` para os dois modelos.
 **O Ollama padrão roda 100% em CPU e não toca a iGPU Intel** — não há build com
 suporte a Arc/SYCL no pacote oficial. *(Valia para a versão medida aqui. O
@@ -1023,15 +1028,103 @@ visível na hora.
 dica (1,0s) mostra que o teto desta máquina dá para isso — o que falta é a
 dica custar menos, ou um modelo mais rápido.
 
-**Um 3B, não o 4B default.** Os números acima são do modelo que está baixado
-nesta máquina. Um 4B deve ficar ~30% mais lento, pela §1.3; não foi medido.
+**Um 3B, não o 4B default.** Os números acima são do modelo que estava baixado
+nesta máquina. Um 4B deveria ficar ~30% mais lento, pela §1.3 — e ficou sem
+medir até a subseção seguinte, que achou coisa pior que os 30%.
+
+#### O 4B, enfim medido — e o default que mudou
+
+O default desde a E0 era `qwen3:4b`, e nenhum número deste documento saiu
+dele: tudo acima é do 3B ou do 7B. Medido em 2026-11-18, com o Ollama 0.35.0,
+o que essa tag entrega **não é um 4B qualquer**: é o `Qwen3-4B-Thinking-2507`
+(`/api/show` devolve `general.finetune = Thinking`, e o id `359d7dd4bcda` é o
+mesmo de `qwen3:4b-thinking`). O template de chat dele termina o prompt com um `<think>`
+incondicional — não lê o campo `think` do pedido. `TC_LLM_THINK=false` não
+desliga nada: só muda onde o raciocínio aparece.
+
+O irmão sem raciocínio existe na mesma biblioteca: `qwen3:4b-instruct`
+(`0edcdef34593`, `general.finetune = Instruct`, mesmos 2,5 GB), cujo prompt
+termina em `<|im_start|>assistant` e mais nada.
+
+Os três modelos, no mesmo dia, em série, com os dois scripts da casa
+(`measure_latency.py`, `measure_latency.py --cold`, `measure_analysis.py`) e o
+modelo descarregado entre uma etapa e outra:
+
+| | `qwen2.5:3b-instruct` | `qwen3:4b-instruct` | `qwen3:4b` (Thinking) |
+|---|---|---|---|
+| Primeira palavra, mediana · pior | **6,6s** · 7,9s | **11,1s** · 13,4s | **230,7s** · 492,5s |
+| Primeira palavra, 2 primeiros turnos vs 2 últimos | 6,9s → 6,7s | 11,2s → 12,3s | 188,4s → 247,6s |
+| Tokens gerados por turno de conversa | 20–34 | 44–85 | **479–1124**, raciocínio incluído |
+| Geração na conversa | 4,9–5,1 tok/s | 2,5–2,8 tok/s | 2,2–2,6 tok/s |
+| Prompt da conversa em cache | 91–95% | 91–94% | 89–94% |
+| Turno completo, frase correta | 9,9–12,7s | 31,5–42,6s | 196–520s |
+| Turno completo, frase com erro | 27,5–51,8s | 48,7–76,7s | 254–324s |
+| Primeiro turno, modelo descarregado, sem aquecimento | 51,3s | 60,7s | 252,9s |
+| Primeiro turno, aquecido | 2,5s | 3,1s | 173,5s |
+| Análise: regra **esperada** citada (31 frases com erro) | 27/31 | 28/31 | **0/31** |
+| Análise: frase correta corrigida por engano (18) | 0/18 | 0/18 | 0/18 — nada foi produzido |
+| Análise: JSON exigiu retentativa | 0/49 | 1/49 | 0/49 |
+| Análise degradada, sem correção | 0/49 | 0/49 | **31/49** — toda chamada que foi ao modelo |
+| Análise isolada, mediana · pior | 16,1s · 21,9s | 21,7s · 42,9s | 45,0s · 45,0s, que é o prazo |
+| Análise dentro da sessão de 6 turnos | 3 de 3 voltaram | 2 de 3 | 0 de 3 |
+
+**Os tempos absolutos desta tabela não se comparam com os do resto da §5.5.** A
+máquina estava no perfil de energia `power-saver` (governor `powersave`,
+núcleos entre 1,4 e 1,8 GHz) e os três modelos foram medidos nele; o 3B que
+aqui leva 8,6s até a primeira palavra é o mesmo que leva 2,7s na tabela do
+"Resultado final" — aqui, 6,6s. O que a tabela sustenta é a comparação **entre
+as colunas**.
+
+**E as colunas foram medidas na mesma condição, o que custou uma passada.** Os
+dois 4B e a sessão do 3B só começaram cada etapa com a máquina quieta — carga
+de 1 min abaixo de 2,5 e nenhum outro processo pesado. A primeira passada do
+3B, de manhã, não tinha essa trava e correu com carga de 4,3–4,7: deu 8,6s de
+mediana até a primeira palavra e 4,2–5,1 tok/s. As linhas de sessão da coluna
+do 3B são da passada refeita no fim, depois dos dois 4B; as de primeiro turno
+e de análise são da primeira, a única — se erram, é contra o 3B.
+
+Três leituras, na ordem em que importam:
+
+**O default antigo não servia a este produto.** Com o `qwen3:4b`, o aluno
+espera de três a oito minutos pela primeira palavra — o modelo gasta de 479 a
+1124 tokens raciocinando antes dela — e a correção estruturada **nunca
+aparece**: as 31 chamadas de análise bateram no prazo de 45s sem devolver JSON.
+Nem o aquecimento salva o primeiro turno (173,5s), porque o que custa não é
+prompt, é geração. Não é defeito de configuração; é o que esse build faz.
+
+**O 4B gera a ~55% da vazão do 3B, não a ~80%.** 2,5–2,8 tok/s contra 4,9–5,1
+na conversa (53%; 57% contra a primeira passada do 3B); na análise, 3,8 contra
+5,6–5,9 (~66%). A §1.3 punha o 4B em 7–8 tok/s
+extrapolando pela razão de tamanho, e essa razão não se sustentou. É a medida
+que a §7 do plano da Fase 1.5 pediu antes de alguém confiar no número
+extrapolado.
+
+**O `qwen3:4b-instruct` não ganha do 3B em nada que estes scripts medem.** Na
+correção empata — uma frase de diferença em 31 é ruído, e nenhum dos dois
+inventou correção em frase certa. Em latência perde em todas as linhas, e a
+pior análise isolada dele (42,9s) ficou a dois segundos do prazo; dentro da
+sessão, a primeira análise passou do prazo e o turno saiu sem correção. O que
+um 4B deveria comprar é a prosa do professor, que é a aposta da decisão 1.3 —
+e **prosa nenhum dos dois scripts mede**.
+
+**A decisão: o default passa a ser `qwen3:4b-instruct`.** É a troca menor — a
+mesma família, a mesma classe de tamanho e o mesmo download — e conserta as
+duas coisas que estavam quebradas. Mas ela fica de pé pela decisão 1.3, não
+por esta tabela: pelos números daqui, o 3B é o modelo mais rápido e igualmente
+certeiro. **Dívida aberta:** medir a qualidade da resposta do professor nos
+dois. Se empatar, o default certo é o 3B.
+
+Uma primeira passada do `qwen3:4b` foi descartada inteira: outra carga na
+máquina levou o load a ~35 e os tempos deixaram de valer. Fica dela só o que
+não depende de relógio: num dos turnos o modelo gerou 3251 tokens antes de
+terminar, o triplo do pior turno da passada válida.
 
 ### Rodar em dev
 
 ```bash
 uv sync
 uv run python scripts/check_env.py      # confere RAM, Ollama, modelo
-ollama pull qwen3:4b                    # modelo default
+ollama pull qwen3:4b-instruct           # modelo default
 uv run teacher-charles --reload         # http://localhost:8000
 ```
 
