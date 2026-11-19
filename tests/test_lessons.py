@@ -604,6 +604,8 @@ def test_with_ipa_the_full_text_has_a_phonetics_button_and_hidden_lines(tmp_path
     # The layout switch (after the paragraph / between the lines) waits,
     # hidden, until the IPA is showing (full-text.js).
     assert 'class="ipa-layout"' in page
+    # The symbol reference sits under the full text and in the phonetics.
+    assert page.count('href="https://www.ipachart.com/"') == 2
     assert "/static/full-text.js" in page
     # One line per paragraph, hidden until asked for, and the paragraph's own
     # markup untouched.
@@ -622,6 +624,8 @@ def test_without_ipa_the_full_text_has_no_phonetics(tmp_path):
     assert 'id="full-text"' in page
     assert "show-ipa" not in page
     assert "ipa-layout" not in page
+    # The phonetics section still points at the symbol reference.
+    assert page.count('href="https://www.ipachart.com/"') == 1
     assert "full-text.js" not in page
     assert '<div class="ipa" hidden>' not in page
 

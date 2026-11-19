@@ -598,6 +598,7 @@ main.lesson .source {
   background: var(--student);
 }
 main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
+main.lesson .ipa-chart { color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
 main.lesson .aspects { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.85rem; }
 main.lesson .cites { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
 main.lesson .full-text .reading {
