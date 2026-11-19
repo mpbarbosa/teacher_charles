@@ -660,6 +660,12 @@ main.lesson .full-text .reading .now-reading {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+/* With a voice, a sentence is a place to start reading from (lesson.js). */
+main.lesson .full-text .reading.clickable .sentence { cursor: pointer; }
+main.lesson .full-text .reading.clickable .sentence:hover:not(.now-reading) {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0.2rem;
+}
 main.lesson .full-text .reading .w.now-word {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 0.2rem;

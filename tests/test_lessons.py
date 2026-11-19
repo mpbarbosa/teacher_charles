@@ -777,3 +777,25 @@ def test_without_voice_there_are_no_timings(tmp_path):
     settings = settings_for(tmp_path)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         assert c.get("/api/tts/whatever/words").status_code == 503
+
+
+# --- starting the reader from a sentence ------------------------------------ #
+
+
+def test_with_voice_the_page_says_a_sentence_can_be_clicked(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'class="read-hint"' in page
+    assert "Click any sentence to hear it from there." in page
+
+
+def test_without_voice_no_sentence_promises_a_reading(tmp_path):
+    """No voice, no reader: a hint to click would be a promise nothing keeps."""
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'id="full-text"' in page
+    assert "read-hint" not in page

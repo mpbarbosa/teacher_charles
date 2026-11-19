@@ -505,8 +505,13 @@
    * word. `first` is the piece's first word in its sentence, for the word
    * timings.
    */
-  function pieces() {
-    const sentences = [...document.querySelectorAll(".full-text .reading .sentence")];
+  function pieces(from = null) {
+    let sentences = [...document.querySelectorAll(".full-text .reading .sentence")];
+    // A reading started from a clicked sentence begins there, and that
+    // sentence gets the short opening clause the first one gets: it was not
+    // fetched before the click, so the clause is what makes it start soon.
+    const start = from ? sentences.indexOf(from) : 0;
+    if (start > 0) sentences = sentences.slice(start);
     return sentences.flatMap((sentence, index) => {
       const text = sentence.textContent.trim();
       const parts = (index === 0 && lead(text)) || [text];
@@ -549,10 +554,10 @@
     return request;
   }
 
-  function openingFor(text, voice) {
+  function openingFor(text, voice, live = () => true) {
     const key = `${voice}\n${text}`;
     if (!opening.has(key)) {
-      const request = speakInTurn(text, voice);
+      const request = speakInTurn(text, voice, live);
       // A failed prefetch is not kept: the click asks again.
       request.catch(() => {
         if (opening.get(key) === request) opening.delete(key);
@@ -565,8 +570,14 @@
   function prefetchOpening() {
     const button = document.querySelector("button.read-aloud");
     if (!button) return;
-    // In order: the server synthesises one at a time, first come first.
-    for (const piece of openingPieces(pieces())) openingFor(piece.text, button.dataset.voice);
+    // In order: the server synthesises one at a time, first come first. A
+    // reading started from a clicked sentence further down does not need
+    // these, so what of them is not sent yet is dropped: measured, a click
+    // 1.5 s after load waited 3.1 s, queued behind the prefetch.
+    const live = () => !reader || reader.fromTop;
+    for (const piece of openingPieces(pieces())) {
+      openingFor(piece.text, button.dataset.voice, live);
+    }
   }
 
   /** A sentence longer than the ceiling, cut at the last space that fits. */
@@ -683,17 +694,23 @@
     markWord(null, -1);
   }
 
-  async function readAloud(button) {
+  /**
+   * Reads the full text aloud, from the top or from `from`, a sentence the
+   * student clicked. The button toggles: a second click while it reads is
+   * "stop", not "from the top". A sentence never toggles: clicking one while
+   * it reads jumps there, because that is what the click asks for.
+   */
+  async function readAloud(button, from = null) {
     const wasReading = reader?.button === button;
     stop();
-    // A second click while it reads is "stop", not "from the top".
-    if (wasReading) return;
+    if (wasReading && !from) return;
 
-    const queue = pieces();
+    const queue = pieces(from);
     if (!queue.length) return;
 
     const voice = button.dataset.voice;
-    const run = { button, label: button.textContent };
+    const firstSentence = document.querySelector(".full-text .reading .sentence");
+    const run = { button, label: button.textContent, fromTop: !from || from === firstSentence };
     reader = run;
     button.classList.remove("failed");
     button.title = "Stop reading";
@@ -762,7 +779,23 @@
     else window.addEventListener("load", schedule, { once: true });
   }
 
+  // A sentence of the full text is a place to start reading from. Not when
+  // the click ends a text selection: the student was copying a phrase or
+  // looking one up, and a voice starting up would be in the way.
+  const readButton = document.querySelector("button.read-aloud");
+  const fullText = document.getElementById("full-text-reading");
+  if (readButton && fullText) {
+    fullText.classList.add("clickable");
+    fullText.title = "Click a sentence to hear it from there";
+  }
+
   document.addEventListener("click", (event) => {
+    const sentence = readButton && event.target.closest?.(".full-text .reading .sentence");
+    if (sentence) {
+      if (!window.getSelection()?.isCollapsed) return;
+      readAloud(readButton, sentence);
+      return;
+    }
     const target = event.target.closest(
       "button.say, button.record, button.mine, button.both, button.read-aloud"
     );
