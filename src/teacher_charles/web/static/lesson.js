@@ -655,21 +655,67 @@
     for (const el of carriers) el.classList.add("now-ipa");
   }
 
+  // ## Lighting a word before its timing arrives
+  //
+  // The measured starts come from a Whisper pass that runs beside the next
+  // piece's synthesis, so on a reading started from a click, with nothing
+  // fetched ahead, they arrived after a short piece had finished playing
+  // ("ripped from our hands,", 1.5 s of audio: not one word lit) and 3.5 s
+  // into the next. Until they arrive, the light follows an estimate: the
+  // audio's length shared out by each word's letters plus one per vowel
+  // group, with a comma, semicolon, colon or dash worth eight letters of
+  // pause, and the last 0.1 s left as the tail. Fitted on 14 sentences of the
+  // lesson against Whisper's starts and checked on the half it was not fitted
+  // on: the estimate names the word Whisper names at 59-61% of instants, a
+  // median of 0.09-0.12 s off, where one equal share per word gets 44%.
+  const EST_PER_VOWEL_GROUP = 1;
+  const EST_CLAUSE_PAUSE = 8;
+  const EST_TAIL_SECONDS = 0.1;
+
+  /** When each of `words` starts in `duration` seconds of audio, estimated. */
+  function estimateStarts(words, duration) {
+    const weights = words.map((word) => {
+      const letters = word.replace(/[^\p{L}']/gu, "");
+      const vowels = letters.match(/[aeiouy]+/giu)?.length ?? 0;
+      return letters.length + EST_PER_VOWEL_GROUP * vowels;
+    });
+    const pauses = words.map((word, i) =>
+      i < words.length - 1 && /[,;:—–]$/u.test(word) ? EST_CLAUSE_PAUSE : 0
+    );
+    const total = weights.reduce((a, b) => a + b, 0) + pauses.reduce((a, b) => a + b, 0);
+    if (!total || !(duration > 0)) return [];
+    const span = Math.max(duration - EST_TAIL_SECONDS, duration / 2);
+    const starts = [];
+    let done = 0;
+    weights.forEach((weight, i) => {
+      starts.push((span * done) / total);
+      done += weight + pauses[i];
+    });
+    return starts;
+  }
+
   /**
    * Keeps the lit word on the one being said, for as long as `audio` is the
-   * one playing. `timings` is the promise of the piece's word starts; the
-   * audio may be playing before they arrive, and then the light joins in on
-   * the word being said, not the first one. `first` is the index of the
-   * piece's first word in the sentence (non-zero only for the second part of
-   * a sentence too long for one call).
+   * one playing. `timings` is the promise of the piece's measured word
+   * starts; until it resolves, the light follows `estimateStarts` over the
+   * piece's `text`, and the measured starts take over, mid-word if need be,
+   * the moment they arrive. Measured starts that come back empty (the server
+   * could not time the piece) leave the estimate in place. `first` is the
+   * index of the piece's first word in the sentence.
    *
    * Driven by animation frames, which track the voice closely, and by the
    * audio's own `timeupdate`, a few times a second: frames stop in a hidden
    * tab, and the light must not freeze when the student looks away.
    */
-  function follow(audio, sentence, timings, first) {
+  function follow(audio, sentence, timings, first, text) {
     let starts = [];
+    let measured = false;
     let shown = -2;
+    const estimate = () => {
+      if (measured || starts.length) return;
+      starts = estimateStarts(text.split(/\s+/), audio.duration);
+      update();
+    };
     const update = () => {
       if (current?.audio !== audio || !starts.length) return;
       const t = audio.currentTime;
@@ -687,7 +733,12 @@
       requestAnimationFrame(frame);
     };
     audio.addEventListener("timeupdate", update);
+    // A WAV blob knows its length almost at once; it may already.
+    if (Number.isFinite(audio.duration)) estimate();
+    else audio.addEventListener("loadedmetadata", estimate, { once: true });
     timings.then((resolved) => {
+      if (!resolved.length) return;
+      measured = true;
       starts = resolved;
       update();
     });
@@ -762,14 +813,14 @@
         button.classList.remove("loading");
       }
       if (reader !== run) return;
-      const { sentence, first } = queue[i];
+      const { sentence, first, text } = queue[i];
       mark(sentence);
       markWord(sentence, -1);
       sentence.scrollIntoView({ block: "nearest", behavior: "smooth" });
       try {
         const playing = play(piece.blob, button);
         // `play` sets `current` before it returns, so its audio is at hand.
-        follow(current.audio, sentence, piece.starts, first);
+        follow(current.audio, sentence, piece.starts, first, text);
         if (!(await playing)) return; // cut: stop() already tidied up
       } catch (error) {
         if (reader === run) endReading();
