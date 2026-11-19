@@ -1,0 +1,77 @@
+# The IPA symbols espeak writes for American English (en-us, the accent of
+# teaching/phonetics.py), each with one example word to hear it in.
+#
+# Read by teaching/ipa_symbols.py. Two uses:
+#   - cutting an IPA string into its sounds: a symbol here is one unit, so
+#     "tʃ", "eɪ" and "iː" are one sound each, not two characters;
+#   - the chart under a lesson's full text, which lists the symbols the text
+#     uses, in this order, and plays the example on a click.
+#
+# Conventions:
+#   kind     vowel, diphthong or consonant: the chart's three groups.
+#   example  a common word whose espeak IPA contains the symbol, held there by
+#            tests/test_ipa_symbols.py. The IPA shown beside it is espeak's at
+#            serve time, never written here, for the reason phonetics.py gives:
+#            the symbol on screen is the one the voice pronounces.
+#            Chosen so the symbol is the sound a learner would point at in the
+#            word, not a sound it merely happens to contain.
+#
+# Symbols are matched longest first, so "tʃ" wins over "t" and "eɪ" over "e".
+# Stress marks (ˈ ˌ) are not sounds and are not listed.
+
+symbols:
+  # --- vowels ------------------------------------------------------------- #
+  - {symbol: "iː", kind: vowel, example: see}
+  - {symbol: "ɪ", kind: vowel, example: sit}
+  - {symbol: "i", kind: vowel, example: happy}
+  - {symbol: "ᵻ", kind: vowel, example: wanted}
+  - {symbol: "ɛ", kind: vowel, example: bed}
+  - {symbol: "æ", kind: vowel, example: cat}
+  - {symbol: "ɑː", kind: vowel, example: father}
+  - {symbol: "ɔː", kind: vowel, example: thought}
+  - {symbol: "ɔ", kind: vowel, example: want}
+  - {symbol: "ʊ", kind: vowel, example: put}
+  - {symbol: "uː", kind: vowel, example: food}
+  - {symbol: "ʌ", kind: vowel, example: cup}
+  - {symbol: "ə", kind: vowel, example: sofa}
+  - {symbol: "ɐ", kind: vowel, example: about}
+  - {symbol: "ɚ", kind: vowel, example: teacher}
+  - {symbol: "ɜː", kind: vowel, example: bird}
+
+  # --- diphthongs --------------------------------------------------------- #
+  - {symbol: "eɪ", kind: diphthong, example: face}
+  - {symbol: "aɪ", kind: diphthong, example: my}
+  - {symbol: "ɔɪ", kind: diphthong, example: boy}
+  - {symbol: "oʊ", kind: diphthong, example: go}
+  - {symbol: "aʊ", kind: diphthong, example: now}
+
+  # --- consonants --------------------------------------------------------- #
+  - {symbol: "p", kind: consonant, example: pen}
+  - {symbol: "b", kind: consonant, example: bad}
+  - {symbol: "t", kind: consonant, example: tea}
+  - {symbol: "d", kind: consonant, example: dog}
+  - {symbol: "k", kind: consonant, example: cat}
+  - {symbol: "ɡ", kind: consonant, example: get}
+  - {symbol: "f", kind: consonant, example: fat}
+  - {symbol: "v", kind: consonant, example: van}
+  - {symbol: "θ", kind: consonant, example: think}
+  - {symbol: "ð", kind: consonant, example: this}
+  - {symbol: "s", kind: consonant, example: see}
+  - {symbol: "z", kind: consonant, example: zoo}
+  - {symbol: "ʃ", kind: consonant, example: she}
+  - {symbol: "ʒ", kind: consonant, example: measure}
+  - {symbol: "h", kind: consonant, example: hat}
+  - {symbol: "tʃ", kind: consonant, example: church}
+  - {symbol: "dʒ", kind: consonant, example: judge}
+  - {symbol: "m", kind: consonant, example: man}
+  - {symbol: "n", kind: consonant, example: "no"}
+  - {symbol: "n̩", kind: consonant, example: button}
+  - {symbol: "ŋ", kind: consonant, example: sing}
+  - {symbol: "l", kind: consonant, example: leg}
+  - {symbol: "ɹ", kind: consonant, example: red}
+  - {symbol: "w", kind: consonant, example: wet}
+  - {symbol: "j", kind: consonant, example: "yes"}
+  # American English taps the t between vowels, and stops it before a
+  # syllabic n: both show up in espeak's reading of ordinary words.
+  - {symbol: "ɾ", kind: consonant, example: water}
+  - {symbol: "ʔ", kind: consonant, example: button}

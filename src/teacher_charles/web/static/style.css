@@ -600,6 +600,38 @@ main.lesson .source {
 }
 main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
 main.lesson .ipa-chart { color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
+/* The sounds of the full text: one tile per IPA symbol, with its example. */
+main.lesson .symbol-chart { margin-top: 0.5rem; }
+main.lesson .symbol-chart summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
+main.lesson .symbol-chart h3 { font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.3rem; font-weight: 600; }
+main.lesson .symbol-chart .symbols {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.35rem;
+}
+main.lesson .symbol-chart .symbol,
+main.lesson .symbol-chart button.say.symbol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0.35rem 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--student);
+  color: var(--fg);
+  text-align: center;
+}
+main.lesson .symbol-chart button.say.symbol { cursor: pointer; }
+main.lesson .symbol-chart button.say.symbol:hover { border-color: var(--accent); }
+main.lesson .symbol-chart button.say.symbol.playing { border-color: var(--accent); color: var(--accent); }
+main.lesson .symbol-chart .glyph { font-size: 1.35rem; line-height: 1.1; }
+main.lesson .symbol-chart .example-ipa,
+main.lesson .symbol-chart .count { color: var(--muted); font-size: 0.72rem; }
+body.no-ipa .symbol-chart { display: none; }
 main.lesson .video .frame {
   position: relative;
   aspect-ratio: 16 / 9;

@@ -56,6 +56,7 @@ from .teaching import (
 from .teaching.contrastive import ContrastiveError, load_base
 from .teaching.dictionary import MAX_WORD_CHARS, Dictionary, DictionaryUnavailable, build_dictionary
 from .teaching.dictionary import on_screen as dictionary_on_screen
+from .teaching.ipa_symbols import SymbolError, SymbolTable, load_symbols
 from .teaching.lessons import (
     ASPECTS,
     Lesson,
@@ -336,6 +337,16 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             log.error("lessons did not load, the shelf stays empty: %s", exc)
             lessons = None
 
+        # The IPA symbols, each with a word to hear it in: the chart under a
+        # lesson's full text. Curated like the shelf, and the same policy: a
+        # broken table leaves the chart out, not the lesson.
+        try:
+            symbols_path = settings.data_dir / "phonetics" / "symbols.yaml"
+            symbols: SymbolTable | None = load_symbols(symbols_path)
+        except SymbolError as exc:
+            log.error("IPA symbols did not load, lessons go without the chart: %s", exc)
+            symbols = None
+
         app.state.settings = settings
         app.state.db = conn
         # Em app.state, e não fechado na rota: é aqui que o teste troca o
@@ -350,6 +361,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.syntax = syntax
         app.state.dictionary = dictionary
         app.state.lessons = lessons
+        app.state.ipa_symbols = symbols
         app.state.prompts = prompts
         app.state.analyzer = analyzer
         app.state.base = base if analyzer is not None else None
@@ -701,6 +713,23 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             out.append(row)
         return out
 
+    def symbol_chart(sentences: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        """The IPA symbols the full text uses, grouped, each with its example.
+
+        Read off the IPA the page already shows, so a tile is never a sound
+        the text does not have. The example's IPA is espeak's, made here, for
+        ``teaching/ipa_symbols.py``'s reason. Empty with the IPA off or the
+        table missing, and then the template draws no chart.
+        """
+        table: SymbolTable | None = app.state.ipa_symbols
+        if table is None:
+            return []
+        groups = table.chart([s["ipa"] for p in sentences for s in p if s["ipa"]])
+        for group in groups:
+            for row in group["symbols"]:
+                row["example_ipa"] = spell(row["example"])
+        return groups
+
     def sentence_view(text: str) -> dict[str, Any]:
         words = text.split()
         ipa = spell(text)
@@ -864,6 +893,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         if lesson is None:
             return HTMLResponse("No such lesson.", status_code=404)
         full_text = read_local_text(settings.resolved_corpus_dir, lesson)
+        sentences = full_text_sentences(full_text)
         return templates.TemplateResponse(
             request=request,
             name="lessons.html",
@@ -879,7 +909,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "full_text": full_text,
                 # The copy cut into sentences, each with its IPA, so the reader
                 # can light the sentence it is speaking in both lines at once.
-                "full_text_sentences": full_text_sentences(full_text),
+                "full_text_sentences": sentences,
+                # The symbols that IPA uses, each playing an example word.
+                "symbol_chart": symbol_chart(sentences),
                 # Beside each point, the sentence of the copy it quotes. From
                 # the copy, so it is here and not in lesson_payload either.
                 "point_passages": point_passages(lesson, full_text),

@@ -526,8 +526,9 @@ Five destinations, and confusing them is a category error:
   a cache like Kokoro's: built from two public lexicons by
   `scripts/fetch_dictionary.py`, re-downloadable, nobody's personal data. Not
   in `data/` either: WordNet is somebody else's work, and the card credits it.
-- **Curated knowledge** — `data/contrastive/*.yaml`, and with it `data/vocab/`
-  and `data/lessons/`, **versioned**: it is
+- **Curated knowledge** — `data/contrastive/*.yaml`, and with it `data/vocab/`,
+  `data/lessons/` and `data/phonetics/` (the IPA symbols and their example
+  words, `teaching/ipa_symbols.py`), **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
   base arrives in E3.
 - **Third-party material** — `corpus/`, outside version control, `corpus/*` in
