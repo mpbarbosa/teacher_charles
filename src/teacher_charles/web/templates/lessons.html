@@ -138,16 +138,29 @@
     </section>
     {% endif %}
 
-    {% for section in lesson.sections %}
+    {% for section in lesson.sections %}{% set si = loop.index0 %}
     <section class="aspect" id="{{ section.aspect }}">
       <h2><span class="tag">{{ section.aspect }}</span> {{ section.title }}</h2>
-      {% for point in section.points %}
-      <div class="rule-card point">
-        <div class="headline">{{ point.heading }}</div>
+      {#
+        A point that cites the text has it on the left and the explanation on
+        the right. The passage is the sentence of this machine's copy the
+        citation sits in, with the citation marked; without a copy, or for a
+        citation the copy does not hold, the left side is the bare quote.
+      #}
+      {% for point in section.points %}{% set placed = point_passages[si][loop.index0] %}
+      <div class="rule-card point{% if point.cites %} paired{% endif %}">
         {% if point.cites %}
-        <div class="cites">{% for cite in point.cites %}<q>{{ cite }}</q>{% endfor %}</div>
+        <div class="from-text" aria-label="From the text">
+          {% for runs in placed.passages %}<blockquote class="passage">
+            {%- for run in runs %}{% if run.cite %}<mark>{{ run.text }}</mark>{% else %}{{ run.text }}{% endif %}{% endfor -%}
+          </blockquote>{% endfor %}
+          {% if placed.unplaced %}<div class="cites">{% for cite in placed.unplaced %}<q>{{ cite }}</q>{% endfor %}</div>{% endif %}
+        </div>
         {% endif %}
-        <p>{{ point.body }}</p>
+        <div class="explained">
+          <div class="headline">{{ point.heading }}</div>
+          <p>{{ point.body }}</p>
+        </div>
       </div>
       {% endfor %}
 
