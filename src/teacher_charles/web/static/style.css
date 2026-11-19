@@ -637,6 +637,16 @@ main.lesson .full-text .reading.interlinear .w::after {
   color: var(--muted);
   white-space: nowrap;
 }
+/* While the reader speaks, the IPA follows it word by word here too: the
+   sentence being read has its IPA at full strength instead of muted, and the
+   word being said is lit with its IPA (the lit `.w` box holds both). An IPA
+   word drawn under a neighbour -- "in the" is ɪnðə under "in" -- is lit on
+   its own through `.now-ipa` while "the" is said (lesson.js). */
+main.lesson .full-text .reading.interlinear .sentence.now-reading .w::after { color: var(--fg); }
+main.lesson .full-text .reading.interlinear .w.now-ipa::after {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 0.2rem;
+}
 /* The sentence the reader is speaking, and its IPA, so the eye can follow
    the voice; the word being said is lit stronger inside it. Inline
    backgrounds wrap with the line, which a box would not. */
