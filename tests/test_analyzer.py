@@ -100,6 +100,58 @@ def test_extracts_json_after_a_think_block():
     assert extract_json_object(raw) == {"errors": []}
 
 
+# The shape measured on Ollama 0.35 with qwen3:4b and ``think: false``: no
+# opening tag, the reasoning, a bare ``</think>``, then the answer. The model
+# rehearses the format while it thinks, which is what makes the shape dangerous
+# and not merely untidy.
+LEAKED_REASONING = (
+    "Okay, the student wrote: I have 30 years. I must answer with JSON such as "
+    '{"errors": [{"span": "30 years", "type": "grammar", "correction": "thirty years"}]} '
+    "but wait, is that the mistake? The rule says English uses be for age.\n"
+    "</think>\n\n"
+)
+
+
+def test_extracts_the_json_that_follows_reasoning_with_no_opening_tag():
+    """Without this the *rehearsed* object is the one that gets parsed -- a
+    correction the model considered and dropped, taken for its answer."""
+    answer = {"errors": [{"span": "I have 30 years", "correction": "I am 30 years old"}]}
+    assert extract_json_object(LEAKED_REASONING + json.dumps(answer)) == answer
+
+
+def test_reasoning_followed_by_no_answer_yields_nothing():
+    """A reply cut off right after the thought. Nothing was answered, so the
+    rehearsal must not be promoted to a result; ``None`` makes it a retry."""
+    assert extract_json_object(LEAKED_REASONING) is None
+
+
+def test_a_think_block_after_the_answer_does_not_take_the_answer_with_it():
+    """The unopened-tag rule reads from the start of the reply, so the paired
+    blocks have to be gone before it looks."""
+    raw = '{"errors": []}\n<think>Did I miss the preposition?</think>'
+    assert extract_json_object(raw) == {"errors": []}
+
+
+async def test_leaked_reasoning_does_not_become_the_correction():
+    """The same guard seen from where the student stands, through a provider
+    that slices the reply: the finding shown is the one the model answered
+    with, and the one it only thought about is not."""
+    reply = LEAKED_REASONING + errors_json(
+        {
+            "span": "I have 30 years",
+            "type": "calque",
+            "correction": "I am 30 years old",
+            "rule_id": "calque.age-have",
+        }
+    )
+    analyzer, _ = analyzer_for(reply)
+
+    analysis = await analyzer.analyze("I have 30 years.")
+
+    assert [f.span for f in analysis.findings] == ["I have 30 years"]
+    assert analysis.attempts == 1
+
+
 def test_ignores_trailing_garbage_after_the_object():
     raw = '{"errors": []}\n\nLet me know if you want more detail.'
     assert extract_json_object(raw) == {"errors": []}

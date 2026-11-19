@@ -72,10 +72,14 @@ class Settings(BaseSettings):
     # enquanto a página ainda está sendo lida.
     llm_warmup: bool = True
 
-    # Modelos de raciocínio (Qwen3, entre outros) pensam antes de responder, e
-    # isso custa segundos que uma conversa não tem. None deixa o default do
-    # servidor valer; False desliga, que é o que se quer num professor que
-    # precisa responder em 1-2s.
+    # Reasoning models (Qwen3 among them) think before answering, and that
+    # costs seconds a conversation does not have. ``None`` lets the server's
+    # default stand; ``False`` switches the reasoning off **on a model that
+    # can switch it off**. Bare ``qwen3:4b`` is not one: the tag is the
+    # thinking-only build, and there ``False`` changes nothing -- the reasoning
+    # still runs, hidden, before the first word (see
+    # ``OllamaProvider._think_off_is_obeyed``). The default
+    # ``qwen3:4b-instruct`` does not reason, so there is nothing to switch.
     llm_think: bool | None = None
 
     # --- Ensino ----------------------------------------------------------

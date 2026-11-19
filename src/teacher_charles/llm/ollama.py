@@ -9,7 +9,10 @@ Modelo inexistente devolve 404 com ``{"error": "model '...' not found"}``.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 from typing import Any, ClassVar
 
 import httpx
@@ -30,6 +33,27 @@ from .base import (
 # Conectar num servidor local é instantâneo ou não vai acontecer; gerar texto
 # num 4B em CPU é lento por natureza. Daí dois prazos diferentes.
 CONNECT_TIMEOUT_S = 5.0
+
+# ``/api/show`` reads a manifest off disk and loads no model, so it gets the
+# short deadline: a server that cannot answer it in this long is not going to
+# be saved by the question.
+SHOW_TIMEOUT_S = 5.0
+
+# The request's ``think`` field reaches a model in exactly one way: the chat
+# template reads it, as the variable ``.Think``. The word boundary is what
+# keeps out the two lookalikes every thinking template carries -- ``.Thinking``
+# (a past message's stored reasoning) and ``.IsThinkSet`` (whether the request
+# had the field at all, true for ``false`` as much as for ``true``).
+_READS_THINK_FLAG = re.compile(r"\.Think\b")
+
+# A template that follows the assistant header with ``<think>`` has started
+# the reasoning before the model writes a token, so the model reasons on every
+# turn. That is the only evidence of reasoning ``/api/show`` gives. The
+# capability list is not: ``qwen3:4b-instruct`` lists ``thinking`` and answers
+# a one-word question in two tokens, with the field sent or left out.
+_OPENS_THINK_BLOCK = re.compile(r"assistant\s*<think>")
+
+log = logging.getLogger(__name__)
 
 
 def _timeout(read_timeout_s: float) -> httpx.Timeout:
@@ -76,6 +100,9 @@ class OllamaProvider(ChatProvider):
         # cada turno, e numa conversa isso aparece.
         self._client = client or httpx.AsyncClient(timeout=_timeout(request_timeout_s))
         self._owns_client = client is None
+        # Whether ``think: false`` is safe to send to this model. ``None``
+        # until the server has been asked; see ``_think_off_is_obeyed``.
+        self._think_off_obeyed: bool | None = None
 
     def _payload(
         self,
@@ -96,9 +123,9 @@ class OllamaProvider(ChatProvider):
             "stream": stream,
             "options": opts,
         }
-        # Só manda o campo quando há decisão explícita, para não sobrescrever o
-        # default do servidor. Verificado: um modelo que não raciocina aceita
-        # `think: false` sem erro, então isto é seguro de mandar.
+        # Sent only on an explicit decision, so the server's default is not
+        # overridden. By the time the options get here ``stream`` has already
+        # dropped a ``False`` the model would not obey.
         if options.think is not None:
             payload["think"] = options.think
         return payload
@@ -112,6 +139,8 @@ class OllamaProvider(ChatProvider):
             raise ValueError("stream() precisa de ao menos uma mensagem")
 
         url = f"{self.base_url}/api/chat"
+        if options.think is False and not await self._think_off_is_obeyed():
+            options = replace(options, think=None)
         payload = self._payload(messages, options, stream=True)
 
         try:
@@ -141,6 +170,82 @@ class OllamaProvider(ChatProvider):
             raise ProviderUnavailable(
                 f"não deu para falar com o Ollama em {self.base_url}: {exc}. O serviço está de pé?"
             ) from exc
+
+    async def _think_off_is_obeyed(self) -> bool:
+        """Whether ``think: false`` turns this model's reasoning off.
+
+        It is asked, and not assumed, because the field does two things in
+        Ollama and only one of them is up to the model. It is offered to the
+        chat template, which may use it to tell the model not to reason; and
+        it stops the server from splitting reasoning out of the reply into
+        ``message.thinking``. A template that never reads the flag leaves the
+        model reasoning exactly as before -- and now nothing separates it.
+
+        Measured on Ollama 0.35 with ``qwen3:4b``, which is the thinking-only
+        Qwen3-4B-Thinking-2507 and whose template opens ``<think>`` whatever
+        the request says: ``think: false`` returned the whole chain of thought,
+        a bare ``</think>`` and then the answer, all in ``message.content`` --
+        179 tokens against 247 with ``think: true``, so nothing was saved
+        either. The student read every word of it. With the field left out,
+        the same model's content was the answer alone.
+
+        So ``false`` goes on the wire only for a template that reads it. For
+        every other model the field is left out, which is the one setting
+        under which the server hides whatever reasoning there is. That costs
+        nothing on a model that does not reason, and on one that cannot stop
+        it trades a leak for a wait. A model whose template is not a Go
+        template at all lands on the same cautious side: ``qwen3:4b-instruct``
+        shows a Jinja one, has no ``.Think`` to find, and measured the same
+        two-token answer with the field sent or left out.
+
+        The warning is for the one case the template proves: it opens the
+        ``<think>`` block itself, so the operator asked for reasoning off and
+        is not getting it.
+
+        A failed lookup is not remembered, so a server that was down at the
+        first call is asked again at the next; it answers "no" meanwhile
+        because that is the side that cannot leak.
+        """
+        if self._think_off_obeyed is not None:
+            return self._think_off_obeyed
+
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/api/show",
+                json={"model": self.model},
+                timeout=SHOW_TIMEOUT_S,
+            )
+            response.raise_for_status()
+            shown = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            # No typed error from here: the chat request that follows hits the
+            # same server and says what is wrong in the terms the caller knows.
+            log.debug("could not ask Ollama how %s takes `think`: %s", self.model, exc)
+            return False
+
+        if not isinstance(shown, dict):
+            return False
+
+        template = shown.get("template")
+        if not isinstance(template, str):
+            template = ""
+        obeyed = bool(_READS_THINK_FLAG.search(template))
+        self._think_off_obeyed = obeyed
+
+        if obeyed:
+            return True
+        if _OPENS_THINK_BLOCK.search(template):
+            log.warning(
+                "model %s reasons before answering and its template ignores "
+                "`think: false`, so the reasoning cannot be turned off. It is "
+                "hidden from the reply instead, and the wait for the first "
+                "word includes it. A non-thinking model is the only way to get "
+                "that time back.",
+                self.model,
+            )
+        else:
+            log.debug("`think: false` is not sent to %s: its template does not read it", self.model)
+        return False
 
     def _error_for(self, status_code: int, raw: bytes) -> ProviderError:
         try:
@@ -199,6 +304,10 @@ class OllamaProvider(ChatProvider):
         if "error" in data:
             raise ProviderError(f"Ollama interrompeu a geração: {data['error']}")
 
+        # ``message.thinking`` is deliberately not read. It is where the
+        # server puts a model's reasoning, and nothing above this layer has a
+        # use for it: the student must never see it, and the analyzer wants
+        # the JSON that comes after.
         message = data.get("message") or {}
         content = message.get("content", "") if isinstance(message, dict) else ""
         done = bool(data.get("done"))

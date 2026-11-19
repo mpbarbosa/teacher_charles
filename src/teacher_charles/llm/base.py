@@ -37,10 +37,12 @@ class GenerationOptions:
     max_tokens: int | None = None
     stop: tuple[str, ...] = ()
 
-    # Modelos de raciocínio (Qwen3, entre outros) pensam antes de responder,
-    # o que custa segundos. Conversa precisa responder em 1-2s, então isto
-    # existe para poder desligar. None = não manda o campo, deixa o default
-    # do servidor valer.
+    # Reasoning models (Qwen3 among them) think before answering, which costs
+    # seconds a conversation does not have. ``False`` asks for that to be
+    # switched off, and it is a request, not a guarantee: some models cannot
+    # stop. What a provider does guarantee is the other half -- reasoning is
+    # never handed back as part of the reply. ``None`` sends no instruction
+    # and lets the server's default stand.
     think: bool | None = None
 
 
