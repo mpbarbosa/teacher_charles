@@ -618,6 +618,25 @@ main.lesson button.show-ipa {
 main.lesson button.show-ipa { margin-left: 0.3rem; }
 main.lesson button.show-ipa[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 main.lesson .full-text .reading .ipa { margin: -0.3rem 0 0.9rem; font-size: 0.85rem; }
+main.lesson button.ipa-layout { margin-left: 0.3rem; }
+main.lesson button.ipa-layout[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+/* Between the lines: each word stacks over its own IPA (full-text.js fills
+   `data-ipa-text`), so the pronunciation wraps with the text it reads. The
+   word stays one `.w`, so the reader's lit word lights its IPA with it. */
+main.lesson .full-text .reading.interlinear p { line-height: 1.25; }
+main.lesson .full-text .reading.interlinear .w {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: top;
+  margin-bottom: 0.45rem;
+}
+main.lesson .full-text .reading.interlinear .w::after {
+  content: attr(data-ipa-text);
+  min-height: 1.2em;
+  font-size: 0.78em;
+  color: var(--muted);
+  white-space: nowrap;
+}
 /* The sentence the reader is speaking, and its IPA, so the eye can follow
    the voice; the word being said is lit stronger inside it. Inline
    backgrounds wrap with the line, which a box would not. */
