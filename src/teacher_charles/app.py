@@ -695,6 +695,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         lesson = lessons.get(slug) if lessons is not None else None
         if lesson is None:
             return HTMLResponse("No such lesson.", status_code=404)
+        full_text = read_local_text(settings.resolved_corpus_dir, lesson)
         return templates.TemplateResponse(
             request=request,
             name="lessons.html",
@@ -707,7 +708,11 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # This machine's copy of the source, if it holds one. Kept out
                 # of lesson_payload on purpose: that is also /api/lessons, and
                 # the copy is not ours to serve (teaching/lessons.py).
-                "full_text": read_local_text(settings.resolved_corpus_dir, lesson),
+                "full_text": full_text,
+                # One IPA line per paragraph, under it, drawn by the espeak that
+                # draws every other IPA line here; empty strings with the IPA
+                # off, and then the page has no Phonetics button.
+                "full_text_ipa": [spell(p) for p in full_text.paragraphs] if full_text else [],
                 # The speaker beside each word asks /api/tts, which answers
                 # 503 with voice off — so with voice off there is no button.
                 "voice": voice_payload(),

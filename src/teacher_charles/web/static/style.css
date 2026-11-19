@@ -607,13 +607,17 @@ main.lesson .full-text .reading {
   line-height: 1.6;
 }
 main.lesson .full-text .reading p { margin: 0.6rem 0; }
-main.lesson button.read-aloud {
+main.lesson button.read-aloud,
+main.lesson button.show-ipa {
   font-size: 0.8rem;
   font-weight: normal;
   padding: 0.2rem 0.55rem;
   margin-left: 0.6rem;
   vertical-align: 0.15rem;
 }
+main.lesson button.show-ipa { margin-left: 0.3rem; }
+main.lesson button.show-ipa[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+main.lesson .full-text .reading .ipa { margin: -0.3rem 0 0.9rem; font-size: 0.85rem; }
 /* The paragraph the reader is on, so the eye can follow the voice. */
 main.lesson .full-text .reading p.now-reading {
   background: var(--student);

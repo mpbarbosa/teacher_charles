@@ -516,3 +516,42 @@ def test_without_a_copy_there_is_nothing_to_read(tmp_path):
     settings = settings_for(tmp_path, voice_enabled=True)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         assert "read-aloud" not in c.get(f"/lessons/{SLUG}").text
+
+
+# --- the phonetics of the full text ----------------------------------------- #
+
+
+def test_with_ipa_the_full_text_has_a_phonetics_button_and_hidden_lines(tmp_path):
+    settings = settings_for(tmp_path, phonetics_enabled=True)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'class="show-ipa"' in page
+    assert "/static/full-text.js" in page
+    # One line per paragraph, hidden until asked for, and the paragraph's own
+    # markup untouched.
+    assert page.count('<div class="ipa" hidden>') == 2
+    assert "<p>Second one, wrapped across two lines.</p>" in page
+    # espeak's reading, not the English: "wrapped" is /ɹ/ and a stress mark.
+    assert "ɹˈæpt" in page
+
+
+def test_without_ipa_the_full_text_has_no_phonetics(tmp_path):
+    """The line comes from espeak; with it off there is nothing to show."""
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'id="full-text"' in page
+    assert "show-ipa" not in page
+    assert "full-text.js" not in page
+    assert '<div class="ipa" hidden>' not in page
+
+
+def test_the_phonetics_never_reach_the_api(tmp_path):
+    """The IPA of somebody else's text is that text, one step removed."""
+    settings = settings_for(tmp_path, phonetics_enabled=True)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/api/lessons/{SLUG}").text
+    assert "ɹˈæpt" not in body
