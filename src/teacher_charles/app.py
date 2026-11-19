@@ -52,7 +52,14 @@ from .teaching import (
     TurnRunner,
 )
 from .teaching.contrastive import ContrastiveError, load_base
-from .teaching.lessons import ASPECTS, Lesson, LessonError, LessonShelf, load_shelf
+from .teaching.lessons import (
+    ASPECTS,
+    Lesson,
+    LessonError,
+    LessonShelf,
+    load_shelf,
+    read_local_text,
+)
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
@@ -194,6 +201,22 @@ class SyntaxRequest(BaseModel):
     """
 
     text: str = Field(min_length=1, max_length=4000)
+
+
+class _RevalidatedStatic(StaticFiles):
+    """Static files the browser must check before reusing.
+
+    Starlette sends an ETag but no Cache-Control, so the browser falls back to
+    heuristic freshness and keeps an old style.css after a deploy: the lesson
+    page then rendered with the browser's default link blue on the dark theme.
+    `no-cache` still lets it reuse its copy, via a 304 that costs nothing
+    on localhost.
+    """
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app(settings: Settings | None = None, provider: ChatProvider | None = None) -> FastAPI:
@@ -370,7 +393,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         lifespan=lifespan,
     )
 
-    app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+    app.mount("/static", _RevalidatedStatic(directory=WEB_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=WEB_DIR / "templates")
 
     # --- helpers ---------------------------------------------------------- #
@@ -681,6 +704,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "lessons": [],
                 "lesson": lesson_payload(lesson),
                 "aspects": ASPECTS,
+                # This machine's copy of the source, if it holds one. Kept out
+                # of lesson_payload on purpose: that is also /api/lessons, and
+                # the copy is not ours to serve (teaching/lessons.py).
+                "full_text": read_local_text(settings.resolved_corpus_dir, lesson),
             },
         )
 

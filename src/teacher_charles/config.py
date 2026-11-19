@@ -72,10 +72,14 @@ class Settings(BaseSettings):
     # enquanto a página ainda está sendo lida.
     llm_warmup: bool = True
 
-    # Modelos de raciocínio (Qwen3, entre outros) pensam antes de responder, e
-    # isso custa segundos que uma conversa não tem. None deixa o default do
-    # servidor valer; False desliga, que é o que se quer num professor que
-    # precisa responder em 1-2s.
+    # Reasoning models (Qwen3 among them) think before answering, and that
+    # costs seconds a conversation does not have. ``None`` lets the server's
+    # default stand; ``False`` switches the reasoning off **on a model that
+    # can switch it off**. Bare ``qwen3:4b`` is not one: the tag is the
+    # thinking-only build, and there ``False`` changes nothing -- the reasoning
+    # still runs, hidden, before the first word (see
+    # ``OllamaProvider._think_off_is_obeyed``). The default
+    # ``qwen3:4b-instruct`` does not reason, so there is nothing to switch.
     llm_think: bool | None = None
 
     # --- Ensino ----------------------------------------------------------
@@ -202,6 +206,11 @@ class Settings(BaseSettings):
     # --- Caminhos --------------------------------------------------------
     db_path: Path | None = Field(default=None)
 
+    # Third-party material this machine holds (``corpus/README.md``). Not
+    # versioned and possibly absent; a setting so tests can point it at an
+    # empty directory instead of reading whatever the developer has on disk.
+    corpus_dir: Path | None = Field(default=None)
+
     @property
     def resolved_db_path(self) -> Path:
         """Onde fica o progresso do aluno.
@@ -241,6 +250,17 @@ class Settings(BaseSettings):
     @property
     def data_dir(self) -> Path:
         return REPO_ROOT / "data"
+
+    @property
+    def resolved_corpus_dir(self) -> Path:
+        """Where the third-party texts on this machine live, if any.
+
+        The fourth destination in ``corpus/README.md``: somebody else's
+        copyright, so outside version control, next to ``data/`` and never in it.
+        """
+        if self.corpus_dir is not None:
+            return self.corpus_dir.expanduser()
+        return REPO_ROOT / "corpus"
 
 
 @lru_cache(maxsize=1)

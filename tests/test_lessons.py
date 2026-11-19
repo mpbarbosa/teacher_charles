@@ -22,6 +22,8 @@ from teacher_charles.teaching.lessons import (
     LessonError,
     load_lessons,
     load_shelf,
+    local_text_path,
+    read_local_text,
     word_count,
 )
 from teacher_charles.teaching.vocabulary import load_base as load_vocabulary
@@ -192,6 +194,9 @@ def settings_for(tmp_path, **overrides) -> Settings:
         "provider": "fake",
         "llm_warmup": False,
         "phonetics_enabled": False,
+        # An empty corpus by default: the developer's own copies must not
+        # decide what a route test sees.
+        "corpus_dir": tmp_path / "corpus",
     }
     base.update(overrides)
     return Settings(_env_file=None, **base)
@@ -275,6 +280,117 @@ def test_the_ipa_comes_from_espeak_when_it_is_on(tmp_path):
     assert "θ" in truth["ipa"]
 
 
+# --- the local copy of the source ------------------------------------------ #
+
+# Placeholder prose, ours: the tests must not need the real speech, and the
+# repo must not carry it.
+PLACEHOLDER = "First paragraph of a stand-in text.\n\nSecond one, wrapped\nacross two lines.\n"
+
+
+def shipped_lesson() -> Lesson:
+    return load_shelf(LESSONS_DIR).get(SLUG)
+
+
+def put_copy(corpus_dir: Path, text: str, lesson: Lesson | None = None) -> Path:
+    path = local_text_path(corpus_dir, lesson or shipped_lesson())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_no_copy_means_no_text(tmp_path):
+    assert read_local_text(tmp_path, shipped_lesson()) is None
+
+
+def test_an_empty_copy_means_no_text(tmp_path):
+    put_copy(tmp_path, "\n  \n")
+    assert read_local_text(tmp_path, shipped_lesson()) is None
+
+
+def test_a_copy_that_is_not_utf8_means_no_text(tmp_path):
+    path = local_text_path(tmp_path, shipped_lesson())
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"\xff\xfe\x00broken")
+    assert read_local_text(tmp_path, shipped_lesson()) is None
+
+
+def test_the_copy_lives_under_corpus_lessons_by_slug(tmp_path):
+    assert local_text_path(tmp_path, shipped_lesson()) == tmp_path / "lessons" / f"{SLUG}.txt"
+
+
+def test_paragraphs_split_on_blank_lines_and_unwrap(tmp_path):
+    put_copy(tmp_path, "\ufeff" + PLACEHOLDER.replace("\n", "\r\n"))
+    text = read_local_text(tmp_path, shipped_lesson())
+    assert text.paragraphs == (
+        "First paragraph of a stand-in text.",
+        "Second one, wrapped across two lines.",
+    )
+    assert text.words == 13
+
+
+def test_a_copy_of_the_wrong_length_is_flagged_not_refused(tmp_path):
+    lesson = shipped_lesson()
+    put_copy(tmp_path, PLACEHOLDER)
+    assert read_local_text(tmp_path, lesson).matches is False
+    put_copy(tmp_path, " ".join(["word"] * lesson.source.words))
+    assert read_local_text(tmp_path, lesson).matches is True
+
+
+def test_the_page_shows_the_copy_when_the_machine_holds_one(tmp_path):
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'id="full-text"' in page
+    assert "<p>Second one, wrapped across two lines.</p>" in page
+    assert 'href="#full-text"' in page
+    # The link stays: the copy is a convenience, the source is still credited.
+    assert shipped_lesson().source.url in page
+
+
+def test_without_a_copy_the_page_is_what_a_clone_shows(client):
+    page = client.get(f"/lessons/{SLUG}").text
+    assert 'id="full-text"' not in page
+    assert "Read the text first:" in page
+
+
+def test_the_copy_never_reaches_the_api(tmp_path):
+    """/api/lessons is the curated lesson; somebody else's text is not ours to serve."""
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/api/lessons/{SLUG}").text
+    assert "stand-in text" not in body
+
+
+def test_the_copy_is_read_per_request_not_cached(tmp_path):
+    settings = settings_for(tmp_path)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        assert 'id="full-text"' not in c.get(f"/lessons/{SLUG}").text
+        put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+        assert 'id="full-text"' in c.get(f"/lessons/{SLUG}").text
+
+
+def test_the_corpus_lessons_folder_is_not_versioned():
+    ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "corpus/*" in ignored
+    assert not any(line.startswith("!corpus/lessons") for line in ignored)
+
+
+def test_the_section_links_are_separate_words(client):
+    """The anchors used to be glued together, so without CSS they read as one word."""
+    page = client.get(f"/lessons/{SLUG}").text
+    assert "</a><a" not in page.split('class="aspects"')[1].split("</nav>")[0]
+
+
 def test_the_module_exports_what_it_promises():
     for name in lessons_module.__all__:
         assert hasattr(lessons_module, name)
+
+
+def test_the_stylesheet_is_revalidated_not_cached_blind(client):
+    # Without this the browser kept a stale style.css and the lesson's links
+    # came out in its default blue on the dark background.
+    response = client.get("/static/style.css")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
