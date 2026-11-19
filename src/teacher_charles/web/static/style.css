@@ -599,6 +599,15 @@ main.lesson .source {
 }
 main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
 main.lesson .ipa-chart { color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
+main.lesson .video .frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
+main.lesson .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+main.lesson .video .byline { margin-top: 0.35rem; }
 main.lesson .aspects { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.85rem; }
 main.lesson .cites { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
 main.lesson .full-text .reading {
@@ -763,3 +772,72 @@ main.lesson details summary { cursor: pointer; color: var(--accent); font-size: 
 main.lesson details .right { margin: 0.35rem 0 0; }
 main.lesson .practice .button { display: inline-block; margin-top: 0.5rem; }
 main.lesson a:not(.button) { color: var(--accent); }
+
+/* --- The phonetics page ---------------------------------------------------- */
+/* A box for a sentence, and its IPA under it (phonetics.js). The IPA is in
+   the same monospace as the line under every bubble, larger here because on
+   this page it is the lesson, not the support. */
+
+main.phonetics {
+  max-width: 48rem;
+  width: 100%;
+  margin: 0 auto;
+  align-content: start;
+}
+main.phonetics .lead { margin: 0; color: var(--muted); font-size: 0.9rem; }
+main.phonetics .lead.empty { font-size: 0.95rem; }
+/* The global `form` is the chat's composer, pinned under the conversation;
+   this one sits in the page. */
+main.phonetics form.phonetics-form {
+  padding: 0;
+  border-top: 0;
+}
+main.phonetics textarea { min-height: 4.5rem; max-height: 12rem; resize: vertical; }
+main.phonetics form.phonetics-form button[type="submit"] { min-width: 9.5rem; }
+main.phonetics .hint,
+main.phonetics .footnote { margin: 0; color: var(--muted); font-size: 0.78rem; }
+main.phonetics .footnote { margin-top: 0.5rem; }
+main.phonetics .error { margin: 0; color: var(--danger); }
+main.phonetics .phonetics-result { display: grid; gap: 0.8rem; }
+main.phonetics .phonetics-result[hidden] { display: none; }
+
+main.phonetics .spelled {
+  background: var(--teacher);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+}
+main.phonetics .spelled p { margin: 0; }
+main.phonetics .pairs { line-height: 1.2; }
+/* Each word stacks over its own IPA, so the pronunciation wraps with the
+   words it reads — the lesson's between-the-lines layout. */
+main.phonetics .pair {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: top;
+  margin: 0 0.55rem 0.6rem 0;
+}
+main.phonetics .pair .word { font-size: 1.05rem; }
+main.phonetics .pair .word-ipa {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+main.phonetics .ipa.whole {
+  margin-top: 0.2rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line);
+  font-size: 1rem;
+  color: var(--fg);
+}
+main.phonetics button.copy { margin-top: 0.6rem; font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -68,7 +68,7 @@ from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
-from .teaching.phonetics import Phonetics, build_phonetics, ipa_owners
+from .teaching.phonetics import Phonetics, build_phonetics, ipa_owners, ipa_pairs
 from .teaching.schedule import is_graduated
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
@@ -217,6 +217,24 @@ class SyntaxRequest(BaseModel):
     """
 
     text: str = Field(min_length=1, max_length=4000)
+
+
+# How long a text the phonetics page takes. It is a box for a sentence or a
+# short paragraph, not a document: the IPA comes back sentence by sentence,
+# and each sentence's words are fitted to its IPA by a small dynamic
+# programme (``ipa_owners``) whose cost grows with the square of its length.
+PHONETICS_MAX_CHARS = 1000
+
+# Past this many words in one sentence the page shows its IPA line alone, with
+# no word-by-word pairing: a run-on with no full stop would otherwise cost
+# seconds in ``ipa_owners`` for a table nobody reads at that length.
+PHONETICS_PAIRED_WORDS = 80
+
+
+class PhoneticsRequest(BaseModel):
+    """A sentence (or a few) to spell out in IPA."""
+
+    text: str = Field(min_length=1, max_length=PHONETICS_MAX_CHARS)
 
 
 class _RevalidatedStatic(StaticFiles):
@@ -682,6 +700,30 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "ipa_of": [" ".join(str(j) for j in o) for o in owners],
         }
 
+    def spelled_out(text: str) -> list[list[dict[str, Any]]]:
+        """Each line of the text as sentences, each with its IPA and its pairs.
+
+        The cut is the lesson reader's (``split_sentences``), for its reason:
+        espeak reads a sentence the way the voice says it, and the pairing of
+        written words to IPA words runs per sentence, where it is cheap.
+        """
+        view: list[list[dict[str, Any]]] = []
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            sentences = []
+            for sentence in split_sentences(line) or [line]:
+                words = sentence.split()
+                ipa = spell(sentence)
+                tokens = ipa.split()
+                pairs: list[dict[str, str]] = []
+                if tokens and len(words) <= PHONETICS_PAIRED_WORDS:
+                    owners = ipa_owners(words, tokens, [spell(w) for w in words])
+                    pairs = ipa_pairs(words, tokens, owners)
+                sentences.append({"text": sentence, "ipa": ipa, "pairs": pairs})
+            view.append(sentences)
+        return view
+
     def shelf() -> LessonShelf | None:
         return app.state.lessons
 
@@ -761,6 +803,25 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "version": __version__,
                 "model": settings.llm_model,
                 "progress": progress_payload(app.state.db),
+            },
+        )
+
+    @app.get("/phonetics", response_class=HTMLResponse)
+    async def phonetics_page(request: Request) -> HTMLResponse:
+        """A box for a sentence, and its IPA under it.
+
+        The page is empty on load: the sentence goes to ``/api/phonetics`` in
+        a POST body, never in this page's query string, for the reason
+        ``/api/chat`` gives.
+        """
+        return templates.TemplateResponse(
+            request=request,
+            name="phonetics.html",
+            context={
+                "version": __version__,
+                "level": active_student(app.state.db).cefr_level,
+                "phonetics": phonetics_payload(),
+                "max_chars": PHONETICS_MAX_CHARS,
             },
         )
 
@@ -1109,6 +1170,45 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             return JSONResponse({"detail": str(exc)}, status_code=503)
 
         return JSONResponse(breakdown.as_dict())
+
+    @app.post("/api/phonetics")
+    async def phonetics_of(payload: PhoneticsRequest) -> JSONResponse:
+        """The IPA of a text the student typed, for the phonetics page.
+
+        The same espeak as the line under every chat bubble and in every
+        lesson, so the three never disagree about a word. **It records
+        nothing**, for ``/api/syntax``'s reason: looking up how a sentence
+        sounds is not evidence of anything about the student.
+
+        In a thread because the first call after a skipped warm-up loads
+        espeak (~0.25 s), and the loop should not freeze for it.
+        """
+        phonetics: Phonetics | None = app.state.phonetics
+        if phonetics is None:
+            return JSONResponse(
+                {
+                    "detail": "the IPA is off on this server",
+                    "how": "start without TC_PHONETICS_ENABLED=false",
+                },
+                status_code=503,
+            )
+
+        lines = await asyncio.to_thread(spelled_out, payload.text)
+        if lines and not phonetics.ready:
+            # Any non-blank text makes espeak load, so here it tried and failed.
+            # Empty IPA from a loaded espeak is an answer (a line of only
+            # punctuation has no sound); empty IPA because espeak never came
+            # up is not, and the page must not draw it as one.
+            return JSONResponse(
+                {"detail": phonetics.last_error or "espeak did not load"}, status_code=503
+            )
+        return JSONResponse(
+            {
+                "language": phonetics.language,
+                "stress": phonetics.with_stress,
+                "lines": lines,
+            }
+        )
 
     @app.get("/api/voice")
     async def voice_status() -> JSONResponse:
