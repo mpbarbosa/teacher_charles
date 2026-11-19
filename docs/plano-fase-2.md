@@ -1336,30 +1336,41 @@ que ele pede, o modelo apontou para o botão em 6 de 6 e não analisou em
 nenhuma. É o que a E4 e a E6 já tinham medido — instrução longe do ponto de
 geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*.
 
-**O `qwen3:4b` puro foi medido depois** — era o default quando o botão entrou,
-e é o build *Thinking* de que o default saiu desde então —, com a mesma
-pergunta, e concorda com o que foi entregue, mas não com o motivo. **O default
-de hoje, `qwen3:4b-instruct`, não respondeu a essa pergunta ainda.**
+**Os dois builds de 4B foram medidos depois**, com a mesma pergunta: o
+`qwen3:4b-instruct`, que é o default de hoje, e o `qwen3:4b` puro, que era o
+default quando o botão entrou e é o build *Thinking* de que o default saiu. Os
+dois concordam com o que foi entregue. Em cada célula, quantas respostas
+apontaram para o botão e quantas digitaram uma análise:
 
-| Arranjo (qwen3:4b) | Apontou para o botão | Digitou análise |
+| Arranjo | `qwen3:4b-instruct` (default) | `qwen3:4b` (*Thinking*) |
 |---|---|---|
-| Sem análise sintática (nem partial nem nota) | — | 0 de 3 |
-| Partial descritivo, sem nota | 3 de 3 | 0 de 3 |
-| Partial curto, sem nota | 2 de 3 | 0 de 3 |
-| Partial curto + nota (o entregue) | 9 de 9 | 0 de 9 |
+| Sem análise sintática (nem partial nem nota) | — · análise em 3 de 3 | — · análise em 0 de 3 |
+| Partial descritivo, sem nota | botão em 2 de 3 · análise em 2 de 3 | botão em 3 de 3 · análise em 0 de 3 |
+| Partial curto, sem nota | botão em 1 de 3 · análise em 1 de 3 | botão em 2 de 3 · análise em 0 de 3 |
+| Partial curto + nota (o entregue) | botão em 8 de 8 · análise em 0 de 8 | botão em 9 de 9 · análise em 0 de 9 |
 
-A indução **não se repetiu**: um modelo de raciocínio relê a proibição que o 3B
-pulou. E o partial curto sozinho não basta nele — a terceira resposta mudou de
-assunto. Então é a nota que carrega o comportamento nos dois modelos, e o
-partial descritivo fica descartado só pelo 3B. Três tentativas por condição
-continua sendo amostra pequena.
+**No default, a nota não é um refinamento: é o recurso.** Sem texto nenhum
+sobre sintaxe, o `qwen3:4b-instruct` digitou a própria análise palavra por
+palavra em 3 de 3 — coisa que nem o 3B nem o build *Thinking* fizeram. O
+partial descritivo não o segurou, e o partial curto sozinho também não: uma
+resposta apontou para o botão, outra analisou, e a terceira inventou uma
+correção (*"we don't usually say I'm in a sewer"*) para uma frase que não tem
+erro nenhum.
 
-Duas ressalvas sobre essa medição. Das 9 respostas do arranjo entregue, 6
-foram com `think=false` e 3 com o default do servidor; nas de `think=false` o
-Ollama 0.35.0 devolveu o raciocínio do modelo dentro do conteúdo, antes de um
-`</think>`, e a contagem acima é sobre o texto depois dele. E a maioria das
-respostas levou de 2 a 5 minutos (uma chegou a 15), mas com outro servidor do
-Charles dividindo a máquina — não serve como número de latência.
+Os três modelos só discordam sobre o partial descritivo: ele induziu o 3B, não
+segurou o *instruct*, e foi obedecido pelo *Thinking*, que relê a proibição.
+Três tentativas por condição continua sendo amostra pequena.
+
+Três ressalvas sobre essas medições. No `qwen3:4b-instruct`, uma das 9
+tentativas do arranjo entregue estourou os 120 s sem resposta, com outro
+trabalho ocupando o Ollama — por isso 8 de 8, e não 9 de 9. No `qwen3:4b`
+puro, 6 das 9 respostas foram com `think=false`, e nelas o Ollama 0.35.0
+devolveu o raciocínio do modelo dentro do conteúdo, antes de um `</think>`; a
+contagem é sobre o texto depois dele. E nenhuma das duas rodadas serve como
+número de latência: a máquina estava dividida com outros servidores e outras
+medições. Só como ordem de grandeza: as respostas do *instruct* no arranjo
+entregue levaram de 18 a 31 s (uma, 129 s, com o Ollama ocupado); as do
+*Thinking*, de 2 a 5 minutos.
 
 **As lições também entraram fora da tabela**, pelo mesmo motivo das três
 acima. Uma lição é uma leitura curada de um texto autêntico, analisada em seis

@@ -281,18 +281,25 @@ says the student asked, and then he pointed at the button six times out of
 six. `partials/app/syntax.md` names the button and nothing else, and a test
 keeps the priming words out of it.
 
-Bare `qwen3:4b` — the default when the button shipped, and the thinking build
-the default has since moved off — was measured afterwards, same question, and
-it agrees with what ships but not with the reason. With the note and the short
-partial it pointed at the button nine times out of nine and analysed in none.
-**The current default, `qwen3:4b-instruct`, has not been asked this question.**
+Both 4B builds were measured afterwards, same question, and both agree with
+what ships. With the note and the short partial, the default
+`qwen3:4b-instruct` pointed at the button in all eight answers it gave and
+analysed in none (a ninth run timed out with no answer); bare `qwen3:4b` — the
+default when the button shipped, the thinking build — did it nine times out of
+nine.
 
-On the thinking build the priming did **not** reproduce: under the descriptive
-partial it pointed at the button three times out of three — a reasoning model
-rereads the prohibition the 3B skipped. And the short partial alone is not
-enough on it either: two out of three, the third changed the subject. So the
-note is what carries the behaviour on both models, and the descriptive partial
-is ruled out by the 3B alone. Three runs a side is still a small sample.
+**On the default the note is not a refinement, it is the feature.** With no
+syntax text at all, `qwen3:4b-instruct` typed its own word-by-word analysis
+three times out of three, which neither the 3B nor the thinking build did. The
+descriptive partial did not stop it — two of three still analysed — and the
+short partial alone did not either: one pointed at the button, one analysed,
+and one invented a correction (*"we don't usually say I'm in a sewer"*) for a
+sentence with nothing wrong in it.
+
+The three models disagree only about the descriptive partial: it primed the
+3B, failed to restrain the instruct build, and was obeyed by the thinking
+build, which rereads the prohibition. Three runs a side is still a small
+sample.
 
 **`/api/syntax` records nothing** — no turn, no correction, no review. Looking
 at a sentence is not evidence, for the reason `/api/stt` records no turn.
