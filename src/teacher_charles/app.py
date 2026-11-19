@@ -52,7 +52,14 @@ from .teaching import (
     TurnRunner,
 )
 from .teaching.contrastive import ContrastiveError, load_base
-from .teaching.lessons import ASPECTS, Lesson, LessonError, LessonShelf, load_shelf
+from .teaching.lessons import (
+    ASPECTS,
+    Lesson,
+    LessonError,
+    LessonShelf,
+    load_shelf,
+    read_local_text,
+)
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
@@ -681,6 +688,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "lessons": [],
                 "lesson": lesson_payload(lesson),
                 "aspects": ASPECTS,
+                # This machine's copy of the source, if it holds one. Kept out
+                # of lesson_payload on purpose: that is also /api/lessons, and
+                # the copy is not ours to serve (teaching/lessons.py).
+                "full_text": read_local_text(settings.resolved_corpus_dir, lesson),
             },
         )
 

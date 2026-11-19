@@ -594,6 +594,13 @@ main.lesson .source {
 main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
 main.lesson .aspects { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.85rem; }
 main.lesson .cites { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
+main.lesson .full-text .reading {
+  border-left: 3px solid var(--accent);
+  padding: 0.2rem 0 0.2rem 1rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+main.lesson .full-text .reading p { margin: 0.6rem 0; }
 main.lesson .cites q { font-style: italic; color: var(--accent); }
 main.lesson table.notes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 main.lesson table.notes th {

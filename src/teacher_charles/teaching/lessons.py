@@ -16,6 +16,17 @@ a word count and **no field for the text**; ``extra="forbid"`` refuses a
 ``text:`` key the way the vocabulary base refuses an ``ipa:`` key. The student
 reads the original where its owner published it.
 
+### Unless this machine holds a copy
+
+Whoever runs the project may own a copy of the text, the way they own the
+subtitles in ``corpus/subtitles/``. If ``corpus/lessons/<slug>.txt`` exists,
+the page shows it whole above the analysis (``read_local_text``). That is the
+same rule, not an exception to it: the file is outside version control, so a
+clone shows the link and only the machine that holds the copy shows the text.
+It is read per request and never cached into the ``Lesson``, so dropping the
+file in needs no restart, and it never enters ``/api/lessons/<slug>`` — that
+payload is the curated lesson, and the copy is not ours to serve.
+
 What a lesson may carry from the source is the short phrase an analysis has to
 point at — *heavy heart*, *took place* against *happened*. Those live in
 ``Point.cites`` and nowhere else, and two limits hold them to quotation and
@@ -284,6 +295,58 @@ class LessonShelf:
         return self._by_slug.get(slug)
 
 
+# --- the local copy of the source ------------------------------------------ #
+
+# A copy whose length is this far from ``Source.words`` is probably not the
+# analysed text — a different cut of the speech, or another file under the
+# right name. The page says so instead of refusing: the reader can tell.
+LOCAL_TEXT_TOLERANCE = 0.10
+
+
+class LocalText(BaseModel):
+    """The source text as this machine holds it, split into paragraphs."""
+
+    model_config = ConfigDict(frozen=True)
+
+    paragraphs: tuple[str, ...]
+    words: int
+    # True when the copy's length is within ``LOCAL_TEXT_TOLERANCE`` of the
+    # length the lesson was analysed against.
+    matches: bool
+
+
+def local_text_path(corpus_dir: Path, lesson: Lesson) -> Path:
+    """Where a copy of ``lesson``'s source would sit. The slug is pattern-checked."""
+    return corpus_dir / "lessons" / f"{lesson.slug}.txt"
+
+
+def read_local_text(corpus_dir: Path, lesson: Lesson) -> LocalText | None:
+    """The source text from ``corpus/lessons/<slug>.txt``, or ``None``.
+
+    ``None`` covers every way of not having it — no file, an empty file, a
+    file that is not UTF-8 — because each of them leaves the page exactly as a
+    fresh clone shows it: the link, and nothing lost.
+    """
+    path = local_text_path(corpus_dir, lesson)
+    try:
+        raw = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return None
+    # A blank line separates paragraphs; the line breaks inside one are the
+    # copy's wrapping, not the speaker's.
+    blocks = re.split(r"\n\s*\n", raw.replace("\r\n", "\n").strip())
+    paragraphs = tuple(" ".join(b.split()) for b in blocks if b.strip())
+    if not paragraphs:
+        return None
+    words = sum(word_count(p) for p in paragraphs)
+    expected = lesson.source.words
+    return LocalText(
+        paragraphs=paragraphs,
+        words=words,
+        matches=abs(words - expected) <= expected * LOCAL_TEXT_TOLERANCE,
+    )
+
+
 # --- loading --------------------------------------------------------------- #
 
 
@@ -346,11 +409,13 @@ __all__ = [
     "ASPECTS",
     "CITE_BUDGET",
     "LESSON_ID_PATTERN",
+    "LOCAL_TEXT_TOLERANCE",
     "MAX_CITE_WORDS",
     "Aspect",
     "Lesson",
     "LessonError",
     "LessonShelf",
+    "LocalText",
     "Point",
     "Practice",
     "Question",
@@ -361,5 +426,7 @@ __all__ = [
     "get_shelf",
     "load_lessons",
     "load_shelf",
+    "local_text_path",
+    "read_local_text",
     "word_count",
 ]
