@@ -283,9 +283,11 @@
   {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
   {#
-    The word card (word-card.js) only with a full text to hover and the
-    lookup file fetched: without the file every hover would be a 503.
+    The word card (word-card.js) on every lesson page once the lookup file
+    is fetched: without it every hover would be a 503. Not only with a full
+    text — the quote beside each point is the speech too, and a clone with
+    no copy still shows those quotes, bare.
   #}
-  {% if lesson and full_text and word_cards %}<script src="/static/word-card.js" defer></script>{% endif %}
+  {% if lesson and word_cards %}<script src="/static/word-card.js" defer></script>{% endif %}
 </body>
 </html>

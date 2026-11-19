@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from teacher_charles.app import create_app
-from teacher_charles.config import Settings
+from teacher_charles.config import PACKAGE_ROOT, Settings
 from teacher_charles.llm import FakeProvider
 from teacher_charles.teaching.dictionary import (
     MAX_SENSES,
@@ -339,10 +339,23 @@ def test_switched_off_there_is_no_card_and_the_route_says_how(tmp_path, lookup_p
         assert c.get("/health").json()["dictionary"] == {"ok": True, "enabled": False}
 
 
-def test_without_a_full_text_there_is_nothing_to_hover(tmp_path, lookup_path):
+def test_without_a_full_text_the_quotes_beside_the_points_still_get_the_card(tmp_path, lookup_path):
     settings = settings_for(tmp_path, dictionary_path=lookup_path)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
-        assert "/static/word-card.js" not in c.get(f"/lessons/{SLUG}").text
+        page = c.get(f"/lessons/{SLUG}").text
+    # No copy: no full text, but the points still quote the speech, bare.
+    assert 'id="full-text"' not in page
+    assert 'class="from-text"' in page
+    assert "/static/word-card.js" in page
+
+
+def test_the_card_script_cuts_the_point_quotes_into_words():
+    # The quotes are cut in the browser, so the server's markup stays the
+    # runs and marks the lesson tests read back; this holds the selectors
+    # that join the two halves.
+    script = (PACKAGE_ROOT / "web" / "static" / "word-card.js").read_text(encoding="utf-8")
+    assert '".point .from-text"' in script
+    assert ".from-text .w" in script
 
 
 def test_the_dictionary_does_not_decide_the_health_status(tmp_path, lookup_path):
