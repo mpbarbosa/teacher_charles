@@ -29,6 +29,14 @@ uv run python scripts/fetch_voice_models.py      # Kokoro; Whisper downloads its
 TC_VOICE_ENABLED=true uv run teacher-charles
 ```
 
+The word cards on a lesson's full text need a lookup file built once from
+WordNet (~40 MB download, 34 MB file, about a minute). `wn` is needed only for
+that build, so it is passed with `--with` and is in no extra:
+
+```bash
+uv run --with wn==1.1.1 python scripts/fetch_dictionary.py
+```
+
 The Structure button (the syntax view) is an **extra and off by default** too,
 for the voice's reason — ~267 MB of wheels, spaCy and its small pipeline:
 
@@ -39,7 +47,7 @@ TC_SYNTAX_ENABLED=true uv run teacher-charles    # or scripts/run.sh --syntax
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
-uv run pytest -m "not integration"       # 721 tests, ~20s, no model at all
+uv run pytest -m "not integration"       # ~1070 tests, ~40s, no model at all
 uv run pytest -m integration             # only the 9 that exercise the local Ollama
 uv run pytest tests/test_turn.py::test_name -x
 uv run ruff check . && uv run ruff format --check .
@@ -85,6 +93,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/phonetics.py` | The G2P behind the IPA line that runs under every message. Text in, text out — no audio anywhere, which is why it is here and not in `voice/`. Lazy, and a failure costs the line, never the turn. |
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `teaching/dictionary.py` | The word card under the pointer on a lesson's full text: a word in, its senses out, each with an English definition, an example and the Portuguese for it. Read with stdlib `sqlite3` from a file `scripts/fetch_dictionary.py` builds out of Open English WordNet 2024 and OpenWN-PT, joined by interlingual sense. No `wn` at runtime, nothing loaded until a hover, and it records nothing. |
 | `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. A machine that holds its own copy in `corpus/lessons/<slug>.txt` gets it shown whole on the page — read per request, never in `/api/lessons`. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
 | `app.py` | FastAPI. Assembles everything in the `lifespan` and keeps it in `app.state`. |
@@ -513,6 +522,10 @@ Five destinations, and confusing them is a category error:
   ships its models as packages, so there is no cache to choose and nothing to
   fetch after `uv sync`. Bump it together with spaCy's minor version, never
   alone: a pipeline only loads under the minor it was trained for.
+- **The word cards' lexicon** — `$XDG_CACHE_HOME/teacher-charles/dictionary/`,
+  a cache like Kokoro's: built from two public lexicons by
+  `scripts/fetch_dictionary.py`, re-downloadable, nobody's personal data. Not
+  in `data/` either: WordNet is somebody else's work, and the card credits it.
 - **Curated knowledge** — `data/contrastive/*.yaml`, and with it `data/vocab/`
   and `data/lessons/`, **versioned**: it is
   product content, reviewed and tested item by item. Today `data/` is empty; the
@@ -593,6 +606,19 @@ student said it, which is measurement over audio.
 **The syntax view has no number either** — the Structure button under each
 message, `teaching/syntax.py` and `POST /api/syntax`. It was in no plan, and it
 does not depend on E9 for the IPA line's reason: it reads the written words.
+
+**The word cards have no number either** — resting the pointer on a word of
+a lesson's full text opens its senses, English definition and Portuguese, from
+`teaching/dictionary.py` through `POST /api/define`. **The gloss comes from a
+lexicon, never from the model** — the same rule a fourth time. Two things the
+card owns up to, because they are easy to "fix" wrongly: it shows senses in
+WordNet's order and does not know which one the text means (`NOTE` travels in
+the payload, for `syntax.NOTE`'s reason — picking the sense is disambiguation,
+a model's job with a model's error rate); and a word written in lower case
+drops every capitalised lemma, because running text never writes a name or a
+symbol in lower case — without that, *as* opened on American Samoa and arsenic.
+It is on by default and shows only when the lookup file exists; without it the
+words are plain text and `/health` says how to build it.
 
 **Lessons have no number either** — `/lessons`, `teaching/lessons.py` and
 `data/lessons/`. A lesson is a reading of somebody else's text, so it links to

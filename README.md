@@ -189,6 +189,17 @@ verbo, objetos, sintagmas) com a classe de cada palavra. Quem analisa é um
 parser, não o modelo, e o painel diz isso: mostra como a sentença é
 construída, não se ela está correta.
 
+Dos cartões de palavra: `TC_DICTIONARY_ENABLED` (ligado por default) e
+`TC_DICTIONARY_PATH`. Na lição com texto completo, parar o ponteiro sobre uma
+palavra abre um cartão com os sentidos dela — definição em inglês, exemplo e
+tradução para o português —, vindos da Open English WordNet 2024 e da
+OpenWN-PT, nunca do modelo. O arquivo de consulta é montado uma vez
+(~40 MB de download, um minuto) e fica no cache:
+
+```bash
+uv run --with wn==1.1.1 python scripts/fetch_dictionary.py
+```
+
 ### A iGPU Intel: opcional, e recomendada
 
 Numa máquina com gráficos Intel integrados (Arc / Meteor Lake e parentes), o
@@ -598,6 +609,7 @@ Vulkan — ele diz o comando quando não encontra o segundo.
 | A correção não aparece | Só vai ao aluno correção com regra curada (§5.2). Frase sem regra na base não vira correção estruturada — vira, no máximo, correção na prosa. |
 | A linha de IPA não aparece embaixo das falas | Veja o interruptor **Phonetics** no cabeçalho; se ele nem existe, o `/health` diz por quê no bloco `phonetics` (espeak que não carregou, ou `TC_PHONETICS_ENABLED=false`). |
 | O botão **Structure** não aparece embaixo das falas | A análise sintática vem desligada. `uv sync --extra dev --extra syntax` e suba com `TC_SYNTAX_ENABLED=true`. Ligada sem o extra, o botão continua fora da página: o bloco `syntax` do `/health` diz `installed: false`. |
+| Parar o ponteiro sobre uma palavra do texto completo não abre cartão nenhum | Falta o arquivo de consulta: `uv run --with wn==1.1.1 python scripts/fetch_dictionary.py`. O bloco `dictionary` do `/health` diz `installed: false` e onde o arquivo é procurado. |
 | O microfone não aparece na página | A voz vem desligada. `uv sync --extra voice`, baixe os pesos e suba com `TC_VOICE_ENABLED=true`. |
 | A voz está ligada mas o Charles não fala | Veja `/health`: o bloco `voice` diz qual motor não carregou e por quê. Peso ausente é o caso comum. |
 | O Charles escreve mas o navegador não toca som | O navegador bloqueia áudio sem gesto do usuário. Clique em qualquer lugar da página e mande outro turno. |
@@ -622,6 +634,7 @@ src/         o código
     modes.py     os três modos; o drill escolhe a regra no error log do aluno
     phonetics.py texto -> IPA do espeak: a linha de pronúncia de cada fala
     syntax.py    texto -> partes da sentença, do parser: o botão Structure
+    dictionary.py palavra -> sentidos, definição e português, da WordNet: o cartão de palavra
   store/       SQLite: esquema em .sql, migrações numeradas
   web/         página única (conversa) e a tela /progress; JS e CSS sem build step
 docs/        análise, plano e decisões de arquitetura

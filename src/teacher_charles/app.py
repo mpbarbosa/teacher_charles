@@ -54,6 +54,8 @@ from .teaching import (
     TurnRunner,
 )
 from .teaching.contrastive import ContrastiveError, load_base
+from .teaching.dictionary import MAX_WORD_CHARS, Dictionary, DictionaryUnavailable, build_dictionary
+from .teaching.dictionary import on_screen as dictionary_on_screen
 from .teaching.lessons import (
     ASPECTS,
     Lesson,
@@ -237,6 +239,12 @@ class PhoneticsRequest(BaseModel):
     text: str = Field(min_length=1, max_length=PHONETICS_MAX_CHARS)
 
 
+class DefineRequest(BaseModel):
+    """One word of the page, as the page cut it (punctuation and all)."""
+
+    word: str = Field(min_length=1, max_length=MAX_WORD_CHARS)
+
+
 class _RevalidatedStatic(StaticFiles):
     """Static files the browser must check before reusing.
 
@@ -313,6 +321,11 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # import system, not found out by importing 3 s of spaCy here.
         syntax = build_syntax(settings)
 
+        # ``None`` only when switched off. Building opens nothing, and the
+        # lookup file being absent is the ordinary state of a fresh clone: the
+        # words stay plain text and /health says how to fetch it.
+        dictionary = build_dictionary(settings)
+
         # Lessons are curated content like the two bases, and the same policy
         # holds: a broken shelf is reported by /health and leaves the page
         # empty, it does not bring the conversation down.
@@ -335,6 +348,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.timed_speech = OrderedDict()
         app.state.phonetics = phonetics
         app.state.syntax = syntax
+        app.state.dictionary = dictionary
         app.state.lessons = lessons
         app.state.prompts = prompts
         app.state.analyzer = analyzer
@@ -875,6 +889,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # Who reads the full text aloud: a voice of its own, not
                 # Charles's (config.py).
                 "reader_voice": settings.tts_reader_voice,
+                # The card under the pointer, only with the lookup fetched: a
+                # hover that always answers 503 is worse than none.
+                "word_cards": dictionary_on_screen(app.state.dictionary),
             },
         )
 
@@ -1213,6 +1230,40 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             }
         )
 
+    @app.post("/api/define")
+    async def define(payload: DefineRequest) -> JSONResponse:
+        """The card for one word of a lesson's full text.
+
+        Its senses in WordNet's order, each with an English definition, an
+        example and the Portuguese words for it, plus the IPA of each headword
+        from the same espeak as every other IPA on the page — never from the
+        model (``teaching/dictionary.py``). A word with no entry is a 200 with
+        ``found: false``, because "no entry" is an answer the card draws.
+
+        POST for ``/api/syntax``'s reason, although the word comes from the
+        lesson and not from the student: the route reads any text it is sent,
+        and that is a body, never a query string. **It records nothing** —
+        looking a word up is not evidence of anything about the student.
+        """
+        dictionary: Dictionary | None = app.state.dictionary
+        if dictionary is None:
+            return JSONResponse(
+                {
+                    "detail": "word cards are off on this server",
+                    "how": "start without TC_DICTIONARY_ENABLED=false",
+                },
+                status_code=503,
+            )
+        try:
+            entry = await asyncio.to_thread(dictionary.lookup, payload.word)
+        except DictionaryUnavailable as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+
+        body = entry.as_dict()
+        for headword in body["headwords"]:
+            headword["ipa"] = spell(headword["lemma"])
+        return JSONResponse(body)
+
     @app.get("/api/voice")
     async def voice_status() -> JSONResponse:
         """O mesmo que a página recebe no carregamento, para depurar sem F12."""
@@ -1470,6 +1521,26 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 else "spaCy or the pipeline is not installed; run `uv sync --extra syntax`",
             }
 
+        # Word cards do not count towards the status either: the lesson is
+        # whole without them. Asked for and not fetched is a fresh clone's
+        # ordinary state, and this block is the one place that says so.
+        dictionary: Dictionary | None = app.state.dictionary
+        if dictionary is None:
+            dictionary_info: dict[str, Any] = {"ok": True, "enabled": False}
+        else:
+            installed = dictionary.installed
+            dictionary_info = {
+                "ok": installed and dictionary.last_error is None,
+                "enabled": True,
+                "installed": installed,
+                "path": str(dictionary.path),
+                "ready": dictionary.ready,
+                "detail": dictionary.last_error
+                if installed
+                else "no lookup file; run "
+                "`uv run --with wn==1.1.1 python scripts/fetch_dictionary.py`",
+            }
+
         # Lessons do not count towards the status, for the IPA line's reason:
         # the conversation is whole without them. But a shelf that failed to
         # load would otherwise only be an empty page, so the reason shows here.
@@ -1508,6 +1579,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "voice": voice_info,
             "phonetics": phonetics_info,
             "syntax": syntax_info,
+            "dictionary": dictionary_info,
             "lessons": lessons_info,
         }
         return JSONResponse(body, status_code=200 if body["status"] == "ok" else 503)
