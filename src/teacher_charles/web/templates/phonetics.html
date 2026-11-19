@@ -40,7 +40,11 @@
     </form>
     <p class="hint">Enter shows the IPA; Shift+Enter starts a new line.</p>
 
-    <section id="phonetics-result" class="phonetics-result" aria-live="polite" hidden></section>
+    {# `data-voice` is what tells phonetics.js to draw the Listen buttons. The
+       voice is Charles's Kokoro, which speaks through the same en-us espeak
+       that writes the IPA here, so the sound is the transcription read aloud. #}
+    <section id="phonetics-result" class="phonetics-result" aria-live="polite"
+             {% if voice and voice.enabled %}data-voice="on"{% endif %} hidden></section>
 
     {# The same disclaimer the IPA partial gives Charles: this is the written
        words read by a dictionary, not a judgement of anybody's voice. #}
