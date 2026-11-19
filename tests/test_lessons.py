@@ -226,6 +226,28 @@ def test_the_lesson_page_links_the_source_and_shows_every_section(client):
         assert f'id="{aspect}"' in response.text
 
 
+def test_the_lesson_page_embeds_the_video_from_its_id(client):
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    response = client.get(f"/lessons/{SLUG}")
+    embed = f"https://www.youtube-nocookie.com/embed/{lesson.video.youtube_id}"
+    assert f'src="{embed}"' in response.text
+    assert lesson.video.channel == "Star Wars"
+
+
+def test_a_video_is_an_id_not_a_url():
+    """The pasted link carried ``?si=``, a share token; only the id is storable."""
+    lesson = valid_lesson(video={"youtube_id": "KYnE2Mxayco?si=x", "title": "t", "channel": "c"})
+    with pytest.raises(ValueError, match="youtube_id"):
+        Lesson.model_validate(lesson)
+    lesson["video"]["youtube_id"] = "https://youtu.be/KYnE2Mxayco"
+    with pytest.raises(ValueError, match="youtube_id"):
+        Lesson.model_validate(lesson)
+
+
+def test_a_lesson_without_a_video_draws_no_player():
+    assert Lesson.model_validate(valid_lesson()).video is None
+
+
 def test_practice_hands_the_starter_to_the_chat_unsent(client):
     response = client.get(f"/lessons/{SLUG}")
     assert 'href="/?draft=Tired%20as%20I%20was%2C%20"' in response.text

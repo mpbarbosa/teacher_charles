@@ -62,6 +62,24 @@
       {% if lesson.source.work %}<div class="byline">{{ lesson.source.work }}</div>{% endif %}
     </section>
 
+    {% if lesson.video %}
+    {# The owner's player, on YouTube's privacy-enhanced host; only the id is ours. #}
+    <section class="video" aria-label="Watch it performed">
+      <div class="frame">
+        <iframe src="{{ lesson.video.embed_url }}"
+                title="{{ lesson.video.title }}"
+                loading="lazy"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allow="encrypted-media; picture-in-picture; web-share"
+                allowfullscreen></iframe>
+      </div>
+      <div class="byline">
+        <a href="{{ lesson.video.watch_url }}" target="_blank" rel="noopener noreferrer">{{ lesson.video.title }}</a>
+        · {{ lesson.video.channel }} on YouTube
+      </div>
+    </section>
+    {% endif %}
+
     <nav class="aspects" aria-label="Sections">
       {% if full_text %}<a href="#full-text">Full text</a>{% endif %}
       {% for section in lesson.sections %}
