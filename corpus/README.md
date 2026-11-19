@@ -35,7 +35,18 @@ corpus/
   subtitles/
     <show>/
       <show>-<season>x<episode>.en.srt
+  lessons/
+    <lesson-slug>.txt
 ```
+
+`lessons/<lesson-slug>.txt` is your copy of the text a lesson in
+`data/lessons/` analyses, named after the lesson's file
+(`mon-mothma-senate-speech.txt` for `mon-mothma-senate-speech.yaml`). Plain
+UTF-8, a blank line between paragraphs. When it is there, the lesson page shows
+it whole under **Full text**; when it is not, the page shows the link to the
+source, which is what every clone shows. If its word count is more than a tenth
+off the lesson's `source.words`, the page says the copy may be a different
+version. It is read on every request, so no restart is needed.
 
 Normalize on the way in: strip the UTF-8 BOM, LF line endings, lower-case
 slug with no spaces, so a path can be written in a script without quoting.

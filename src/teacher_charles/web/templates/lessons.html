@@ -27,7 +27,7 @@
     <p class="lead">{{ lesson.summary }}</p>
 
     <section class="source">
-      <div><strong>Read the text first:</strong>
+      <div><strong>{{ "Source:" if full_text else "Read the text first:" }}</strong>
         <a href="{{ lesson.source.url }}" target="_blank" rel="noopener noreferrer">{{ lesson.source.title }}</a>
       </div>
       <div class="byline">
@@ -38,10 +38,32 @@
     </section>
 
     <nav class="aspects" aria-label="Sections">
-      {% for section in lesson.sections %}<a href="#{{ section.aspect }}">{{ section.aspect|capitalize }}</a>{% endfor %}
+      {% if full_text %}<a href="#full-text">Full text</a>{% endif %}
+      {% for section in lesson.sections %}
+      <a href="#{{ section.aspect }}">{{ section.aspect|capitalize }}</a>
+      {% endfor %}
       {% if lesson.questions %}<a href="#check">Check yourself</a>{% endif %}
       {% if lesson.practice %}<a href="#practice">Practice</a>{% endif %}
     </nav>
+
+    {% if full_text %}
+    {#
+      This machine's own copy, from corpus/lessons/<slug>.txt — outside version
+      control, so a fresh clone never renders this block (teaching/lessons.py).
+    #}
+    <section class="aspect full-text" id="full-text">
+      <h2>Full text</h2>
+      <div class="reading">
+        {% for paragraph in full_text.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+      </div>
+      <p class="byline">
+        From your local copy ({{ full_text.words }} words).
+        {% if not full_text.matches %}
+        <span class="trap">The lesson was written against a {{ lesson.source.words }}-word text, so this copy may be a different version.</span>
+        {% endif %}
+      </p>
+    </section>
+    {% endif %}
 
     {% for section in lesson.sections %}
     <section class="aspect" id="{{ section.aspect }}">
