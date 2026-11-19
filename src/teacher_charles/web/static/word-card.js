@@ -1,9 +1,10 @@
 "use strict";
 
-// The card that opens when the pointer rests on a word of a lesson's full
-// text: the word's senses, each with an English definition, an example and
-// the Portuguese for it, from WordNet through POST /api/define
-// (teaching/dictionary.py) — never from the model.
+// The card that opens when the pointer rests on a word of the speech — in a
+// lesson's full text, or in the quote beside one of its points: the word's
+// senses, each with an English definition, an example and the Portuguese for
+// it, from WordNet through POST /api/define (teaching/dictionary.py) — never
+// from the model.
 //
 // Loaded only when the lookup file is on this machine (the template leaves
 // the script out otherwise), so a hover never meets a 503 in normal use.
@@ -14,7 +15,45 @@
 
 (() => {
   const reading = document.getElementById("full-text-reading");
-  if (!reading) return;
+  const quotes = [...document.querySelectorAll(".point .from-text")];
+  if (!reading && !quotes.length) return;
+  const roots = [reading, ...quotes].filter(Boolean);
+  // Written words only: the full text's IPA line has `.w` words too, under
+  // `.ipa`, and those are symbols, not words to look up.
+  const WORD = ".sentence .w, .from-text .w";
+
+  /**
+   * Cuts a point's quote into one `.w` per word, as the template cuts the
+   * full text. Here and not in the template because the quote is runs of
+   * text with the citation in a `<mark>` — or a bare `<q>` on a machine
+   * with no copy — and the server's markup is what the lesson tests read
+   * back. Only text nodes are split, so the marks stay where they were.
+   */
+  function cutIntoWords(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      if (!node.data.trim()) continue;
+      const pieces = node.data.split(/(\s+)/).filter(Boolean);
+      node.replaceWith(
+        ...pieces.map((piece) => {
+          if (/^\s+$/.test(piece)) return piece;
+          const word = document.createElement("span");
+          word.className = "w";
+          word.textContent = piece;
+          return word;
+        }),
+      );
+    }
+  }
+  quotes.forEach(cutIntoWords);
+
+  /** The word under `target`, if it is one of ours. */
+  function wordAt(target) {
+    const word = target?.closest?.(WORD);
+    return word && roots.some((root) => root.contains(word)) ? word : null;
+  }
 
   // Long enough that sweeping the pointer across a line opens nothing; short
   // enough that resting on a word feels like asking.
@@ -165,11 +204,10 @@
     if (current === word) show(word, parts);
   }
 
-  reading.addEventListener("pointerover", (event) => {
+  function onOver(event) {
     if (event.pointerType && event.pointerType !== "mouse" && event.pointerType !== "pen") return;
-    // Written words only: the IPA line's words are `.w` too, under `.ipa`.
-    const word = event.target.closest?.(".sentence .w");
-    if (!word || !reading.contains(word)) return;
+    const word = wordAt(event.target);
+    if (!word) return;
     clearTimeout(closeTimer);
     if (word === current) return;
     clearTimeout(openTimer);
@@ -183,14 +221,19 @@
     }
     current = word;
     openTimer = setTimeout(() => open(word), OPEN_DELAY_MS);
-  });
+  }
 
-  reading.addEventListener("pointerout", (event) => {
-    const word = event.target.closest?.(".sentence .w");
+  function onOut(event) {
+    const word = wordAt(event.target);
     if (!word || word !== current || word.contains(event.relatedTarget)) return;
     clearTimeout(openTimer);
     closeTimer = setTimeout(close, CLOSE_DELAY_MS);
-  });
+  }
+
+  for (const root of roots) {
+    root.addEventListener("pointerover", onOver);
+    root.addEventListener("pointerout", onOut);
+  }
 
   card.addEventListener("pointerenter", () => clearTimeout(closeTimer));
   card.addEventListener("pointerleave", () => {
