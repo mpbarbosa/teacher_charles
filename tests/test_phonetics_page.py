@@ -90,10 +90,16 @@ def test_the_conversation_links_to_the_page(client):
     assert 'href="/phonetics"' in client.get("/").text
 
 
+def test_the_conversation_links_to_the_ipa_chart(client):
+    assert 'href="https://www.ipachart.com/"' in client.get("/").text
+
+
 def test_with_the_ipa_off_the_page_says_how_and_the_route_answers_503(tmp_path):
     settings = settings_for(tmp_path, phonetics_enabled=False)
     with TestClient(create_app(settings, provider=FakeProvider())) as off:
         page = off.get("/phonetics").text
+        # No IPA on screen, so no chart to look its symbols up in.
+        assert "ipachart.com" not in off.get("/").text
         assert 'id="phonetics-text"' not in page
         assert "TC_PHONETICS_ENABLED" in page
         response = off.post("/api/phonetics", json={"text": "Hello."})
