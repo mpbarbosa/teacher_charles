@@ -504,18 +504,29 @@
    * (see "The first sound"); and a sentence too long for one call cut at a
    * word. `first` is the piece's first word in its sentence, for the word
    * timings.
+   *
+   * `from` is where a click started the reading: `{ sentence, word }`, the
+   * clicked sentence and the index of the clicked word in it (0 for a click
+   * between words). The reading begins at that word, and what is left of its
+   * sentence gets the short opening clause the first sentence gets: it was
+   * not fetched before the click, so the clause is what makes it start soon.
    */
   function pieces(from = null) {
     let sentences = [...document.querySelectorAll(".full-text .reading .sentence")];
-    // A reading started from a clicked sentence begins there, and that
-    // sentence gets the short opening clause the first one gets: it was not
-    // fetched before the click, so the clause is what makes it start soon.
-    const start = from ? sentences.indexOf(from) : 0;
+    const start = from ? sentences.indexOf(from.sentence) : 0;
     if (start > 0) sentences = sentences.slice(start);
+    const skip = from && start >= 0 ? from.word : 0;
     return sentences.flatMap((sentence, index) => {
-      const text = sentence.textContent.trim();
+      // Skipped words are left out of the text, not muted in the audio: the
+      // voice is asked for the words from the clicked one on. One span per
+      // word, as the template cuts them, so the indices stay the timings'.
+      const skipped = index === 0 ? skip : 0;
+      const text = skipped
+        ? [...sentence.querySelectorAll(".w")].slice(skipped).map((w) => w.textContent).join(" ")
+        : sentence.textContent.trim();
+      if (!text) return [];
       const parts = (index === 0 && lead(text)) || [text];
-      let first = 0;
+      let first = skipped;
       return parts.flatMap(wrap).map((part) => {
         const piece = { sentence, text: part, first };
         first += part.split(/\s+/).length;
@@ -695,10 +706,11 @@
   }
 
   /**
-   * Reads the full text aloud, from the top or from `from`, a sentence the
-   * student clicked. The button toggles: a second click while it reads is
-   * "stop", not "from the top". A sentence never toggles: clicking one while
-   * it reads jumps there, because that is what the click asks for.
+   * Reads the full text aloud, from the top or from `from`, the place the
+   * student clicked (`{ sentence, word }`, see `pieces`). The button
+   * toggles: a second click while it reads is "stop", not "from the top". A
+   * click on the text never toggles: clicking it while it reads jumps there,
+   * because that is what the click asks for.
    */
   async function readAloud(button, from = null) {
     const wasReading = reader?.button === button;
@@ -710,7 +722,8 @@
 
     const voice = button.dataset.voice;
     const firstSentence = document.querySelector(".full-text .reading .sentence");
-    const run = { button, label: button.textContent, fromTop: !from || from === firstSentence };
+    const fromTop = !from || (from.sentence === firstSentence && from.word === 0);
+    const run = { button, label: button.textContent, fromTop };
     reader = run;
     button.classList.remove("failed");
     button.title = "Stop reading";
@@ -720,7 +733,10 @@
     // The next pieces synthesise while this one plays. A failure waits to be
     // awaited, so a piece the student never reaches never reports one.
     const pending = new Map(); // index -> Promise<{ blob, starts }>
-    const opened = new Set(openingPieces(queue));
+    // Only a reading from the top uses the pieces kept from the prefetch: one
+    // from a clicked word asks for text no prefetch has, and keeping every
+    // clicked fragment's audio for the page's lifetime would only hold memory.
+    const opened = new Set(run.fromTop ? openingPieces(queue) : []);
     const ahead = (i) => {
       if (i >= queue.length || pending.has(i)) return;
       const request = opened.has(queue[i])
@@ -779,21 +795,24 @@
     else window.addEventListener("load", schedule, { once: true });
   }
 
-  // A sentence of the full text is a place to start reading from. Not when
+  // A word of the full text is a place to start reading from, and so is the
+  // gap between two words, which starts its sentence. Not when
   // the click ends a text selection: the student was copying a phrase or
   // looking one up, and a voice starting up would be in the way.
   const readButton = document.querySelector("button.read-aloud");
   const fullText = document.getElementById("full-text-reading");
   if (readButton && fullText) {
     fullText.classList.add("clickable");
-    fullText.title = "Click a sentence to hear it from there";
+    fullText.title = "Click a word to hear the text from there";
   }
 
   document.addEventListener("click", (event) => {
     const sentence = readButton && event.target.closest?.(".full-text .reading .sentence");
     if (sentence) {
       if (!window.getSelection()?.isCollapsed) return;
-      readAloud(readButton, sentence);
+      const word = event.target.closest(".w[data-w]");
+      const index = word && sentence.contains(word) ? Number(word.dataset.w) : 0;
+      readAloud(readButton, { sentence, word: index });
       return;
     }
     const target = event.target.closest(
