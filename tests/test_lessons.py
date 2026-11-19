@@ -25,6 +25,7 @@ from teacher_charles.teaching.lessons import (
     load_lessons,
     load_shelf,
     local_text_path,
+    place_cites,
     read_local_text,
     word_count,
 )
@@ -466,6 +467,84 @@ def test_the_copy_is_read_per_request_not_cached(tmp_path):
         assert 'id="full-text"' not in c.get(f"/lessons/{SLUG}").text
         put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
         assert 'id="full-text"' in c.get(f"/lessons/{SLUG}").text
+
+
+# --- the passage beside a point ---------------------------------------------- #
+
+
+def marked(passage) -> list[str]:
+    return [text for text, cite in passage if cite]
+
+
+def test_a_citation_is_placed_in_the_sentence_that_holds_it():
+    placed = place_cites(
+        ["An opening.", "What took place there was bad.", "An end."], ["took place"]
+    )
+    assert placed.unplaced == ()
+    (passage,) = placed.passages
+    assert "".join(text for text, _ in passage) == "What took place there was bad."
+    assert marked(passage) == ["took place"]
+
+
+def test_a_shouted_citation_with_a_curly_apostrophe_still_matches():
+    """The curator types *we've*; the copy shouts *WE’VE* — the mark keeps the copy's letters."""
+    (passage,) = place_cites(["THE MONSTER WE’VE HELPED CREATE?"], ["we've helped create"]).passages
+    assert marked(passage) == ["WE’VE HELPED CREATE"]
+
+
+def test_a_citation_matches_whole_words_only():
+    placed = place_cites(["Whenever it rains, nobody comes."], ["when"])
+    assert placed.passages == ()
+    assert placed.unplaced == ("when",)
+
+
+def test_a_recurring_citation_is_marked_every_time_and_sentences_keep_text_order():
+    placed = place_cites(
+        ["It happened.", "When truth leaves us, when we let it go.", "Then."],
+        ["when", "happened"],
+    )
+    assert ["".join(t for t, _ in p) for p in placed.passages] == [
+        "It happened.",
+        "When truth leaves us, when we let it go.",
+    ]
+    assert marked(placed.passages[1]) == ["When", "when"]
+
+
+def test_overlapping_citations_make_one_mark():
+    (passage,) = place_cites(
+        ["Allies, adversaries, all of you."], ["allies, adversaries", "adversaries, all"]
+    ).passages
+    assert marked(passage) == ["Allies, adversaries, all"]
+
+
+# A stand-in that holds one of the shipped lesson's citations and none of the
+# speech: the test needs the phrase, not the text.
+STAND_IN_WITH_CITE = (
+    "An invented opening line.\n\nDisagree as we might, this sentence is a stand-in.\n"
+)
+
+
+def test_the_page_sets_the_quoted_sentence_beside_its_point(tmp_path):
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, STAND_IN_WITH_CITE)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+        api = c.get(f"/api/lessons/{SLUG}").text
+    assert (
+        '<blockquote class="passage"><mark>Disagree as we might</mark>, '
+        "this sentence is a stand-in.</blockquote>"
+    ) in page
+    # A citation the copy does not hold keeps its bare quote.
+    assert "<q>took place</q>" in page
+    # The passage is the copy, and the copy is not ours to serve.
+    assert "stand-in" not in api
+
+
+def test_without_a_copy_a_point_shows_its_bare_quotes(client):
+    page = client.get(f"/lessons/{SLUG}").text
+    assert 'class="passage"' not in page
+    assert "<q>Disagree as we might</q>" in page
+    assert 'class="rule-card point paired"' in page
 
 
 def test_the_corpus_lessons_folder_is_not_versioned():

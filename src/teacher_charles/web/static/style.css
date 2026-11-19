@@ -688,6 +688,36 @@ main.lesson .full-text .reading .w.now-word {
   box-shadow: 0 0 0 0.1rem color-mix(in srgb, var(--accent) 45%, transparent);
 }
 main.lesson .cites q { font-style: italic; color: var(--accent); }
+/* A point that cites the text: the passage on the left, the explanation on
+   the right, so the eye goes from the words to what is said about them. The
+   section widens to hold both; a point without citations keeps the reading
+   width, and a narrow screen stacks the two. */
+main.lesson > section.aspect { max-width: 120ch; }
+main.lesson .aspect > :not(.paired) { max-width: 70ch; }
+main.lesson .point.paired {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 0.5rem 1.2rem;
+  align-items: start;
+}
+main.lesson .point .from-text { display: grid; gap: 0.5rem; }
+main.lesson .point .from-text .cites { margin-top: 0; }
+main.lesson .point .passage {
+  margin: 0;
+  padding: 0.1rem 0 0.1rem 0.7rem;
+  border-left: 2px solid var(--accent);
+  font-style: italic;
+  line-height: 1.5;
+}
+main.lesson .point .passage mark {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: inherit;
+  border-radius: 0.2rem;
+  padding: 0 0.1rem;
+}
+@media (max-width: 720px) {
+  main.lesson .point.paired { grid-template-columns: minmax(0, 1fr); }
+}
 main.lesson table.notes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 main.lesson table.notes th {
   text-align: left;
@@ -808,6 +838,16 @@ main.phonetics .ipa.whole {
   color: var(--fg);
 }
 main.phonetics button.copy { margin-top: 0.6rem; font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+main.phonetics button.listen { margin: 0.6rem 0 0 0.4rem; font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+main.phonetics button.listen[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+main.phonetics button.listen.failed { border-color: var(--danger); color: var(--danger); }
+main.phonetics .listen-all button.listen { margin: 0; }
+/* The sentence being read aloud, lit the way the lesson reader lights its
+   sentence, so the eye can follow the voice across several. */
+main.phonetics .spelled.now-reading {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--teacher));
+}
 
 .visually-hidden {
   position: absolute;

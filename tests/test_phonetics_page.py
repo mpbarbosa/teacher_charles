@@ -90,10 +90,35 @@ def test_the_conversation_links_to_the_page(client):
     assert 'href="/phonetics"' in client.get("/").text
 
 
+def test_the_conversation_links_to_the_ipa_chart(client):
+    assert 'href="https://www.ipachart.com/"' in client.get("/").text
+
+
+def test_with_a_voice_the_page_asks_for_listen_buttons(tmp_path):
+    """phonetics.js draws Listen only where /api/tts can answer."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get("/phonetics").text
+        assert 'data-voice="on"' in page
+        # What a Listen button posts is a sentence the route returns, so the
+        # route the button calls has to take it.
+        [[sentence]] = spelled(c, "I thought it through.")["lines"]
+        spoken = c.post("/api/tts", json={"text": sentence["text"]})
+    assert spoken.status_code == 200
+    assert spoken.headers["content-type"] == "audio/wav"
+
+
+def test_without_a_voice_there_are_no_listen_buttons(client):
+    """Voice is off by default; a button that always answers 503 is worse than none."""
+    assert "data-voice" not in client.get("/phonetics").text
+
+
 def test_with_the_ipa_off_the_page_says_how_and_the_route_answers_503(tmp_path):
     settings = settings_for(tmp_path, phonetics_enabled=False)
     with TestClient(create_app(settings, provider=FakeProvider())) as off:
         page = off.get("/phonetics").text
+        # No IPA on screen, so no chart to look its symbols up in.
+        assert "ipachart.com" not in off.get("/").text
         assert 'id="phonetics-text"' not in page
         assert "TC_PHONETICS_ENABLED" in page
         response = off.post("/api/phonetics", json={"text": "Hello."})

@@ -63,6 +63,7 @@ from .teaching.lessons import (
     LessonShelf,
     LocalText,
     load_shelf,
+    place_cites,
     read_local_text,
 )
 from .teaching.level import LevelTracker
@@ -669,6 +670,37 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             return []
         return [[sentence_view(s) for s in split_sentences(p) or [p]] for p in full_text.paragraphs]
 
+    def point_passages(lesson: Lesson, full_text: LocalText | None) -> list[list[dict[str, Any]]]:
+        """For each point, in the page's order, the sentences of the copy it cites.
+
+        Aligned with ``lesson_payload``'s sections and their points, so the
+        template walks both with the same indices. The sentences are cut by
+        the same ``split_sentences`` the full text above uses, so a passage
+        beside a point is one sentence of that text, never a stretch of two.
+        With no copy every citation is unplaced and the point shows its bare
+        quotes, as a clone without the copy always did.
+        """
+        sentences = (
+            [s for p in full_text.paragraphs for s in split_sentences(p) or [p]]
+            if full_text is not None
+            else []
+        )
+        out = []
+        for section in lesson.ordered_sections():
+            row = []
+            for point in section.points:
+                placed = place_cites(sentences, point.cites)
+                row.append(
+                    {
+                        "passages": [
+                            [{"text": t, "cite": c} for t, c in runs] for runs in placed.passages
+                        ],
+                        "unplaced": list(placed.unplaced),
+                    }
+                )
+            out.append(row)
+        return out
+
     def sentence_view(text: str) -> dict[str, Any]:
         words = text.split()
         ipa = spell(text)
@@ -803,6 +835,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "version": __version__,
                 "level": active_student(app.state.db).cefr_level,
                 "phonetics": phonetics_payload(),
+                # Listen buttons only with a voice: /api/tts answers 503
+                # without one, and a button that always fails is worse than none.
+                "voice": voice_payload(),
                 "max_chars": PHONETICS_MAX_CHARS,
             },
         )
@@ -845,6 +880,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # The copy cut into sentences, each with its IPA, so the reader
                 # can light the sentence it is speaking in both lines at once.
                 "full_text_sentences": full_text_sentences(full_text),
+                # Beside each point, the sentence of the copy it quotes. From
+                # the copy, so it is here and not in lesson_payload either.
+                "point_passages": point_passages(lesson, full_text),
                 # The speaker beside each word asks /api/tts, which answers
                 # 503 with voice off — so with voice off there is no button.
                 "voice": voice_payload(),
