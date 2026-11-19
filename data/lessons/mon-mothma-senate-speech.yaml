@@ -31,6 +31,13 @@ source:
     Gilroy, performed by Genevieve O'Reilly
   words: 269
 
+# The scene itself, from the official Star Wars channel (checked against
+# YouTube's oEmbed). The id only: the page builds the embed address.
+video:
+  youtube_id: KYnE2Mxayco
+  title: "Andor Season 2 | Mon Mothma’s Senate Speech"
+  channel: Star Wars
+
 sections:
   - aspect: lexicon
     title: Where the words come from

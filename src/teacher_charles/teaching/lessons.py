@@ -68,7 +68,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from ..config import get_settings
 from ..store.models import CefrLevel
@@ -127,6 +127,41 @@ class Source(BaseModel):
     # Length of the analysed text, in words. It is the denominator of the
     # citation budget, so it is required: without it the budget means nothing.
     words: int = Field(gt=0)
+
+
+# YouTube's video ids: eleven characters from the URL-safe base64 alphabet.
+YOUTUBE_ID_PATTERN = r"^[A-Za-z0-9_-]{11}$"
+
+
+class Video(BaseModel):
+    """The work performed, embedded on the page from the channel that owns it.
+
+    An id, never a URL: the address is built at render time, so a pasted
+    link's tracking parameters (``?si=``, ``&t=``) cannot reach the repository.
+    The player is the owner's, on YouTube's privacy-enhanced host — nothing of
+    the recording is copied here either.
+
+    ``channel`` is identity, kept apart from the id: it is what was checked
+    when the id was filed (YouTube's oEmbed ``author_name``; that endpoint
+    answers 400 for an id that does not exist, so a checker could stand on
+    it). A re-upload by anyone else is not a source.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    youtube_id: str = Field(pattern=YOUTUBE_ID_PATTERN)
+    title: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+
+    @computed_field
+    @property
+    def embed_url(self) -> str:
+        return f"https://www.youtube-nocookie.com/embed/{self.youtube_id}"
+
+    @computed_field
+    @property
+    def watch_url(self) -> str:
+        return f"https://www.youtube.com/watch?v={self.youtube_id}"
 
 
 class Point(BaseModel):
@@ -233,6 +268,8 @@ class Lesson(BaseModel):
     summary: str = Field(min_length=1)
     cefr: CefrLevel
     source: Source
+    # The work performed, when an official recording exists. Optional.
+    video: Video | None = None
     sections: list[Section] = Field(min_length=1)
     words: list[WordNote] = Field(default_factory=list)
     sounds: list[SoundNote] = Field(default_factory=list)

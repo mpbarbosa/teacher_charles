@@ -599,6 +599,15 @@ main.lesson .source {
 }
 main.lesson .byline { color: var(--muted); font-size: 0.8rem; }
 main.lesson .ipa-chart { color: var(--muted); font-size: 0.8rem; margin-top: 0.4rem; }
+main.lesson .video .frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
+main.lesson .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+main.lesson .video .byline { margin-top: 0.35rem; }
 main.lesson .aspects { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.85rem; }
 main.lesson .cites { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; }
 main.lesson .full-text .reading {
