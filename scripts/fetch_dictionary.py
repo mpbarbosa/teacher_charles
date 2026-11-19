@@ -121,6 +121,10 @@ def main() -> int:
 
     target = Settings().resolved_dictionary_path
     scratch = target.parent / "wn-data"
+    # wn creates its data directory with a bare mkdir, parents not included,
+    # so on a machine with no cache folder for the app yet it fails before
+    # downloading anything.
+    scratch.mkdir(parents=True, exist_ok=True)
     wn.config.data_directory = scratch
     print(f"lexicons → {scratch}")
 
