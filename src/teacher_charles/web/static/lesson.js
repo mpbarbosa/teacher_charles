@@ -42,9 +42,10 @@
 // measured: each sentence's audio is kept on the server (`timings: true`),
 // and a second request has Whisper listen to it and say when each word starts
 // (/api/tts/{id}/words) while the audio already plays. The page follows the
-// playhead against them; without them it lights the sentence alone. Nothing
-// of it is cached: a reading is minutes of audio, and a second one is rare
-// enough to pay for again.
+// playhead against them; without them it lights the sentence alone. Only the
+// first sentence is kept, fetched before the click (see "The first sound");
+// the rest is minutes of audio, and a second reading is rare enough to pay
+// for again.
 
 (() => {
   const cache = new Map(); // word -> Promise<Blob>, Charles's audio
@@ -457,6 +458,117 @@
 
   let reader = null; // { button, label }, while the reader has the floor
 
+  // ## The first sound
+  //
+  // What the student waits for after the click is the first piece's
+  // synthesis. Measured on the lesson, the opening sentence ("Fellow
+  // Senators, Friends, Colleagues, Allies, Adversaries.", 3.4 s of audio)
+  // takes 2.0 s to synthesise on an idle server, and 2-3 s in the page,
+  // where the read-ahead competes for the CPU. Two things take that away:
+  //
+  // - The first sentence is read in two pieces, its first clause alone
+  //   ("Fellow Senators," is 0.86 s) and then the rest. Only the first
+  //   sentence: the cut costs a seam at the comma, and from the second piece
+  //   on the read-ahead already hides the synthesis.
+  // - The whole first sentence -- both pieces -- is fetched before the click,
+  //   once the page is idle, and kept for the page's lifetime, so a click,
+  //   or a second Listen after a Stop, plays at once. Both, and not the
+  //   clause alone: with only the clause ready, the reader stopped 1.9 s
+  //   after "Fellow Senators," waiting for the rest, and lit its words late.
+  //   3.4 s of ready audio is what lets the read-ahead catch up. About 3 s
+  //   of CPU per lesson page viewed.
+
+  // The first clause must be at least this long to stand alone, and end
+  // within this many characters, or the sentence is read whole.
+  const LEAD_MIN_CHARS = 8;
+  const LEAD_MAX_CHARS = 60;
+  // ...and what follows it at least this long: cutting "Yes, sir." in two
+  // would only add a seam.
+  const LEAD_REST_MIN_CHARS = 20;
+
+  /** The first sentence's opening clause and the rest, or null to read it whole. */
+  function lead(text) {
+    const match = /[,;:—–]\s/u.exec(text.slice(LEAD_MIN_CHARS));
+    if (!match) return null;
+    const at = LEAD_MIN_CHARS + match.index + 1;
+    if (at > LEAD_MAX_CHARS) return null;
+    const head = text.slice(0, at).trim();
+    const rest = text.slice(at).trim();
+    return rest.length >= LEAD_REST_MIN_CHARS ? [head, rest] : null;
+  }
+
+  /**
+   * The reading, in the pieces /api/tts is asked for: one per sentence the
+   * server cut, so what is heard, what is lit in the text and what is lit in
+   * the IPA are the same sentence; the first sentence's opening clause alone
+   * (see "The first sound"); and a sentence too long for one call cut at a
+   * word. `first` is the piece's first word in its sentence, for the word
+   * timings.
+   */
+  function pieces() {
+    const sentences = [...document.querySelectorAll(".full-text .reading .sentence")];
+    return sentences.flatMap((sentence, index) => {
+      const text = sentence.textContent.trim();
+      const parts = (index === 0 && lead(text)) || [text];
+      let first = 0;
+      return parts.flatMap(wrap).map((part) => {
+        const piece = { sentence, text: part, first };
+        first += part.split(/\s+/).length;
+        return piece;
+      });
+    });
+  }
+
+  // The first sentence's pieces, fetched before the click and kept:
+  // `${voice}\n${text}` -> Promise<{ blob, starts }>.
+  const opening = new Map();
+
+  /** The pieces that are fetched before the click: the first sentence's. */
+  function openingPieces(queue) {
+    const first = queue[0]?.sentence;
+    return queue.filter((piece) => piece.sentence === first);
+  }
+
+  // Requests go out one after another, each when the one before it has its
+  // audio. The server synthesises one sentence at a time anyway, so this
+  // costs no throughput -- but five requests sent at once reach its lock in
+  // any order, and a click before the prefetch finished waited 2.2 s for a
+  // clause that takes 0.86 s, behind sentences further down.
+  let lastRequest = Promise.resolve();
+
+  /**
+   * `speakTimed`, sent when the request before it has its audio. `live` is
+   * asked at that moment: a reading stopped in the meantime sends nothing,
+   * so a Listen after a Stop does not queue behind the old reading's tail.
+   */
+  function speakInTurn(text, voice, live = () => true) {
+    const request = lastRequest
+      .catch(() => {})
+      .then(() => (live() ? speakTimed(text, voice) : Promise.reject(new Error("stopped"))));
+    lastRequest = request;
+    return request;
+  }
+
+  function openingFor(text, voice) {
+    const key = `${voice}\n${text}`;
+    if (!opening.has(key)) {
+      const request = speakInTurn(text, voice);
+      // A failed prefetch is not kept: the click asks again.
+      request.catch(() => {
+        if (opening.get(key) === request) opening.delete(key);
+      });
+      opening.set(key, request);
+    }
+    return opening.get(key);
+  }
+
+  function prefetchOpening() {
+    const button = document.querySelector("button.read-aloud");
+    if (!button) return;
+    // In order: the server synthesises one at a time, first come first.
+    for (const piece of openingPieces(pieces())) openingFor(piece.text, button.dataset.voice);
+  }
+
   /** A sentence longer than the ceiling, cut at the last space that fits. */
   function wrap(text) {
     const out = [];
@@ -565,19 +677,7 @@
     // A second click while it reads is "stop", not "from the top".
     if (wasReading) return;
 
-    // One piece per sentence the server cut, so what is heard, what is lit
-    // in the text and what is lit in the IPA are the same sentence. `first`
-    // is the piece's first word in its sentence, for the word timings.
-    const queue = [...document.querySelectorAll(".full-text .reading .sentence")].flatMap(
-      (sentence) => {
-        let first = 0;
-        return wrap(sentence.textContent).map((text) => {
-          const piece = { sentence, text, first };
-          first += text.split(/\s+/).length;
-          return piece;
-        });
-      }
-    );
+    const queue = pieces();
     if (!queue.length) return;
 
     const voice = button.dataset.voice;
@@ -591,9 +691,12 @@
     // The next pieces synthesise while this one plays. A failure waits to be
     // awaited, so a piece the student never reaches never reports one.
     const pending = new Map(); // index -> Promise<{ blob, starts }>
+    const opened = new Set(openingPieces(queue));
     const ahead = (i) => {
       if (i >= queue.length || pending.has(i)) return;
-      const request = speakTimed(queue[i].text, voice);
+      const request = opened.has(queue[i])
+        ? openingFor(queue[i].text, voice)
+        : speakInTurn(queue[i].text, voice, () => reader === run);
       request.catch(() => {});
       pending.set(i, request);
     };
@@ -637,6 +740,15 @@
   }
 
   // --- wiring -------------------------------------------------------------- //
+
+  // The opening clause, once the page has settled: after load, and when the
+  // browser is idle, so it never competes with the page drawing itself.
+  if (document.querySelector("button.read-aloud")) {
+    const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 500));
+    const schedule = () => idle(prefetchOpening, { timeout: 2000 });
+    if (document.readyState === "complete") schedule();
+    else window.addEventListener("load", schedule, { once: true });
+  }
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest(
