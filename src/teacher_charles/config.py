@@ -75,10 +75,11 @@ class Settings(BaseSettings):
     # Reasoning models (Qwen3 among them) think before answering, and that
     # costs seconds a conversation does not have. ``None`` lets the server's
     # default stand; ``False`` switches the reasoning off **on a model that
-    # can switch it off**. The default ``qwen3:4b`` is not one: the tag is the
+    # can switch it off**. Bare ``qwen3:4b`` is not one: the tag is the
     # thinking-only build, and there ``False`` changes nothing -- the reasoning
     # still runs, hidden, before the first word (see
-    # ``OllamaProvider._think_off_is_obeyed``).
+    # ``OllamaProvider._think_off_is_obeyed``). The default
+    # ``qwen3:4b-instruct`` does not reason, so there is nothing to switch.
     llm_think: bool | None = None
 
     # --- Ensino ----------------------------------------------------------

@@ -137,6 +137,19 @@ THINKING_ONLY = {
 }
 PLAIN = {"template": PLAIN_TEMPLATE, "capabilities": ["completion", "tools"]}
 
+# What ``/api/show`` really says about ``qwen3:4b-instruct``: a Jinja template,
+# so there is no ``.Think`` to find, and ``thinking`` among the capabilities
+# of a model that does not reason.
+INSTRUCT_TEMPLATE = """\
+{%- if message.role == "assistant" %}
+    {%- set content = content.split('</think>')[-1].lstrip('\\n') %}
+{%- endif %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\\n' }}
+{%- endif %}
+"""
+INSTRUCT = {"template": INSTRUCT_TEMPLATE, "capabilities": ["tools", "thinking", "completion"]}
+
 
 def ollama_with(handler, show=HYBRID) -> OllamaProvider:
     """A provider whose server is ``handler``.
@@ -338,6 +351,25 @@ async def test_ollama_says_nothing_about_a_model_that_does_not_reason(caplog):
     and warning about reasoning that does not exist would be noise."""
     seen: list[dict] = []
     provider = ollama_with(recording(seen), show=PLAIN)
+
+    with caplog.at_level("WARNING", logger="teacher_charles.llm.ollama"):
+        await provider.complete(HELLO, THINK_OFF)
+
+    assert "think" not in seen[0]
+    assert caplog.text == ""
+
+
+async def test_ollama_does_not_take_the_capability_list_for_reasoning(caplog):
+    """``thinking`` in the capabilities is not a model that reasons.
+
+    Measured on ``qwen3:4b-instruct``: it lists the capability and answers in
+    two tokens with the field sent or left out. The warning tells the operator
+    that reasoning cannot be turned off, so on this model -- the default -- it
+    would be false at every startup. Only a template that opens the block
+    itself proves it.
+    """
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=INSTRUCT)
 
     with caplog.at_level("WARNING", logger="teacher_charles.llm.ollama"):
         await provider.complete(HELLO, THINK_OFF)

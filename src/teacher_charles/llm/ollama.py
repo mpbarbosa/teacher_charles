@@ -46,6 +46,13 @@ SHOW_TIMEOUT_S = 5.0
 # had the field at all, true for ``false`` as much as for ``true``).
 _READS_THINK_FLAG = re.compile(r"\.Think\b")
 
+# A template that follows the assistant header with ``<think>`` has started
+# the reasoning before the model writes a token, so the model reasons on every
+# turn. That is the only evidence of reasoning ``/api/show`` gives. The
+# capability list is not: ``qwen3:4b-instruct`` lists ``thinking`` and answers
+# a one-word question in two tokens, with the field sent or left out.
+_OPENS_THINK_BLOCK = re.compile(r"assistant\s*<think>")
+
 log = logging.getLogger(__name__)
 
 
@@ -186,10 +193,14 @@ class OllamaProvider(ChatProvider):
         every other model the field is left out, which is the one setting
         under which the server hides whatever reasoning there is. That costs
         nothing on a model that does not reason, and on one that cannot stop
-        it trades a leak for a wait. The untested case is a model rendered by
-        one of Ollama's built-in renderers instead of a template: it lands on
-        the cautious side, where the worst outcome is reasoning that was asked
-        off and stays on, unseen.
+        it trades a leak for a wait. A model whose template is not a Go
+        template at all lands on the same cautious side: ``qwen3:4b-instruct``
+        shows a Jinja one, has no ``.Think`` to find, and measured the same
+        two-token answer with the field sent or left out.
+
+        The warning is for the one case the template proves: it opens the
+        ``<think>`` block itself, so the operator asked for reasoning off and
+        is not getting it.
 
         A failed lookup is not remembered, so a server that was down at the
         first call is asked again at the next; it answers "no" meanwhile
@@ -216,11 +227,14 @@ class OllamaProvider(ChatProvider):
             return False
 
         template = shown.get("template")
-        capabilities = shown.get("capabilities")
-        obeyed = isinstance(template, str) and bool(_READS_THINK_FLAG.search(template))
+        if not isinstance(template, str):
+            template = ""
+        obeyed = bool(_READS_THINK_FLAG.search(template))
         self._think_off_obeyed = obeyed
 
-        if not obeyed and isinstance(capabilities, list) and "thinking" in capabilities:
+        if obeyed:
+            return True
+        if _OPENS_THINK_BLOCK.search(template):
             log.warning(
                 "model %s reasons before answering and its template ignores "
                 "`think: false`, so the reasoning cannot be turned off. It is "
@@ -229,7 +243,9 @@ class OllamaProvider(ChatProvider):
                 "that time back.",
                 self.model,
             )
-        return obeyed
+        else:
+            log.debug("`think: false` is not sent to %s: its template does not read it", self.model)
+        return False
 
     def _error_for(self, status_code: int, raw: bytes) -> ProviderError:
         try:

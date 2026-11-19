@@ -371,9 +371,9 @@ and only one of them is up to the model: it is offered to the chat template,
 which may use it to tell the model not to reason, and it stops the server from
 splitting reasoning out of the reply into `message.thinking`. A template that
 never reads the flag leaves the model reasoning exactly as before, with nothing
-separating it any more. That is the default model: the `qwen3:4b` tag is
-Qwen3-4B-Thinking-2507, whose template opens `<think>` whatever the request
-says. Measured on Ollama 0.35, one-word answer: 179 tokens with `think: false`,
+separating it any more. That is bare `qwen3:4b`, the default until it was
+measured: the tag is Qwen3-4B-Thinking-2507, whose template opens `<think>`
+whatever the request says. Measured on Ollama 0.35, one-word answer: 179 tokens with `think: false`,
 247 with `true`, 280 with the field absent — so `false` saved nothing, and it
 put the whole chain of thought, a bare `</think>` and then the answer into the
 reply the student reads. Hence `OllamaProvider._think_off_is_obeyed`: one
@@ -382,15 +382,24 @@ reads `.Think`. For every other model the field is left out, which is the one
 setting under which the server hides the reasoning. The word boundary in that
 check is not pedantry — `.Thinking` and `.IsThinkSet` are in every thinking
 template, the leaking one included, and neither is the flag. Unknown (lookup
-failed, or a model drawn by a built-in renderer and not a template) lands on
-the side that cannot leak.
+failed, or a template that is not a Go template at all) lands on the side that
+cannot leak — which is where the default sits: `qwen3:4b-instruct` shows a
+Jinja template with no `.Think` in it, so the field is never sent to it, and
+measured it gives the same two-token answer either way.
+
+**The warning reads the template, not the capability list.** It says reasoning
+cannot be turned off, and the only thing `/api/show` offers that proves it is a
+template that follows the assistant header with `<think>` by itself.
+`qwen3:4b-instruct` lists `thinking` among its capabilities and does not reason;
+keyed on that list, the warning was false at every startup of the default
+model.
 
 Two things follow that are easy to undo. The analyzer and the warm-up still
 pass `think=False` on every call, and that is right: it is a request, and the
 provider is the layer that knows whether this model can honour it. And **hiding
-the reasoning is not turning it off** — on the default model every turn still
-waits for it, and the analysis spends its 320-token ceiling thinking before it
-reaches the JSON. That is a property of the model and no flag fixes it; the
+the reasoning is not turning it off** — on a thinking-only model every turn
+still waits for it, and the analysis spends its 320-token ceiling thinking
+before it reaches the JSON. That is a property of the model and no flag fixes it; the
 lever is a model that does not reason. The second line of defence is in
 `extract_json_object`, which drops reasoning that closes a tag it never opened:
 a model thinking about the analysis rehearses the JSON it was asked for, so the
@@ -442,8 +451,10 @@ premise, not a configuration detail:
   time (~54 tok/s on a 3B), not because of a context window limit.
 - Reasoning models (Qwen3 among them) think before answering, and
   `TC_LLM_THINK=false` turns that off **only on a model whose chat template
-  reads the flag**. The default is not one of them — see "`think: false` is
-  not sent on trust" above. `None` lets the server's default stand.
+  reads the flag**. Bare `qwen3:4b` is not one of them — see "`think: false`
+  is not sent on trust" above — and the default `qwen3:4b-instruct` does not
+  reason, so there the flag has nothing to turn off. `None` lets the server's
+  default stand.
 - Python is pinned to `>=3.12,<3.13` on purpose: the `ctranslate2` and
   `onnxruntime` wheels, which Phase 1.5's voice will need, lag behind the new
   versions. Do not change the interpreter.
