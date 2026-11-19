@@ -281,15 +281,18 @@ says the student asked, and then he pointed at the button six times out of
 six. `partials/app/syntax.md` names the button and nothing else, and a test
 keeps the priming words out of it.
 
-The default 4B was measured afterwards, same question, and it agrees with what
-ships but not with the reason. With the note and the short partial, qwen3:4b
-pointed at the button nine times out of nine and analysed in none. The priming
-did **not** reproduce: under the descriptive partial it pointed at the button
-three times out of three — a reasoning model rereads the prohibition the 3B
-skipped. And the short partial alone is not enough on it either: two out of
-three, the third changed the subject. So the note is what carries the
-behaviour on both models, and the descriptive partial is ruled out by the 3B
-alone. Three runs a side is still a small sample.
+Bare `qwen3:4b` — the default when the button shipped, and the thinking build
+the default has since moved off — was measured afterwards, same question, and
+it agrees with what ships but not with the reason. With the note and the short
+partial it pointed at the button nine times out of nine and analysed in none.
+**The current default, `qwen3:4b-instruct`, has not been asked this question.**
+
+On the thinking build the priming did **not** reproduce: under the descriptive
+partial it pointed at the button three times out of three — a reasoning model
+rereads the prohibition the 3B skipped. And the short partial alone is not
+enough on it either: two out of three, the third changed the subject. So the
+note is what carries the behaviour on both models, and the descriptive partial
+is ruled out by the 3B alone. Three runs a side is still a small sample.
 
 **`/api/syntax` records nothing** — no turn, no correction, no review. Looking
 at a sentence is not evidence, for the reason `/api/stt` records no turn.

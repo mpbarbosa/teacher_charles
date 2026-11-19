@@ -1336,8 +1336,10 @@ que ele pede, o modelo apontou para o botão em 6 de 6 e não analisou em
 nenhuma. É o que a E4 e a E6 já tinham medido — instrução longe do ponto de
 geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*.
 
-**O 4B default foi medido depois**, com a mesma pergunta, e concorda com o que
-foi entregue, mas não com o motivo:
+**O `qwen3:4b` puro foi medido depois** — era o default quando o botão entrou,
+e é o build *Thinking* de que o default saiu desde então —, com a mesma
+pergunta, e concorda com o que foi entregue, mas não com o motivo. **O default
+de hoje, `qwen3:4b-instruct`, não respondeu a essa pergunta ainda.**
 
 | Arranjo (qwen3:4b) | Apontou para o botão | Digitou análise |
 |---|---|---|
