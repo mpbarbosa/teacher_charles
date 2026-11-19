@@ -221,6 +221,12 @@ class _RawAnalysis(BaseModel):
 
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+# Reasoning that closes a tag it never opened. It is the shape that was
+# actually measured, and the pair above does not match it: a thinking model's
+# opening ``<think>`` belongs to the prompt, put there by the chat template, so
+# when a server hands the reasoning back unseparated the reply *starts* inside
+# the block. Everything up to the last closing tag is thought, not answer.
+_UNOPENED_THINK = re.compile(r"\A.*</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```(?:json)?", re.IGNORECASE)
 
 
@@ -231,11 +237,17 @@ def extract_json_object(text: str) -> dict[str, object] | None:
     JSON:" ou embrulhado em ``<think>``. Nada disso é erro de formato que
     justifique perder a correção, então é tudo removido antes de parsear. O que
     não dá para recuperar devolve ``None`` e vira retentativa.
+
+    The reasoning goes first and whole, and the order is the point: a model
+    thinking about this task quotes the format it was asked for, so the first
+    ``{`` of an unseparated reply is usually inside the thought. Read from
+    there, the answer would be whatever example the model was turning over.
     """
     if not text:
         return None
 
-    cleaned = _FENCE.sub("", _THINK_BLOCK.sub("", text)).strip()
+    without_reasoning = _UNOPENED_THINK.sub("", _THINK_BLOCK.sub("", text))
+    cleaned = _FENCE.sub("", without_reasoning).strip()
 
     start = cleaned.find("{")
     if start == -1:

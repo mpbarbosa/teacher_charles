@@ -91,11 +91,70 @@ def ndjson(*chunks: str, done_separately: bool = True) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
-def ollama_with(handler) -> OllamaProvider:
-    transport = httpx.MockTransport(handler)
+# The lines that decide, out of two real templates. What separates them is one
+# variable: the first reads ``$.Think`` and so can be told to stop reasoning;
+# the second never does, and opens ``<think>`` whatever the request says.
+#
+# The second one is kept with its ``.Thinking`` and ``$.IsThinkSet`` on
+# purpose. Both are in every thinking template, neither is the flag, and a
+# check loose enough to take them for it would send ``think: false`` to
+# exactly the model that leaks.
+HYBRID_TEMPLATE = """\
+{{- if and $.IsThinkSet (eq $i $lastUserIdx) }}
+   {{- if $.Think -}}
+      {{- " "}}/think
+   {{- else -}}
+      {{- " "}}/no_think
+   {{- end -}}
+{{- end }}<|im_end|>
+{{ if and $.IsThinkSet (not $.Think) -}}
+<think>
+
+</think>
+
+{{ end -}}
+"""  # qwen3:8b
+
+THINKING_ONLY_TEMPLATE = """\
+{{ if (and $.IsThinkSet (and .Thinking (or $last (gt $i $lastUserIdx)))) -}}
+<think>{{ .Thinking }}</think>
+{{ end -}}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+<think>
+{{ end }}
+"""  # qwen3:4b, which is Qwen3-4B-Thinking-2507
+
+PLAIN_TEMPLATE = """\
+{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""  # qwen2.5: no reasoning at all
+
+HYBRID = {"template": HYBRID_TEMPLATE, "capabilities": ["completion", "tools", "thinking"]}
+THINKING_ONLY = {
+    "template": THINKING_ONLY_TEMPLATE,
+    "capabilities": ["completion", "tools", "thinking"],
+}
+PLAIN = {"template": PLAIN_TEMPLATE, "capabilities": ["completion", "tools"]}
+
+
+def ollama_with(handler, show=HYBRID) -> OllamaProvider:
+    """A provider whose server is ``handler``.
+
+    ``/api/show`` is answered here and never reaches ``handler``, so a test
+    about the chat request keeps seeing chat requests only. ``show`` is the
+    JSON the server would return, or a callable for the tests that are about
+    the lookup itself.
+    """
+
+    def route(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/show":
+            return show(request) if callable(show) else httpx.Response(200, json=show)
+        return handler(request)
+
     return OllamaProvider(
         model="qwen3:4b",
-        client=httpx.AsyncClient(transport=transport),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(route)),
     )
 
 
@@ -223,6 +282,162 @@ async def test_ollama_omits_think_when_unset():
     await ollama_with(handler).complete(HELLO, GenerationOptions())
     assert "think" not in seen
     assert "num_predict" not in seen["options"]
+
+
+# --- Ollama: `think: false` only where the model obeys it ------------------ #
+#
+# Measured on Ollama 0.35 with the default model: `think: false` did not stop
+# qwen3:4b from reasoning, it stopped the server from separating the reasoning
+# out, and the student read all of it. These are the tests that go red if the
+# flag is ever sent on trust again.
+
+
+def recording(seen: list[dict], reply: str = "ok"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, content=ndjson(reply))
+
+    return handler
+
+
+THINK_OFF = GenerationOptions(think=False)
+
+
+async def test_ollama_keeps_think_false_from_a_model_that_ignores_it(caplog):
+    """The leak itself: this template opens ``<think>`` regardless.
+
+    Leaving the field out is what makes the server hide the reasoning. The
+    warning is part of the contract too -- the operator asked for reasoning
+    off and is not getting it, and silence would let the latency pass for a
+    slow machine.
+    """
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=THINKING_ONLY)
+
+    with caplog.at_level("WARNING", logger="teacher_charles.llm.ollama"):
+        await provider.complete(HELLO, THINK_OFF)
+
+    assert "think" not in seen[0]
+    assert "cannot be turned off" in caplog.text
+
+
+async def test_ollama_sends_think_false_to_a_template_that_reads_it(caplog):
+    """The other half: the caution must not cost the models where it works."""
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=HYBRID)
+
+    with caplog.at_level("WARNING", logger="teacher_charles.llm.ollama"):
+        await provider.complete(HELLO, THINK_OFF)
+
+    assert seen[0]["think"] is False
+    assert caplog.text == ""
+
+
+async def test_ollama_says_nothing_about_a_model_that_does_not_reason(caplog):
+    """No flag to read and nothing to hide: leaving the field out is free,
+    and warning about reasoning that does not exist would be noise."""
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=PLAIN)
+
+    with caplog.at_level("WARNING", logger="teacher_charles.llm.ollama"):
+        await provider.complete(HELLO, THINK_OFF)
+
+    assert "think" not in seen[0]
+    assert caplog.text == ""
+
+
+async def test_ollama_asks_how_the_model_takes_think_only_once():
+    """Analysis and warm-up both pass ``think=False`` on every call; a lookup
+    per call would be a round trip on the path to the first word."""
+    lookups: list[dict] = []
+
+    def show(request: httpx.Request) -> httpx.Response:
+        lookups.append(json.loads(request.content))
+        return httpx.Response(200, json=THINKING_ONLY)
+
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=show)
+    for _ in range(3):
+        await provider.complete(HELLO, THINK_OFF)
+
+    assert lookups == [{"model": "qwen3:4b"}]
+    assert all("think" not in payload for payload in seen)
+
+
+async def test_ollama_does_not_ask_when_think_is_not_being_turned_off():
+    """Only ``False`` is the dangerous value, so only ``False`` pays for the
+    lookup. ``True`` and unset go out exactly as they came in."""
+
+    def show(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("nothing here needed /api/show")
+
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=show)
+    await provider.complete(HELLO, GenerationOptions(think=True))
+    await provider.complete(HELLO, GenerationOptions())
+
+    assert seen[0]["think"] is True
+    assert "think" not in seen[1]
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        httpx.Response(500, json={"error": "boom"}),
+        httpx.Response(200, content=b"not json"),
+        httpx.Response(200, json=["not", "an", "object"]),
+        httpx.Response(200, json={"capabilities": ["thinking"]}),
+    ],
+    ids=["http-500", "not-json", "not-an-object", "no-template"],
+)
+async def test_ollama_treats_an_unreadable_answer_as_a_model_that_ignores_think(broken):
+    """Unknown lands on the side that cannot leak."""
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=lambda request: broken)
+
+    assert await provider.complete(HELLO, THINK_OFF) == "ok"
+    assert "think" not in seen[0]
+
+
+async def test_ollama_asks_again_after_a_lookup_that_failed():
+    """A server that was down for the first call is not written off as a
+    model that ignores the flag for the rest of the process."""
+    answers = [httpx.Response(503, json={"error": "loading"}), httpx.Response(200, json=HYBRID)]
+
+    seen: list[dict] = []
+    provider = ollama_with(recording(seen), show=lambda request: answers.pop(0))
+    await provider.complete(HELLO, THINK_OFF)
+    await provider.complete(HELLO, THINK_OFF)
+
+    assert "think" not in seen[0]
+    assert seen[1]["think"] is False
+
+
+async def test_ollama_lookup_failure_leaves_the_chat_error_typed():
+    """With the server down the lookup fails first. What the caller gets must
+    still be the chat request's own ``ProviderUnavailable``, not an httpx
+    error that escaped from a question the caller never asked."""
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with pytest.raises(ProviderUnavailable):
+        await ollama_with(down, show=down).complete(HELLO, THINK_OFF)
+
+
+async def test_ollama_never_relays_what_the_server_set_aside_as_thinking():
+    """What the lookup above relies on: with the field left out the server
+    puts the reasoning in ``message.thinking``, and that never leaves here."""
+    lines = [
+        {"message": {"role": "assistant", "content": "", "thinking": "The user asks "}},
+        {"message": {"role": "assistant", "content": "", "thinking": "for a colour."}},
+        {"message": {"role": "assistant", "content": "blue"}},
+        {"message": {"role": "assistant", "content": ""}, "done": True},
+    ]
+    body = "".join(json.dumps(line) + "\n" for line in lines).encode()
+    provider = ollama_with(lambda request: httpx.Response(200, content=body))
+
+    assert [c async for c in provider.stream(HELLO)] == ["blue"]
 
 
 # --- OpenAI-compatível: SSE ------------------------------------------------ #

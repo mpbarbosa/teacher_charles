@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 
+import httpx
 import pytest
 
 from teacher_charles.llm import (
@@ -109,6 +110,51 @@ async def test_real_correction_turn_shows_why_structure_belongs_in_code(ollama_p
     assert answer.strip(), "o modelo não devolveu texto nenhum"
     # O canal entregou uma frase em inglês; o acerto pedagógico é da E3/E4.
     assert len(answer.split()) >= 2, f"resposta degenerada: {answer!r}"
+
+
+async def test_real_reasoning_never_reaches_the_reply_when_think_is_off(ollama_url):
+    """The leak, against the real server, on a model that actually reasons.
+
+    Measured on Ollama 0.35 with qwen3:4b: sent ``think: false``, the model
+    reasoned all the same and the reply was the chain of thought, a bare
+    ``</think>`` and only then the answer. The closing tag is the tell -- its
+    opening half lives in the prompt, so it never shows -- and it is what this
+    asserts on.
+
+    The usual fixture will not do: it picks the smallest model on the machine,
+    which as a rule does not reason and passes this without proving anything.
+    So the model is chosen by capability, and with none downloaded the test
+    skips. It is slow where it matters -- a thinking model spends a few hundred
+    tokens before the one word asked for.
+    """
+    try:
+        candidates = await list_models(ollama_url, timeout_s=3.0)
+    except ProviderError as exc:
+        pytest.skip(f"Ollama is not reachable: {exc}")
+
+    model = None
+    async with httpx.AsyncClient(base_url=ollama_url, timeout=5.0) as client:
+        for name in candidates:
+            shown = (await client.post("/api/show", json={"model": name})).json()
+            if "thinking" in shown.get("capabilities", []):
+                model = name
+                break
+    if model is None:
+        pytest.skip("no downloaded model reasons, so there is nothing that could leak")
+
+    provider = OllamaProvider(model=model, base_url=ollama_url, request_timeout_s=300.0)
+    try:
+        answer = await provider.complete(
+            [Message(role="user", content="Answer with one word: what colour is the sky?")],
+            GenerationOptions(temperature=0.0, think=False),
+        )
+    finally:
+        await provider.aclose()
+    print(f"\n  model={model}  answer={answer.strip()!r}")
+
+    assert answer.strip(), "the model returned no text at all"
+    assert "</think>" not in answer, f"reasoning reached the reply: {answer[:200]!r}"
+    assert "<think>" not in answer, f"reasoning reached the reply: {answer[:200]!r}"
 
 
 async def test_real_missing_model_raises_model_not_found(ollama_url):
