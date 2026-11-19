@@ -817,3 +817,55 @@ main.phonetics button.copy { margin-top: 0.6rem; font-size: 0.78rem; padding: 0.
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* The word card: what a word of the full text means, and its Portuguese
+   (word-card.js). Fixed to the viewport and placed by the script under the
+   word, so it never reflows the text it describes. */
+.word-card {
+  position: fixed;
+  z-index: 50;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 16px));
+  max-height: min(26rem, 70vh);
+  overflow-y: auto;
+  padding: 0.6rem 0.8rem 0.5rem;
+  background: var(--teacher);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.word-card[hidden] { display: none; }
+.word-card .wc-head { margin-top: 0.35rem; }
+.word-card .wc-head:first-child { margin-top: 0; }
+.word-card .wc-lemma { font-weight: 600; font-size: 1.05rem; }
+.word-card .wc-pos { color: var(--muted); font-style: italic; }
+.word-card .wc-ipa {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+.word-card .wc-senses { margin: 0.25rem 0 0.2rem; padding-left: 1.3rem; }
+.word-card .wc-senses li { margin: 0.25rem 0; }
+.word-card .wc-def,
+.word-card .wc-ex,
+.word-card .wc-pt { display: block; }
+.word-card .wc-ex { color: var(--muted); font-style: italic; }
+.word-card .wc-pt { color: var(--accent); }
+.word-card .wc-lang {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid currentColor;
+  border-radius: 0.2rem;
+  padding: 0 0.2rem;
+  vertical-align: 0.05rem;
+}
+.word-card .wc-more,
+.word-card .wc-note,
+.word-card .wc-src,
+.word-card .wc-miss { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.75rem; }
+.word-card .wc-miss { font-size: 0.8rem; }
+.word-card .wc-src a { color: var(--muted); }
