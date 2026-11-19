@@ -711,6 +711,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # The speaker beside each word asks /api/tts, which answers
                 # 503 with voice off — so with voice off there is no button.
                 "voice": voice_payload(),
+                # Who reads the full text aloud: a voice of its own, not
+                # Charles's (config.py).
+                "reader_voice": settings.tts_reader_voice,
             },
         )
 

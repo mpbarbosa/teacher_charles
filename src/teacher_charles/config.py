@@ -176,6 +176,11 @@ class Settings(BaseSettings):
     # de qualidade medida, e reversível numa variável de ambiente. As 54 vozes
     # do arquivo aparecem em `/health`.
     tts_voice: str = "bm_george"
+    # The voice that reads a lesson's full text aloud. Not Charles's: the text
+    # is somebody else's words, and a second voice keeps the reading from
+    # sounding like the teacher talking. `bf_emma` is Kokoro's British female
+    # voice, the same accent family as `bm_george`.
+    tts_reader_voice: str = "bf_emma"
     tts_speed: float = 1.0
 
     # Quantas threads cada motor usa, e os dois defaults saíram de medição

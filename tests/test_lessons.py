@@ -477,3 +477,42 @@ def test_a_practice_take_records_no_turn(tmp_path):
         assert heard.status_code == 200
         after = c.app.state.db.execute("SELECT COUNT(*) FROM turn").fetchone()[0]
     assert after == before
+
+
+# --- the reader beside the full text ---------------------------------------- #
+
+
+def test_with_voice_the_full_text_has_a_reader_in_its_own_voice(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True, tts_reader_voice="bf_isabella")
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'class="read-aloud"' in page
+    # The reader's voice is the setting, not Charles's.
+    assert 'data-voice="bf_isabella"' in page
+    assert f'data-voice="{settings.tts_voice}"' not in page
+    # The paragraphs stay plain: the script reads them from the page.
+    assert "<p>Second one, wrapped across two lines.</p>" in page
+
+
+def test_the_reader_is_a_female_voice_by_default():
+    """Kokoro's names carry the sex in the second letter: bf_ is British female."""
+    voice = Settings(_env_file=None).tts_reader_voice
+    assert voice[1] == "f"
+    assert voice != Settings(_env_file=None).tts_voice
+
+
+def test_without_voice_the_full_text_has_no_reader(tmp_path):
+    """/api/tts is 503 with voice off, so the button would only ever fail."""
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, PLACEHOLDER)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert 'id="full-text"' in page
+    assert "read-aloud" not in page
+
+
+def test_without_a_copy_there_is_nothing_to_read(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        assert "read-aloud" not in c.get(f"/lessons/{SLUG}").text

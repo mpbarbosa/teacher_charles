@@ -177,7 +177,7 @@ cp .env.example .env
 Os defaults estão em [`src/teacher_charles/config.py`](src/teacher_charles/config.py).
 O mais útil: `TC_LLM_MODEL`, `TC_OLLAMA_URL`, `TC_PORT`, `TC_DB_PATH`.
 
-Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_MODEL`,
+Da voz: `TC_VOICE_ENABLED`, `TC_STT_MODEL`, `TC_TTS_VOICE`, `TC_TTS_READER_VOICE`, `TC_TTS_MODEL`,
 `TC_STT_CPU_THREADS`. Cada default tem uma medição atrás dele — ver a seção
 "Falar com o Charles".
 

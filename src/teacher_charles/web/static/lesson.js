@@ -29,6 +29,15 @@
 // /api/stt records no turn, so a practice take never becomes a correction, a
 // review or a level signal. The take itself never leaves the page: it lives in
 // memory and dies with it.
+//
+// ## The reader
+//
+// The button beside "Full text" reads the whole text aloud, in a voice that is
+// not Charles's (the page names it in `data-voice`). /api/tts takes one
+// sentence per call -- 600 characters at most, the same ceiling the chat's
+// voice lives under -- so the text goes out sentence by sentence, the next one
+// synthesising while the current one plays. Nothing of it is cached: a reading
+// is minutes of audio, and a second one is rare enough to pay for again.
 
 (() => {
   const cache = new Map(); // word -> Promise<Blob>, Charles's audio
@@ -49,7 +58,14 @@
 
   // --- playback ------------------------------------------------------------ //
 
+  /** Silences everything: whatever is playing, and the reader with it. */
   function stop() {
+    endReading();
+    halt();
+  }
+
+  /** Silences what is playing, but leaves the reader's place alone. */
+  function halt() {
     playSeq += 1;
     if (!current) return;
     const { audio, button, url, finish } = current;
@@ -62,7 +78,7 @@
 
   /** Plays a blob, lighting `button`. Resolves true at the end, false if cut. */
   function play(blob, button) {
-    stop();
+    halt();
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -71,7 +87,7 @@
       const ended = () => {
         if (current?.audio !== audio) return;
         current.finish = () => {};
-        stop();
+        halt();
         resolve(true);
       };
       audio.addEventListener("ended", ended);
@@ -79,23 +95,28 @@
       audio.play().catch((error) => {
         if (current?.audio === audio) {
           current.finish = () => {};
-          stop();
+          halt();
         }
         reject(error);
       });
     });
   }
 
+  /** One sentence as audio. `voice` omitted is Charles's. */
+  function speak(text, voice) {
+    return fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(voice ? { text, voice } : { text }),
+    }).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.blob();
+    });
+  }
+
   function fetchWord(word) {
     if (!cache.has(word)) {
-      const pending = fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: word }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.blob();
-      });
+      const pending = speak(word);
       // A failure is not cached: the next click tries again.
       pending.catch(() => cache.delete(word));
       cache.set(word, pending);
@@ -391,12 +412,137 @@
       .trim();
   }
 
+  // --- the reader ---------------------------------------------------------- //
+
+  // Under the route's 600 with room to spare: a long sentence is cut at a
+  // word, and a short one rides with the next so the voice does not stop
+  // after every "Yes!".
+  const READ_MAX_CHARS = 400;
+  const READ_MIN_CHARS = 40;
+
+  let reader = null; // { button, label }, while the reader has the floor
+
+  /** A paragraph cut into pieces /api/tts accepts, in reading order. */
+  function piecesOf(text) {
+    const sentences = text
+      .trim()
+      .split(/(?<=[.!?…]["'”’)\]]*)\s+/u)
+      .filter(Boolean);
+    const pieces = [];
+    let acc = "";
+    for (const sentence of sentences) {
+      if (acc && acc.length < READ_MIN_CHARS && acc.length + 1 + sentence.length <= READ_MAX_CHARS) {
+        acc = `${acc} ${sentence}`;
+        continue;
+      }
+      if (acc) pieces.push(acc);
+      acc = sentence;
+    }
+    if (acc) pieces.push(acc);
+    return pieces.flatMap(wrap);
+  }
+
+  /** A sentence longer than the ceiling, cut at the last space that fits. */
+  function wrap(text) {
+    const out = [];
+    let rest = text;
+    while (rest.length > READ_MAX_CHARS) {
+      const cut = rest.lastIndexOf(" ", READ_MAX_CHARS);
+      const at = cut > 0 ? cut : READ_MAX_CHARS;
+      out.push(rest.slice(0, at).trim());
+      rest = rest.slice(at).trim();
+    }
+    if (rest) out.push(rest);
+    return out;
+  }
+
+  function mark(paragraph) {
+    for (const p of document.querySelectorAll(".full-text p.now-reading")) {
+      if (p !== paragraph) p.classList.remove("now-reading");
+    }
+    paragraph?.classList.add("now-reading");
+  }
+
+  function endReading() {
+    if (!reader) return;
+    const { button, label } = reader;
+    reader = null;
+    button.textContent = label;
+    button.classList.remove("loading");
+    button.setAttribute("aria-pressed", "false");
+    mark(null);
+  }
+
+  async function readAloud(button) {
+    const wasReading = reader?.button === button;
+    stop();
+    // A second click while it reads is "stop", not "from the top".
+    if (wasReading) return;
+
+    const queue = [...document.querySelectorAll(".full-text .reading p")].flatMap((paragraph) =>
+      piecesOf(paragraph.textContent).map((text) => ({ paragraph, text }))
+    );
+    if (!queue.length) return;
+
+    const voice = button.dataset.voice;
+    const run = { button, label: button.textContent };
+    reader = run;
+    button.classList.remove("failed");
+    button.title = "Stop reading";
+    button.setAttribute("aria-pressed", "true");
+    button.textContent = "■ Stop";
+
+    // The next piece synthesises while this one plays. A failure waits to be
+    // awaited, so a piece the student never reaches never reports one.
+    const ahead = (i) => {
+      if (i >= queue.length) return null;
+      const pending = speak(queue[i].text, voice);
+      pending.catch(() => {});
+      return pending;
+    };
+    let next = ahead(0);
+    for (let i = 0; i < queue.length; i += 1) {
+      let blob;
+      button.classList.add("loading");
+      try {
+        blob = await next;
+      } catch (error) {
+        if (reader !== run) return;
+        endReading();
+        button.classList.add("failed");
+        button.title = `The reader lost her voice: ${error.message}`;
+        return;
+      } finally {
+        button.classList.remove("loading");
+      }
+      if (reader !== run) return;
+      next = ahead(i + 1);
+      mark(queue[i].paragraph);
+      queue[i].paragraph.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      try {
+        if (!(await play(blob, button))) return; // cut: stop() already tidied up
+      } catch (error) {
+        if (reader === run) endReading();
+        blocked(button, error);
+        return;
+      }
+      if (reader !== run) return;
+    }
+    if (reader === run) {
+      endReading();
+      button.title = "Listen to the full text";
+    }
+  }
+
   // --- wiring -------------------------------------------------------------- //
 
   document.addEventListener("click", (event) => {
-    const target = event.target.closest("button.say, button.record, button.mine, button.both");
+    const target = event.target.closest(
+      "button.say, button.record, button.mine, button.both, button.read-aloud"
+    );
     if (!target) return;
-    if (target.matches(".say")) say(target);
+    if (target.matches(".read-aloud")) readAloud(target);
+    else if (target.matches(".say")) say(target);
     else if (target.matches(".record")) record(target);
     else if (target.matches(".mine")) playMine(target);
     else playBoth(target);
