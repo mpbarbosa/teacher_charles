@@ -625,16 +625,36 @@ main.lesson table.notes td {
 main.lesson table.notes td:first-child { width: 34%; }
 main.lesson table.notes .ipa { margin: 0.1rem 0 0; }
 /* The speaker beside a word: small, so the word stays the thing you read. */
-main.lesson button.say {
+main.lesson button.say,
+main.lesson button.record,
+main.lesson .take button {
   font-size: 0.8rem;
   line-height: 1;
   padding: 0.15rem 0.35rem;
   margin-left: 0.4rem;
   vertical-align: 0.05rem;
 }
-main.lesson button.say.loading { opacity: 0.6; cursor: progress; }
-main.lesson button.say.playing { border-color: var(--accent); color: var(--accent); }
-main.lesson button.say.failed { border-color: var(--danger); }
+main.lesson button.record { margin-left: 0.25rem; }
+main.lesson button.loading { opacity: 0.6; cursor: progress; }
+main.lesson button.playing { border-color: var(--accent); color: var(--accent); }
+main.lesson button.failed { border-color: var(--danger); }
+main.lesson button.record.recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: take-pulse 1s ease-in-out infinite;
+}
+@keyframes take-pulse { 50% { opacity: 0.55; } }
+main.lesson .take {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+main.lesson .take button { margin-left: 0; }
+main.lesson .take .heard { color: var(--muted); font-size: 0.82rem; }
+main.lesson .take .heard.failed { color: var(--danger); }
+main.lesson .howto { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0 0.6rem; }
 main.lesson .trap { color: var(--loose); font-size: 0.82rem; margin-top: 0.15rem; }
 main.lesson .questions, main.lesson .practice {
   margin: 0;

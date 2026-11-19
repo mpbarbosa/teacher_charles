@@ -1394,6 +1394,26 @@ prefixo cacheado. O que liga a lição à conversa é a frase inicial da tarefa;
 que o aluno escreve a partir dela passa pelo turno normal, com correção. Ela
 **não depende da E9** pela razão do IPA: lê a palavra escrita.
 
+**The microphone beside each lesson word is not E11, and it says so.** It
+records the student saying the word and offers *▶ you* and *▶ Charles, then
+you*, so the take is compared with Kokoro's by ear. The take goes through the
+existing `/api/stt`, which records no turn, and what Whisper made of it is
+shown under the word, worded as recognition, never as a score. No phoneme
+recognizer, no `rule_id`, nothing persisted: it borrows nothing from E10–E12
+and pre-empts none of them.
+
+The line is held against a control, because measured it needs one. Whisper
+`base.en` on Kokoro's own audio of the first lesson's 16 words understood
+**11**: *cleave* came back "Cleaver", *predate* "Predade", *abyss* "A Biz",
+*constituents* "Constituency", *truth* "Truth in". That audio is the reference
+the student imitates, so on those five a perfect imitation would read as a
+miss. The page therefore transcribes Charles's audio of the word too (once per
+word per page), and where Whisper misses it the line says *only your ears can
+compare* instead of suggesting the student got it wrong. It is §6's asymmetry
+from the other side: here the **presence** of a complaint is not a fail. The
+student's own accent through the same line is the plano 1.5 §2.3 debt, still
+unmeasured.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte

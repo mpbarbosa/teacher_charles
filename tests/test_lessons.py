@@ -426,3 +426,54 @@ def test_the_shelf_page_has_no_speaker_even_with_voice(tmp_path):
     settings = settings_for(tmp_path, voice_enabled=True)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         assert "lesson.js" not in c.get("/lessons").text
+
+
+# --- the microphone beside the speaker -------------------------------------- #
+
+
+def test_without_voice_the_words_have_no_microphone(client):
+    """/api/stt is 503 with voice off, the speaker's reason again."""
+    body = client.get(f"/lessons/{SLUG}").text
+    assert 'class="record"' not in body
+    assert 'class="howto"' not in body
+
+
+def test_with_voice_every_speaker_has_a_microphone_beside_it(tmp_path):
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/lessons/{SLUG}").text
+    for note in [*lesson.words, *lesson.sounds]:
+        word = escape(note.word)
+        speaker = body.index(f'data-say="{word}"')
+        microphone = body.index(f'class="record" data-word="{word}"')
+        # Beside it: the next button after the speaker, not somewhere on the page.
+        assert speaker < microphone
+        # The one "<button" between them is the microphone's own opening tag.
+        assert body[speaker:microphone].count("<button") == 1
+
+
+def test_the_page_says_the_take_is_not_a_pronunciation_score(tmp_path):
+    """Whisper understanding a word is recognition, and a student reading
+    "understood" under a word would take it as a pass. E10/E11 are what would
+    judge pronunciation, and they do not exist — so the page says so, once per
+    table, where the student reads it before pressing the button."""
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/lessons/{SLUG}").text
+    tables = bool(lesson.words) + bool(lesson.sounds)
+    assert body.count('class="howto"') == tables
+    assert body.count("not a pronunciation score") == tables
+
+
+def test_a_practice_take_records_no_turn(tmp_path):
+    """The microphone posts to /api/stt, which writes nothing: a take is
+    practice, not evidence — the reason /api/syntax records nothing either."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        before = c.app.state.db.execute("SELECT COUNT(*) FROM turn").fetchone()[0]
+        heard = c.post("/api/stt", content=b"RIFF fake take")
+        assert heard.status_code == 200
+        after = c.app.state.db.execute("SELECT COUNT(*) FROM turn").fetchone()[0]
+    assert after == before

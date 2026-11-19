@@ -12,9 +12,18 @@
     answers 503 without one, and a button that always fails is worse than
     none. The audio is Kokoro, the same voice Charles speaks with, so the
     sound and the IPA under the word come from one G2P (teaching/phonetics.py).
+
+    The microphone beside it records the student saying the word, to play back
+    against the speaker by ear. Whisper's reading of the take is shown too, and
+    the note above each table says what it is not: a pronunciation check. That
+    is E10/E11 (docs/plano-fase-2.md), which do not exist yet — the note travels
+    in the page so a test can hold it there, as syntax.NOTE does.
   #}
   {% macro say(word) -%}
-    {% if voice and voice.enabled %}<button type="button" class="say" data-say="{{ word }}" aria-label="Hear “{{ word }}”" title="Hear it">🔊</button>{% endif %}
+    {% if voice and voice.enabled %}<button type="button" class="say" data-say="{{ word }}" aria-label="Hear “{{ word }}”" title="Hear it">🔊</button><button type="button" class="record" data-word="{{ word }}" aria-label="Record yourself saying “{{ word }}”" title="Record yourself">🎙</button>{% endif %}
+  {%- endmacro %}
+  {% macro practice_note() -%}
+    {% if voice and voice.enabled %}<p class="howto">🎙 records you saying the word — click, say it, click again — so you can play your take right after Charles's and compare by ear. The line under your take is what Whisper made of it: <em>recognition, not a pronunciation score</em>.</p>{% endif %}
   {%- endmacro %}
   <header>
     <h1>{{ lesson.title if lesson else "Lessons" }}</h1>
@@ -88,6 +97,7 @@
       {% endfor %}
 
       {% if section.aspect == "vocabulary" and lesson.words %}
+      {{ practice_note() }}
       <table class="notes">
         <thead><tr><th>Word</th><th>Meaning</th></tr></thead>
         <tbody>
@@ -103,6 +113,7 @@
 
       {% if section.aspect == "phonetics" and lesson.sounds %}
       <h3>Pronunciation traps</h3>
+      {{ practice_note() }}
       <table class="notes">
         <thead><tr><th>Word</th><th>Watch out</th></tr></thead>
         <tbody>
