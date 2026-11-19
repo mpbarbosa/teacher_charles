@@ -838,6 +838,16 @@ main.phonetics .ipa.whole {
   color: var(--fg);
 }
 main.phonetics button.copy { margin-top: 0.6rem; font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+main.phonetics button.listen { margin: 0.6rem 0 0 0.4rem; font-size: 0.78rem; padding: 0.2rem 0.6rem; }
+main.phonetics button.listen[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+main.phonetics button.listen.failed { border-color: var(--danger); color: var(--danger); }
+main.phonetics .listen-all button.listen { margin: 0; }
+/* The sentence being read aloud, lit the way the lesson reader lights its
+   sentence, so the eye can follow the voice across several. */
+main.phonetics .spelled.now-reading {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--teacher));
+}
 
 .visually-hidden {
   position: absolute;

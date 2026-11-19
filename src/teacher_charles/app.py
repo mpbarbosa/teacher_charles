@@ -821,6 +821,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "version": __version__,
                 "level": active_student(app.state.db).cefr_level,
                 "phonetics": phonetics_payload(),
+                # Listen buttons only with a voice: /api/tts answers 503
+                # without one, and a button that always fails is worse than none.
+                "voice": voice_payload(),
                 "max_chars": PHONETICS_MAX_CHARS,
             },
         )
