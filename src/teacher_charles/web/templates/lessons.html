@@ -136,6 +136,33 @@
         {% endif %}
       </p>
       {% if has_ipa %}{{ ipa_chart() }}{% endif %}
+      {#
+        The sounds this text's IPA uses, cut into symbols by
+        teaching/ipa_symbols.py, so "tʃ" is one tile and not "t" and "ʃ".
+        Each has a curated example word; its IPA is espeak's, made when the
+        page is served. With voice, a tile is a speaker like the one beside a
+        word (button.say, lesson.js): it plays the example in Charles's voice.
+      #}
+      {% if symbol_chart %}{% set hear = voice and voice.enabled %}
+      <details class="symbol-chart">
+        <summary>The sounds in this text{% if hear %}: click one to hear it in a word{% endif %}</summary>
+        {% for group in symbol_chart %}
+        <div class="symbol-group">
+          <h3>{{ group.kind|capitalize }}s</h3>
+          <div class="symbols">
+            {%- for row in group.symbols %}
+            {% if hear %}<button type="button" class="say symbol" data-say="{{ row.example }}" aria-label="Hear /{{ row.symbol }}/ in “{{ row.example }}”">{% else %}<span class="symbol">{% endif -%}
+              <span class="glyph">{{ row.symbol }}</span>
+              <span class="example">{{ row.example }}</span>
+              {%- if row.example_ipa %}<span class="example-ipa">/{{ row.example_ipa }}/</span>{% endif %}
+              <span class="count">{{ row.count }}×</span>
+            {%- if hear %}</button>{% else %}</span>{% endif %}
+            {%- endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </details>
+      {% endif %}
     </section>
     {% endif %}
 
