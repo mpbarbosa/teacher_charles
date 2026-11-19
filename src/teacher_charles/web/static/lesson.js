@@ -606,19 +606,31 @@
    */
   function markWord(sentence, index) {
     const lit = [];
+    const carriers = []; // written words whose IPA, drawn between the lines, is lit
     const word = index >= 0 ? sentence?.querySelector(`.w[data-w="${index}"]`) : null;
     if (word) {
       lit.push(word);
       const ipa = document.querySelector(`.full-text .ipa [data-s="${sentence.dataset.s}"]`);
+      const words = [...sentence.querySelectorAll(".w")];
       for (const t of (word.dataset.ipa ?? "").split(" ").filter(Boolean)) {
         const token = ipa?.querySelector(`.w[data-t="${t}"]`);
         if (token) lit.push(token);
+        // Between the lines, an IPA word two written words share is drawn
+        // once, under the first of them (full-text.js): "in the" is ɪnðə
+        // under "in". So while "the" is said, the light goes to that IPA
+        // too, under its neighbour, or the sound being heard stays dark.
+        const owner = words.find((w) => (w.dataset.ipa ?? "").split(" ").includes(t));
+        if (owner && owner !== word) carriers.push(owner);
       }
     }
     for (const el of document.querySelectorAll(".full-text .now-word")) {
       if (!lit.includes(el)) el.classList.remove("now-word");
     }
+    for (const el of document.querySelectorAll(".full-text .now-ipa")) {
+      if (!carriers.includes(el)) el.classList.remove("now-ipa");
+    }
     for (const el of lit) el.classList.add("now-word");
+    for (const el of carriers) el.classList.add("now-ipa");
   }
 
   /**
