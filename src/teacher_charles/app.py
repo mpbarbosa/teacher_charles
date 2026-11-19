@@ -708,6 +708,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # of lesson_payload on purpose: that is also /api/lessons, and
                 # the copy is not ours to serve (teaching/lessons.py).
                 "full_text": read_local_text(settings.resolved_corpus_dir, lesson),
+                # The speaker beside each word asks /api/tts, which answers
+                # 503 with voice off — so with voice off there is no button.
+                "voice": voice_payload(),
             },
         )
 
