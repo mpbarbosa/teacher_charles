@@ -850,6 +850,14 @@ main.phonetics .spelled.now-reading {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--teacher));
 }
+/* The word being said, with its IPA under it (one cell holds both): the
+   lesson reader's `.now-word` light, so the two pages read alike. */
+main.phonetics .pair.now-word {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 0.2rem;
+  box-shadow: 0 0 0 0.15rem color-mix(in srgb, var(--accent) 45%, transparent);
+}
+main.phonetics .pair.now-word .word-ipa { color: var(--fg); }
 
 .visually-hidden {
   position: absolute;

@@ -15,6 +15,7 @@ from teacher_charles.app import PHONETICS_MAX_CHARS, create_app
 from teacher_charles.config import Settings
 from teacher_charles.llm import FakeProvider
 from teacher_charles.teaching.phonetics import Phonetics, PhoneticsUnavailable, ipa_pairs
+from teacher_charles.voice.base import TimedWord
 
 
 def settings_for(tmp_path, **overrides) -> Settings:
@@ -109,6 +110,50 @@ def test_with_a_voice_the_page_asks_for_listen_buttons(tmp_path):
         spoken = c.post("/api/tts", json={"text": sentence["text"]})
     assert spoken.status_code == 200
     assert spoken.headers["content-type"] == "audio/wav"
+
+
+def test_the_word_estimate_loads_before_the_scripts_that_use_it(tmp_path):
+    """phonetics.js and lesson.js both read ``window.TCWordStarts`` at once.
+
+    Deferred scripts run in document order, so word-starts.js has to come
+    first on both pages: after them, the lesson reader would stop at its
+    first line and the phonetics page would light no word.
+    """
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        phonetics = c.get("/phonetics").text
+        # data/lessons/ is versioned, so there is always a lesson to open.
+        slug = c.get("/api/lessons").json()["lessons"][0]["slug"]
+        lesson = c.get(f"/lessons/{slug}").text
+    assert phonetics.index("/static/word-starts.js") < phonetics.index("/static/phonetics.js")
+    assert lesson.index("/static/word-starts.js") < lesson.index("/static/lesson.js")
+
+
+def test_without_a_voice_the_word_estimate_is_not_loaded(client):
+    assert "word-starts.js" not in client.get("/phonetics").text
+
+
+def test_the_timings_count_the_words_the_pairs_hold(tmp_path):
+    """The page lights cell k for timing k, so the two must count alike.
+
+    phonetics.js maps word k to its cell by splitting each pair's text on
+    spaces; /api/tts/{id}/words gives one start per whitespace-split word of
+    the sentence. A sentence where espeak joins two words ("on the") is the
+    case where a count by pair would be off by one from then on.
+    """
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        [[sentence]] = spelled(c, "We met on the plaza.")["lines"]
+        words = sentence["text"].split()
+        c.app.state.voice.stt.heard = [
+            TimedWord(w, 0.3 * i, 0.3 * i + 0.25) for i, w in enumerate(words)
+        ]
+        spoken = c.post("/api/tts", json={"text": sentence["text"], "timings": True})
+        starts = c.get(f"/api/tts/{spoken.headers['x-speech-id']}/words").json()["starts"]
+    in_cells = sum(len(pair["text"].split(" ")) for pair in sentence["pairs"])
+    if len(sentence["pairs"]) == len(words):
+        pytest.skip("espeak joined no words here; the case under test did not arise")
+    assert len(starts) == len(words) == in_cells
 
 
 def test_without_a_voice_there_are_no_listen_buttons(client):
