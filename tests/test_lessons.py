@@ -286,6 +286,11 @@ def test_the_ipa_comes_from_espeak_when_it_is_on(tmp_path):
 # Placeholder prose, ours: the tests must not need the real speech, and the
 # repo must not carry it.
 PLACEHOLDER = "First paragraph of a stand-in text.\n\nSecond one, wrapped\nacross two lines.\n"
+# How the page draws the copy's second paragraph: one sentence, in a span the
+# reader can light, and no other change to the words.
+SECOND_PARAGRAPH = (
+    '<p><span class="sentence" data-s="1.0">Second one, wrapped across two lines.</span></p>'
+)
 
 
 def shipped_lesson() -> Lesson:
@@ -343,7 +348,7 @@ def test_the_page_shows_the_copy_when_the_machine_holds_one(tmp_path):
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
     assert 'id="full-text"' in page
-    assert "<p>Second one, wrapped across two lines.</p>" in page
+    assert SECOND_PARAGRAPH in page
     assert 'href="#full-text"' in page
     # The link stays: the copy is a convenience, the source is still credited.
     assert shipped_lesson().source.url in page
@@ -492,7 +497,7 @@ def test_with_voice_the_full_text_has_a_reader_in_its_own_voice(tmp_path):
     assert 'data-voice="bf_isabella"' in page
     assert f'data-voice="{settings.tts_voice}"' not in page
     # The paragraphs stay plain: the script reads them from the page.
-    assert "<p>Second one, wrapped across two lines.</p>" in page
+    assert SECOND_PARAGRAPH in page
 
 
 def test_the_reader_is_a_female_voice_by_default():
@@ -531,7 +536,7 @@ def test_with_ipa_the_full_text_has_a_phonetics_button_and_hidden_lines(tmp_path
     # One line per paragraph, hidden until asked for, and the paragraph's own
     # markup untouched.
     assert page.count('<div class="ipa" hidden>') == 2
-    assert "<p>Second one, wrapped across two lines.</p>" in page
+    assert SECOND_PARAGRAPH in page
     # espeak's reading, not the English: "wrapped" is /ɹ/ and a stress mark.
     assert "ɹˈæpt" in page
 
@@ -555,3 +560,47 @@ def test_the_phonetics_never_reach_the_api(tmp_path):
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         body = c.get(f"/api/lessons/{SLUG}").text
     assert "ɹˈæpt" not in body
+
+
+# --- the reader and the IPA, sentence by sentence --------------------------- #
+
+TWO_SENTENCES = "I came here as a child. I have almost no memories that pre-date my arrival.\n"
+
+
+def test_the_copy_is_cut_into_sentences_that_join_back_to_it(tmp_path):
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, TWO_SENTENCES)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert (
+        '<p><span class="sentence" data-s="0.0">I came here as a child.</span> '
+        '<span class="sentence" data-s="0.1">I have almost no memories that pre-date my '
+        "arrival.</span></p>"
+    ) in page
+
+
+def test_each_sentence_and_its_ipa_share_an_id(tmp_path):
+    """The reader lights both by `data-s`; a mismatch would light the wrong IPA."""
+    settings = settings_for(tmp_path, phonetics_enabled=True)
+    put_copy(settings.resolved_corpus_dir, TWO_SENTENCES)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    ipa = page[page.index('<div class="ipa" hidden>') :]
+    ipa = ipa[: ipa.index("</div>")]
+    assert ipa.count('<span data-s="0.0">') == 1
+    assert ipa.count('<span data-s="0.1">') == 1
+    # Each IPA span is that sentence's own: "child" in the first, "arrival" in
+    # the second.
+    first = ipa[ipa.index('data-s="0.0"') : ipa.index('data-s="0.1"')]
+    second = ipa[ipa.index('data-s="0.1"') :]
+    assert "tʃˈaɪld" in first and "ɚɹˈaɪvəl" not in first
+    assert "ɚɹˈaɪvəl" in second and "tʃˈaɪld" not in second
+
+
+def test_a_short_exclamation_rides_with_the_next_sentence(tmp_path):
+    """The chat's segmenter keeps "Yes!" from being a call, and a highlight, of its own."""
+    settings = settings_for(tmp_path)
+    put_copy(settings.resolved_corpus_dir, "It was genocide. Yes! It was genocide.\n")
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    assert '<span class="sentence" data-s="0.1">Yes! It was genocide.</span>' in page

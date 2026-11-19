@@ -618,11 +618,17 @@ main.lesson button.show-ipa {
 main.lesson button.show-ipa { margin-left: 0.3rem; }
 main.lesson button.show-ipa[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 main.lesson .full-text .reading .ipa { margin: -0.3rem 0 0.9rem; font-size: 0.85rem; }
-/* The paragraph the reader is on, so the eye can follow the voice. */
-main.lesson .full-text .reading p.now-reading {
-  background: var(--student);
-  border-radius: var(--radius);
-  box-shadow: 0 0 0 0.35rem var(--student);
+/* The sentence the reader is speaking, and its IPA, so the eye can follow
+   the voice. Inline backgrounds wrap with the line, which a box would not. */
+main.lesson .full-text .reading .now-reading {
+  /* --student alone is near the page in the dark theme; the accent tint
+     reads in both, and the text keeps --fg over it. */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--fg);
+  border-radius: 0.2rem;
+  box-shadow: 0 0 0 0.12rem color-mix(in srgb, var(--accent) 30%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 main.lesson .cites q { font-style: italic; color: var(--accent); }
 main.lesson table.notes { border-collapse: collapse; width: 100%; font-size: 0.9rem; }

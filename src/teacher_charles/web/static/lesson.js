@@ -36,8 +36,10 @@
 // not Charles's (the page names it in `data-voice`). /api/tts takes one
 // sentence per call -- 600 characters at most, the same ceiling the chat's
 // voice lives under -- so the text goes out sentence by sentence, the next one
-// synthesising while the current one plays. Nothing of it is cached: a reading
-// is minutes of audio, and a second one is rare enough to pay for again.
+// synthesising while the current one plays. The sentence being spoken is lit,
+// in the text and in its IPA line, so the eye can follow the voice. Nothing of
+// it is cached: a reading is minutes of audio, and a second one is rare enough
+// to pay for again.
 
 (() => {
   const cache = new Map(); // word -> Promise<Blob>, Charles's audio
@@ -414,38 +416,16 @@
 
   // --- the reader ---------------------------------------------------------- //
 
-  // Under the route's 600 with room to spare: a long sentence is cut at a
-  // word, and a short one rides with the next so the voice does not stop
-  // after every "Yes!".
+  // Under the route's 600 with room to spare: a sentence longer than this is
+  // cut at a word, and its parts light the same sentence one after another.
   const READ_MAX_CHARS = 400;
-  const READ_MIN_CHARS = 40;
 
   let reader = null; // { button, label }, while the reader has the floor
-
-  /** A paragraph cut into pieces /api/tts accepts, in reading order. */
-  function piecesOf(text) {
-    const sentences = text
-      .trim()
-      .split(/(?<=[.!?…]["'”’)\]]*)\s+/u)
-      .filter(Boolean);
-    const pieces = [];
-    let acc = "";
-    for (const sentence of sentences) {
-      if (acc && acc.length < READ_MIN_CHARS && acc.length + 1 + sentence.length <= READ_MAX_CHARS) {
-        acc = `${acc} ${sentence}`;
-        continue;
-      }
-      if (acc) pieces.push(acc);
-      acc = sentence;
-    }
-    if (acc) pieces.push(acc);
-    return pieces.flatMap(wrap);
-  }
 
   /** A sentence longer than the ceiling, cut at the last space that fits. */
   function wrap(text) {
     const out = [];
-    let rest = text;
+    let rest = text.trim();
     while (rest.length > READ_MAX_CHARS) {
       const cut = rest.lastIndexOf(" ", READ_MAX_CHARS);
       const at = cut > 0 ? cut : READ_MAX_CHARS;
@@ -456,11 +436,20 @@
     return out;
   }
 
-  function mark(paragraph) {
-    for (const p of document.querySelectorAll(".full-text p.now-reading")) {
-      if (p !== paragraph) p.classList.remove("now-reading");
+  /**
+   * Lights `sentence` and its IPA, and only them. The two share a `data-s`
+   * (the template cuts both lines into the same sentences), so the IPA is
+   * lit whether its line is showing or not -- shown later, it is already on
+   * the right place.
+   */
+  function mark(sentence) {
+    const lit = sentence
+      ? document.querySelectorAll(`.full-text [data-s="${sentence.dataset.s}"]`)
+      : [];
+    for (const el of document.querySelectorAll(".full-text .now-reading")) {
+      if (![...lit].includes(el)) el.classList.remove("now-reading");
     }
-    paragraph?.classList.add("now-reading");
+    for (const el of lit) el.classList.add("now-reading");
   }
 
   function endReading() {
@@ -479,8 +468,10 @@
     // A second click while it reads is "stop", not "from the top".
     if (wasReading) return;
 
-    const queue = [...document.querySelectorAll(".full-text .reading p")].flatMap((paragraph) =>
-      piecesOf(paragraph.textContent).map((text) => ({ paragraph, text }))
+    // One piece per sentence the server cut, so what is heard, what is lit
+    // in the text and what is lit in the IPA are the same sentence.
+    const queue = [...document.querySelectorAll(".full-text .reading .sentence")].flatMap(
+      (sentence) => wrap(sentence.textContent).map((text) => ({ sentence, text }))
     );
     if (!queue.length) return;
 
@@ -517,8 +508,8 @@
       }
       if (reader !== run) return;
       next = ahead(i + 1);
-      mark(queue[i].paragraph);
-      queue[i].paragraph.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      mark(queue[i].sentence);
+      queue[i].sentence.scrollIntoView({ block: "nearest", behavior: "smooth" });
       try {
         if (!(await play(blob, button))) return; // cut: stop() already tidied up
       } catch (error) {
