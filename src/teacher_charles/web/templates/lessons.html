@@ -25,6 +25,13 @@
   {% macro practice_note() -%}
     {% if voice and voice.enabled %}<p class="howto">🎙 records you saying the word — click, say it, click again — so you can play your take right after Charles's and compare by ear. The line under your take is what Whisper made of it: <em>recognition, not a pronunciation score</em>.</p>{% endif %}
   {%- endmacro %}
+  {#
+    The reference for the symbols themselves: every IPA line on this page is
+    espeak's, and this chart says what each symbol sounds like, with audio.
+  #}
+  {% macro ipa_chart() -%}
+    <p class="ipa-chart">New to a symbol? <a href="https://www.ipachart.com/" target="_blank" rel="noopener noreferrer">Interactive IPA chart</a>: click any symbol to hear it.</p>
+  {%- endmacro %}
   <header>
     <h1>{{ lesson.title if lesson else "Lessons" }}</h1>
     <div class="meta">
@@ -109,6 +116,7 @@
         <span class="trap">The lesson was written against a {{ lesson.source.words }}-word text, so this copy may be a different version.</span>
         {% endif %}
       </p>
+      {% if has_ipa %}{{ ipa_chart() }}{% endif %}
     </section>
     {% endif %}
 
@@ -155,6 +163,7 @@
         </tbody>
       </table>
       {% endif %}
+      {% if section.aspect == "phonetics" %}{{ ipa_chart() }}{% endif %}
     </section>
     {% endfor %}
 
