@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import copy
 from html import escape
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from teacher_charles.app import create_app
+from teacher_charles.app import TIMED_SPEECH_KEPT, create_app
 from teacher_charles.config import REPO_ROOT, Settings
 from teacher_charles.llm import FakeProvider
 from teacher_charles.teaching import lessons as lessons_module
@@ -28,6 +29,7 @@ from teacher_charles.teaching.lessons import (
     word_count,
 )
 from teacher_charles.teaching.vocabulary import load_base as load_vocabulary
+from teacher_charles.voice.base import TimedWord, VoiceBadAudio
 
 LESSONS_DIR = REPO_ROOT / "data" / "lessons"
 SLUG = "mon-mothma-senate-speech"
@@ -286,11 +288,78 @@ def test_the_ipa_comes_from_espeak_when_it_is_on(tmp_path):
 # Placeholder prose, ours: the tests must not need the real speech, and the
 # repo must not carry it.
 PLACEHOLDER = "First paragraph of a stand-in text.\n\nSecond one, wrapped\nacross two lines.\n"
-# How the page draws the copy's second paragraph: one sentence, in a span the
-# reader can light, and no other change to the words.
-SECOND_PARAGRAPH = (
-    '<p><span class="sentence" data-s="1.0">Second one, wrapped across two lines.</span></p>'
-)
+
+
+class _Reading(HTMLParser):
+    """The full text as the page draws it, read back as structure.
+
+    ``text``: paragraphs -> sentences -> ``{"s": data-s, "words": [...],
+    "ipa_of": [...]}``. ``ipa``: one ``{data-s: [IPA words]}`` per IPA line.
+    Asserting on this rather than on exact markup keeps the tests about what
+    the reader relies on -- ids that line up, words that rejoin to the text --
+    and not about whitespace in the template.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.text: list[list[dict]] = []
+        self.ipa: list[dict[str, list[str]]] = []
+        self._stack: list[tuple[str, dict]] = []
+        self._in_reading = False
+        self._word: dict | None = None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if a.get("id") == "full-text-reading":
+            self._in_reading = True
+        if not self._in_reading:
+            return
+        cls = a.get("class", "")
+        if tag == "p":
+            self.text.append([])
+        elif tag == "div" and "ipa" in cls.split():
+            self.ipa.append({})
+        elif tag == "span" and cls == "sentence":
+            self.text[-1].append({"s": a["data-s"], "words": [], "ipa_of": []})
+        elif tag == "span" and "data-s" in a and self.ipa:
+            self.ipa[-1][a["data-s"]] = []
+            self._ipa_s = a["data-s"]
+        elif tag == "span" and cls == "w":
+            self._word = {"attrs": a, "text": ""}
+        self._stack.append((tag, a))
+
+    def handle_data(self, data):
+        if self._word is not None:
+            self._word["text"] += data
+
+    def handle_endtag(self, tag):
+        if not self._in_reading or not self._stack:
+            return
+        opened, a = self._stack.pop()
+        if opened == "div" and a.get("id") == "full-text-reading":
+            self._in_reading = False
+        if opened == "span" and a.get("class") == "w" and self._word is not None:
+            w = self._word
+            self._word = None
+            if "data-t" in w["attrs"]:
+                self.ipa[-1][self._ipa_s].append(w["text"])
+            else:
+                sentence = self.text[-1][-1]
+                assert int(w["attrs"]["data-w"]) == len(sentence["words"])
+                sentence["words"].append(w["text"])
+                if "data-ipa" in w["attrs"]:
+                    sentence["ipa_of"].append([int(t) for t in w["attrs"]["data-ipa"].split()])
+
+
+def reading_of(page: str) -> _Reading:
+    parser = _Reading()
+    parser.feed(page)
+    return parser
+
+
+def sentences_of(page: str) -> list[list[str]]:
+    """Each paragraph's sentences, as the words on the page rejoin them."""
+    return [[" ".join(s["words"]) for s in p] for p in reading_of(page).text]
 
 
 def shipped_lesson() -> Lesson:
@@ -348,7 +417,7 @@ def test_the_page_shows_the_copy_when_the_machine_holds_one(tmp_path):
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
     assert 'id="full-text"' in page
-    assert SECOND_PARAGRAPH in page
+    assert sentences_of(page)[1] == ["Second one, wrapped across two lines."]
     assert 'href="#full-text"' in page
     # The link stays: the copy is a convenience, the source is still credited.
     assert shipped_lesson().source.url in page
@@ -497,7 +566,7 @@ def test_with_voice_the_full_text_has_a_reader_in_its_own_voice(tmp_path):
     assert 'data-voice="bf_isabella"' in page
     assert f'data-voice="{settings.tts_voice}"' not in page
     # The paragraphs stay plain: the script reads them from the page.
-    assert SECOND_PARAGRAPH in page
+    assert sentences_of(page)[1] == ["Second one, wrapped across two lines."]
 
 
 def test_the_reader_is_a_female_voice_by_default():
@@ -536,7 +605,7 @@ def test_with_ipa_the_full_text_has_a_phonetics_button_and_hidden_lines(tmp_path
     # One line per paragraph, hidden until asked for, and the paragraph's own
     # markup untouched.
     assert page.count('<div class="ipa" hidden>') == 2
-    assert SECOND_PARAGRAPH in page
+    assert sentences_of(page)[1] == ["Second one, wrapped across two lines."]
     # espeak's reading, not the English: "wrapped" is /ɹ/ and a stress mark.
     assert "ɹˈæpt" in page
 
@@ -572,11 +641,13 @@ def test_the_copy_is_cut_into_sentences_that_join_back_to_it(tmp_path):
     put_copy(settings.resolved_corpus_dir, TWO_SENTENCES)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
-    assert (
-        '<p><span class="sentence" data-s="0.0">I came here as a child.</span> '
-        '<span class="sentence" data-s="0.1">I have almost no memories that pre-date my '
-        "arrival.</span></p>"
-    ) in page
+    reading = reading_of(page)
+    assert [s["s"] for s in reading.text[0]] == ["0.0", "0.1"]
+    assert sentences_of(page) == [
+        ["I came here as a child.", "I have almost no memories that pre-date my arrival."]
+    ]
+    # Words are the whitespace split, the split /api/tts times: "pre-date" is one.
+    assert "pre-date" in reading.text[0][1]["words"]
 
 
 def test_each_sentence_and_its_ipa_share_an_id(tmp_path):
@@ -585,16 +656,32 @@ def test_each_sentence_and_its_ipa_share_an_id(tmp_path):
     put_copy(settings.resolved_corpus_dir, TWO_SENTENCES)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
-    ipa = page[page.index('<div class="ipa" hidden>') :]
-    ipa = ipa[: ipa.index("</div>")]
-    assert ipa.count('<span data-s="0.0">') == 1
-    assert ipa.count('<span data-s="0.1">') == 1
+    reading = reading_of(page)
+    ipa = reading.ipa[0]
+    assert list(ipa) == ["0.0", "0.1"]
     # Each IPA span is that sentence's own: "child" in the first, "arrival" in
     # the second.
-    first = ipa[ipa.index('data-s="0.0"') : ipa.index('data-s="0.1"')]
-    second = ipa[ipa.index('data-s="0.1"') :]
-    assert "tʃˈaɪld" in first and "ɚɹˈaɪvəl" not in first
-    assert "ɚɹˈaɪvəl" in second and "tʃˈaɪld" not in second
+    assert any("tʃˈaɪld" in t for t in ipa["0.0"]) and not any("ɚɹˈaɪvəl" in t for t in ipa["0.0"])
+    assert any("ɚɹˈaɪvəl" in t for t in ipa["0.1"]) and not any("tʃˈaɪld" in t for t in ipa["0.1"])
+
+
+def test_each_word_names_the_ipa_words_it_is_part_of(tmp_path):
+    """espeak runs "on the" into one IPA word; both written words must light it."""
+    settings = settings_for(tmp_path, phonetics_enabled=True)
+    put_copy(settings.resolved_corpus_dir, "The truth was lost on the plaza.\n")
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get(f"/lessons/{SLUG}").text
+    reading = reading_of(page)
+    sentence = reading.text[0][0]
+    tokens = reading.ipa[0]["0.0"]
+    owner = dict(zip(sentence["words"], sentence["ipa_of"], strict=True))
+    if len(tokens) == len(sentence["words"]):
+        pytest.skip("this espeak does not join 'on the'")
+    assert owner["on"] == owner["the"] and len(owner["on"]) == 1
+    assert tokens[owner["on"][0]].replace("ˈ", "").replace("ˌ", "") == "ɔnðə"
+    # Every word lights something, and no IPA word is left unlit.
+    assert all(sentence["ipa_of"])
+    assert sorted({t for o in sentence["ipa_of"] for t in o}) == list(range(len(tokens)))
 
 
 def test_a_short_exclamation_rides_with_the_next_sentence(tmp_path):
@@ -603,4 +690,86 @@ def test_a_short_exclamation_rides_with_the_next_sentence(tmp_path):
     put_copy(settings.resolved_corpus_dir, "It was genocide. Yes! It was genocide.\n")
     with TestClient(create_app(settings, provider=FakeProvider())) as c:
         page = c.get(f"/lessons/{SLUG}").text
-    assert '<span class="sentence" data-s="0.1">Yes! It was genocide.</span>' in page
+    assert sentences_of(page) == [["It was genocide.", "Yes! It was genocide."]]
+
+
+# --- word timings for the reader -------------------------------------------- #
+
+
+def test_tts_keeps_the_audio_and_times_it_on_request(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        stt = c.app.state.voice.stt
+        stt.heard = [
+            TimedWord("I", 0.0, 0.2),
+            TimedWord("came", 0.2, 0.5),
+            TimedWord("here.", 0.5, 0.9),
+        ]
+        spoken = c.post("/api/tts", json={"text": "I came here.", "timings": True})
+        assert spoken.status_code == 200
+        assert spoken.headers["content-type"] == "audio/wav"
+        # The audio comes back before anything is timed: the Whisper pass must
+        # not stand between the synthesis and the sound.
+        assert stt.timed == []
+        words = c.get(f"/api/tts/{spoken.headers['x-speech-id']}/words")
+        assert words.status_code == 200
+        assert words.json() == {"starts": [0.0, 0.2, 0.5]}
+        # The STT listened to the audio the route made for that request.
+        assert len(stt.timed) == 1
+        assert stt.timed[0].pcm and spoken.content.endswith(stt.timed[0].pcm)
+
+
+def test_timings_are_handed_out_once(tmp_path):
+    """The server holds a sentence only between its audio and its timings."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        spoken = c.post("/api/tts", json={"text": "I came here.", "timings": True})
+        url = f"/api/tts/{spoken.headers['x-speech-id']}/words"
+        assert c.get(url).status_code == 200
+        assert c.get(url).status_code == 404
+        assert c.get("/api/tts/not-an-id/words").status_code == 404
+
+
+def test_the_server_keeps_only_a_few_untimed_sentences(tmp_path):
+    """A page that never asks for its timings must not grow the server."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        ids = [
+            c.post("/api/tts", json={"text": f"Sentence {i}.", "timings": True}).headers[
+                "x-speech-id"
+            ]
+            for i in range(TIMED_SPEECH_KEPT + 3)
+        ]
+        assert len(c.app.state.timed_speech) == TIMED_SPEECH_KEPT
+        # The oldest went first; the newest is still there.
+        assert c.get(f"/api/tts/{ids[0]}/words").status_code == 404
+        assert c.get(f"/api/tts/{ids[-1]}/words").status_code == 200
+
+
+def test_tts_keeps_nothing_unless_asked(tmp_path):
+    """The chat's voice calls /api/tts on every sentence and lights nothing."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        plain = c.post("/api/tts", json={"text": "I came here."})
+        assert plain.status_code == 200
+        assert "x-speech-id" not in plain.headers
+        assert len(c.app.state.timed_speech) == 0
+        assert c.app.state.voice.stt.timed == []
+
+
+def test_a_failed_timing_is_no_timings_not_an_error(tmp_path):
+    """No timings is a sentence lit whole, never a reader that falls silent."""
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        c.app.state.voice.stt.error = VoiceBadAudio("nothing to hear")
+        spoken = c.post("/api/tts", json={"text": "I came here.", "timings": True})
+        assert spoken.status_code == 200
+        words = c.get(f"/api/tts/{spoken.headers['x-speech-id']}/words")
+        assert words.status_code == 200
+        assert words.json() == {"starts": []}
+
+
+def test_without_voice_there_are_no_timings(tmp_path):
+    settings = settings_for(tmp_path)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        assert c.get("/api/tts/whatever/words").status_code == 503

@@ -13,6 +13,8 @@ import json
 import logging
 import signal
 import sqlite3
+import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -65,12 +67,13 @@ from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
-from .teaching.phonetics import Phonetics, build_phonetics
+from .teaching.phonetics import Phonetics, build_phonetics, ipa_owners
 from .teaching.schedule import is_graduated
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice, split_sentences
+from .voice.align import word_starts
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +195,17 @@ class SpeakRequest(BaseModel):
 
     text: str = Field(min_length=1, max_length=600)
     voice: str | None = None
+    # Keep the audio so its word timings can be asked for next, at
+    # ``/api/tts/{id}/words``: the lesson reader lights the word being said.
+    # Off by default -- the chat's voice lights nothing, and holds nothing.
+    timings: bool = False
+
+
+# How many synthesised sentences wait for their word timings to be asked for.
+# The reader asks for each right after its audio arrives and reads a few
+# sentences ahead, so a handful is the working set; the cap is what keeps a
+# page that never asks from growing the server. ~8 s of 24 kHz PCM is ~380 KB.
+TIMED_SPEECH_KEPT = 16
 
 
 class SyntaxRequest(BaseModel):
@@ -297,6 +311,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         app.state.stop = request_stop
         app.state.provider = chat
         app.state.voice = voice
+        # Synthesised sentences awaiting their word timings, oldest first;
+        # see ``/api/tts/{speech_id}/words``.
+        app.state.timed_speech = OrderedDict()
         app.state.phonetics = phonetics
         app.state.syntax = syntax
         app.state.lessons = lessons
@@ -593,8 +610,8 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             note["ipa"] = spell(note["word"])
         return body
 
-    def full_text_sentences(full_text: LocalText | None) -> list[list[dict[str, str]]]:
-        """Each paragraph of the copy as sentences, each with its IPA.
+    def full_text_sentences(full_text: LocalText | None) -> list[list[dict[str, Any]]]:
+        """Each paragraph of the copy as sentences, words, and their IPA.
 
         ## Why the sentences are cut here, once, and not in the page
 
@@ -606,17 +623,32 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         sentence. It joins back to the paragraph exactly, so the page shows
         the text as it is.
 
-        Sentence, not word: Kokoro returns the audio and no timings, so a
-        word-by-word highlight could only be guessed from the clock.
+        Within a sentence the reader lights the word being said, by timings
+        ``/api/tts`` measures (``voice/align.py``). The words are the
+        sentence split on whitespace, the split the route uses too, so word
+        *k* on the page is word *k* in the timings.
 
-        The IPA is espeak's, per sentence; empty with the IPA off.
+        The IPA is espeak's reading of the whole sentence, which is what the
+        voice says, cut into its own words; ``ipa_of`` says which IPA words
+        each written word is part of, because espeak runs function words
+        together ("on the" is one IPA word, ``ɔnðə``). Empty with the IPA off.
         """
         if full_text is None:
             return []
-        return [
-            [{"text": s, "ipa": spell(s)} for s in split_sentences(p) or [p]]
-            for p in full_text.paragraphs
-        ]
+        return [[sentence_view(s) for s in split_sentences(p) or [p]] for p in full_text.paragraphs]
+
+    def sentence_view(text: str) -> dict[str, Any]:
+        words = text.split()
+        ipa = spell(text)
+        ipa_words = ipa.split()
+        owners = ipa_owners(words, ipa_words, [spell(w) for w in words]) if ipa_words else []
+        return {
+            "text": text,
+            "words": words,
+            "ipa": ipa,
+            "ipa_words": ipa_words,
+            "ipa_of": [" ".join(str(j) for j in o) for o in owners],
+        }
 
     def shelf() -> LessonShelf | None:
         return app.state.lessons
@@ -952,17 +984,61 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         except VoiceError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=422)
 
-        return Response(
-            content=speech.as_wav(),
-            media_type="audio/wav",
-            headers={
-                "Cache-Control": "no-store",
-                # Medição do turno de voz sem instrumentar o navegador: o
-                # tempo de síntese e a duração do áudio viajam com ele.
-                "X-Synthesis-Ms": str(round(speech.elapsed_ms)),
-                "X-Audio-Seconds": f"{speech.duration_s:.2f}",
-            },
-        )
+        headers = {
+            "Cache-Control": "no-store",
+            # Medição do turno de voz sem instrumentar o navegador: o
+            # tempo de síntese e a duração do áudio viajam com ele.
+            "X-Synthesis-Ms": str(round(speech.elapsed_ms)),
+            "X-Audio-Seconds": f"{speech.duration_s:.2f}",
+        }
+        if payload.timings:
+            # The timings are not computed here: a Whisper pass is ~1.2 s,
+            # and in this response it would sit between the synthesis and the
+            # sound. The audio goes now; the page asks for the timings while
+            # it plays, and the pass runs beside the next sentence's synthesis.
+            kept: OrderedDict[str, tuple[str, Any]] = app.state.timed_speech
+            speech_id = uuid.uuid4().hex
+            kept[speech_id] = (payload.text, speech)
+            while len(kept) > TIMED_SPEECH_KEPT:
+                kept.popitem(last=False)
+            headers["X-Speech-Id"] = speech_id
+        return Response(content=speech.as_wav(), media_type="audio/wav", headers=headers)
+
+    @app.get("/api/tts/{speech_id}/words")
+    async def speech_words(speech_id: str) -> JSONResponse:
+        """When each word of a sentence ``/api/tts`` just spoke starts, in seconds.
+
+        One start per whitespace-split word of the text that was sent. Asked
+        for once: the entry is dropped as it is read, so the server holds a
+        sentence only between its audio and its timings. ``starts`` is empty
+        when the STT could not tell, and then the page lights the sentence.
+        """
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+        kept: OrderedDict[str, tuple[str, Any]] = app.state.timed_speech
+        entry = kept.pop(speech_id, None)
+        if entry is None:
+            return JSONResponse(
+                {"detail": "no such speech: asked for already, or dropped"}, status_code=404
+            )
+        text, speech = entry
+        return JSONResponse({"starts": await timed_words(voice, text, speech)})
+
+    async def timed_words(voice: Voice, text: str, speech: Any) -> list[float]:
+        """When each word of ``text`` starts in ``speech``, or ``[]``.
+
+        Kokoro gives no timings, so they are measured: the STT listens to the
+        audio just made, and ``voice/align.py`` maps what it heard back onto
+        the words. Empty is a first-class answer — no STT that can tell, or one
+        that failed — and then the page lights the sentence, not the word.
+        """
+        try:
+            heard = await voice.word_timer.word_times(speech)
+        except VoiceError as exc:
+            log.warning("no word timings for the reader: %s", exc)
+            return []
+        return word_starts(text.split(), heard, speech.duration_s)
 
     @app.post("/api/syntax")
     async def syntax_breakdown(payload: SyntaxRequest) -> JSONResponse:

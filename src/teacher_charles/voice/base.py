@@ -80,6 +80,15 @@ class Transcript:
 
 
 @dataclass(frozen=True, slots=True)
+class TimedWord:
+    """A word the STT heard in an audio, and when, in seconds from its start."""
+
+    word: str
+    start: float
+    end: float
+
+
+@dataclass(frozen=True, slots=True)
 class Speech:
     """Um trecho de fala sintetizada, em PCM 16-bit mono."""
 
@@ -149,6 +158,17 @@ class SpeechToText(Loadable, abc.ABC):
         ``audio`` são os bytes do arquivo como o navegador os gravou
         (webm/opus, ogg, wav): quem decodifica é o motor, não quem chama.
         """
+
+    async def word_times(self, speech: Speech) -> list[TimedWord]:
+        """When each word is said in ``speech``, as this engine hears it.
+
+        It exists for the lesson reader, which lights the word being spoken:
+        Kokoro returns audio and no timings, so the times are measured by
+        listening to the synthesised audio (``voice/align.py`` maps them back
+        to the text). Default empty, not abstract: an engine that cannot tell
+        says nothing, and the reader falls back to lighting the sentence.
+        """
+        return []
 
     async def warm_up(self) -> None:
         """Carrega o modelo antes de o aluno precisar dele.

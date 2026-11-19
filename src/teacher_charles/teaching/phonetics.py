@@ -51,7 +51,9 @@ contra um reconhecedor que não emite tônica; aqui ela é metade da lição, po
 from __future__ import annotations
 
 import logging
+import re
 import threading
+from difflib import SequenceMatcher
 from functools import lru_cache
 from typing import Any
 
@@ -242,3 +244,90 @@ __all__ = [
     "build_phonetics",
     "partial_name",
 ]
+
+
+# --- which IPA word is which written word ----------------------------------- #
+
+# Stress and length marks, and the punctuation espeak keeps, carry no letters
+# to compare: "ˈɔːl," and "ɔl" are the same word to the matcher.
+_IPA_NOISE = re.compile(r"[ˈˌːˑ.,;:!?…—–\-'\"“”‘’()\[\]/]+")
+
+# How many written words one IPA word can cover, and the reverse. espeak joins
+# function words in connected speech ("on the" -> "ɔnðə", "of an" -> "əvən");
+# three is the longest join seen in the lesson texts, with room.
+_MAX_GROUP = 3
+
+# What one pairing step is worth, in sounds. See the comment where it is used.
+_STEP_BONUS = 1.5
+
+
+def ipa_owners(words: list[str], tokens: list[str], per_word: list[str]) -> list[list[int]]:
+    """For each written word, the IPA words (indices into ``tokens``) it is part of.
+
+    ``tokens`` is espeak's reading of the whole sentence, split on spaces;
+    ``per_word`` is its reading of each written word alone. The two do not
+    line up one to one, because espeak joins words the way a speaker runs
+    them together: *on the truth* is ``ɔnðə tɹˈuːθ``, two IPA words for three
+    written ones. The sentence's reading is the one shown — it is what the
+    voice says — so it is the per-word readings that are fitted to it.
+
+    The fit is a small dynamic programme: in order, each step pairs one
+    written word with up to three IPA words, or up to three written words with
+    one IPA word, and the pairing whose sounds agree best wins. Every written
+    word gets at least one IPA word, so the page always has something to light.
+    """
+    n, m = len(words), len(tokens)
+    if n == 0 or m == 0:
+        return [[] for _ in words]
+
+    def sounds(text: str) -> str:
+        return _IPA_NOISE.sub("", text)
+
+    def agree(a: str, b: str) -> float:
+        # Sounds in common count for, sounds left over on either side count
+        # against: a score that only rewarded overlap would let a word grab
+        # its neighbour's IPA for free ("days" taking "tə").
+        a, b = sounds(a), sounds(b)
+        blocks = SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks()
+        same = sum(x.size for x in blocks)
+        return same - 0.5 * ((len(a) - same) + (len(b) - same))
+
+    neg = float("-inf")
+    best = [[neg] * (m + 1) for _ in range(n + 1)]
+    step: list[list[tuple[int, int] | None]] = [[None] * (m + 1) for _ in range(n + 1)]
+    best[0][0] = 0.0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            if best[i][j] == neg:
+                continue
+            moves = [(1, k) for k in range(1, _MAX_GROUP + 1)]
+            moves += [(k, 1) for k in range(2, _MAX_GROUP + 1)]
+            for dw, dt in moves:
+                ii, jj = i + dw, j + dt
+                if ii > n or jj > m:
+                    continue
+                score = best[i][j] + agree("".join(per_word[i:ii]), "".join(tokens[j:jj]))
+                # A bonus per step: every join costs a step, so words are
+                # joined only where the sounds call for it. Without it a word
+                # whose sounds change in context ("a" is ˈeɪ alone and ɐ in a
+                # sentence) or that has none ("—") was cheaper absorbed into
+                # its neighbour, and a sentence that lines up one to one came
+                # back scrambled.
+                score += _STEP_BONUS
+                if score > best[ii][jj]:
+                    best[ii][jj] = score
+                    step[ii][jj] = (dw, dt)
+
+    if best[n][m] == neg:
+        # No pairing within the group limits: each word lights the IPA word
+        # at its own proportion of the sentence, which is never far off.
+        return [[min(m - 1, i * m // n)] for i in range(n)]
+
+    owners: list[list[int]] = [[] for _ in words]
+    i, j = n, m
+    while i or j:
+        dw, dt = step[i][j]  # type: ignore[misc]
+        for w in range(i - dw, i):
+            owners[w] = list(range(j - dt, j))
+        i, j = i - dw, j - dt
+    return owners

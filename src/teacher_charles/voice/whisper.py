@@ -36,7 +36,16 @@ import math
 import time
 from typing import Any
 
-from .base import SpeechToText, Transcript, VoiceBadAudio, VoiceModelNotFound, VoiceUnavailable
+from .base import (
+    STT_SAMPLE_RATE,
+    Speech,
+    SpeechToText,
+    TimedWord,
+    Transcript,
+    VoiceBadAudio,
+    VoiceModelNotFound,
+    VoiceUnavailable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -172,6 +181,59 @@ class WhisperSTT(SpeechToText):
         async with self._lock:
             engine = await self._engine_ready()
             return await asyncio.to_thread(self._transcribe, engine, audio)
+
+    # --- word times ------------------------------------------------------- #
+
+    def _word_times(self, engine: Any, speech: Speech) -> list[TimedWord]:
+        """Whisper's word timestamps over synthesised speech.
+
+        ## Why these options, and not the student's
+
+        Measured on the Mon Mothma lesson read by Kokoro (21 sentences): the
+        word starts land where the audio says them, at ~1.2 s per sentence of
+        base.en on this CPU, which the reader hides behind the sentence that
+        is playing. Two of the student path's options are wrong here:
+
+        - **No VAD.** The audio is clean synthesis with no room noise, and
+          cutting its pauses is cutting the commas the timings must keep.
+        - **No prompt with the text.** Prompting with the sentence looked like
+          a free accuracy win and was the opposite: on the shouted line it
+          invented a tail ("9 12 . . .") and took 8 s. Unprompted, it mishears
+          a name now and then, and the character alignment absorbs that.
+        """
+        import numpy as np
+
+        samples = np.frombuffer(speech.pcm, dtype="<i2").astype(np.float32) / 32768.0
+        if speech.sample_rate != STT_SAMPLE_RATE and len(samples):
+            # Linear resampling is enough for timing: Whisper only needs to
+            # hear the words, not reproduce the audio.
+            count = int(len(samples) * STT_SAMPLE_RATE / speech.sample_rate)
+            positions = np.arange(count) * speech.sample_rate / STT_SAMPLE_RATE
+            samples = np.interp(positions, np.arange(len(samples)), samples).astype(np.float32)
+        try:
+            segments, _ = engine.transcribe(
+                samples,
+                language="en",
+                beam_size=self._beam_size,
+                condition_on_previous_text=False,
+                word_timestamps=True,
+                vad_filter=False,
+            )
+            found = list(segments)
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise VoiceBadAudio(f"no word times for this audio: {exc}") from exc
+        return [
+            TimedWord(word=w.word.strip(), start=float(w.start), end=float(w.end))
+            for segment in found
+            for w in (segment.words or [])
+        ]
+
+    async def word_times(self, speech: Speech) -> list[TimedWord]:
+        if not speech.pcm:
+            return []
+        async with self._lock:
+            engine = await self._engine_ready()
+            return await asyncio.to_thread(self._word_times, engine, speech)
 
     @property
     def ready(self) -> bool:

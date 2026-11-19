@@ -180,3 +180,43 @@ def test_o_partial_que_o_nome_promete_existe():
 
     prompts = PromptLibrary(make_settings().prompts_dir)
     assert prompts.exists(partial_name(True))
+
+
+# --- which IPA word is which written word ----------------------------------- #
+
+from teacher_charles.teaching.phonetics import ipa_owners  # noqa: E402
+
+
+def test_one_to_one_when_espeak_keeps_every_word_apart():
+    words = ["I", "came", "here", "as", "a", "child."]
+    tokens = ["aɪ", "kˈeɪm", "hˈɪɹ", "æz", "ɐ", "tʃˈaɪld."]
+    # "a" alone is ˈeɪ and in the sentence ɐ: no sound in common, and it
+    # still keeps its own IPA word instead of being absorbed by a neighbour.
+    per_word = ["ˈaɪ", "kˈeɪm", "hˈɪɹ", "æz", "ˈeɪ", "tʃˈaɪld."]
+    assert ipa_owners(words, tokens, per_word) == [[i] for i in range(6)]
+
+
+def test_words_espeak_runs_together_share_their_ipa_word():
+    words = ["lost", "on", "the", "Ghorman", "Plaza."]
+    tokens = ["lˈɔst", "ɔnðə", "ɡˈɔːɹmən", "plˈɑːzə."]
+    per_word = ["lˈɔst", "ˈɔn", "ðə", "ɡˈɔːɹmən", "plˈɑːzə."]
+    assert ipa_owners(words, tokens, per_word) == [[0], [1], [1], [2], [3]]
+
+
+def test_a_join_does_not_steal_the_next_word():
+    """A score that only rewarded overlap let "days" take "tə" from "to"."""
+    words = ["in", "the", "days", "to", "come."]
+    tokens = ["ɪnðə", "dˈeɪz", "tə", "kˈʌm."]
+    per_word = ["ˈɪn", "ðə", "dˈeɪz", "tˈuː", "kˈʌm."]
+    assert ipa_owners(words, tokens, per_word) == [[0], [0], [1], [2], [3]]
+
+
+def test_a_lone_dash_keeps_its_place():
+    words = ["YES!", "—", "GENOCIDE!"]
+    tokens = ["jˈɛs!", "—", "dʒˈɛnəsˌaɪd!"]
+    per_word = ["jˈɛs!", "—", "dʒˈɛnəsˌaɪd!"]
+    assert ipa_owners(words, tokens, per_word) == [[0], [1], [2]]
+
+
+def test_no_ipa_is_no_owners():
+    assert ipa_owners(["a", "b"], [], ["", ""]) == [[], []]
