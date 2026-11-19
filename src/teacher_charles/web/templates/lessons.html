@@ -70,7 +70,13 @@
       control, so a fresh clone never renders this block (teaching/lessons.py).
     #}
     <section class="aspect full-text" id="full-text">
-      <h2>Full text</h2>
+      {#
+        The reader: the whole text aloud, sentence by sentence, in a voice that
+        is not Charles's (config.tts_reader_voice). Only with voice on, for the
+        word speaker's reason: /api/tts is 503 without it.
+      #}
+      <h2>Full text{% if voice and voice.enabled %}
+        <button type="button" class="read-aloud" data-voice="{{ reader_voice }}" aria-label="Listen to the full text" title="Listen to the full text">🔊 Listen</button>{% endif %}</h2>
       <div class="reading">
         {% for paragraph in full_text.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
       </div>
