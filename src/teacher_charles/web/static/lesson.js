@@ -626,8 +626,55 @@
    * lights none. The IPA words are named by the word's `data-ipa`, inside the
    * IPA span that shares the sentence's `data-s`.
    */
+  // The sound chart's tiles (lessons.html), by symbol, and the symbols
+  // longest first: an IPA word is cut the way teaching/ipa_symbols.py cuts
+  // it, so the vowel of "face" lights eɪ and not e, and "church" lights tʃ.
+  // The chart lists exactly the symbols the text uses, so every sound of a
+  // word being read has its tile.
+  const soundTiles = new Map();
+  for (const tile of document.querySelectorAll(".symbol-chart .symbol[data-symbol]")) {
+    soundTiles.set(tile.dataset.symbol, [...(soundTiles.get(tile.dataset.symbol) ?? []), tile]);
+  }
+  const soundSymbols = [...soundTiles.keys()].sort((a, b) => b.length - a.length);
+
+  /** The chart symbols in `ipa`, longest match first; stress and the rest skipped. */
+  function soundsOf(ipa) {
+    const found = new Set();
+    let i = 0;
+    while (i < ipa.length) {
+      const symbol = soundSymbols.find((s) => ipa.startsWith(s, i));
+      if (symbol) {
+        found.add(symbol);
+        i += symbol.length;
+      } else {
+        i += 1;
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Lights the chart tiles of the sounds in `tokens`, the IPA words lit in
+   * the text, and only those. A word's sounds light together, for as long
+   * as the word is said: the timings are per word, and no finer timing of
+   * the sounds inside it exists to light them one by one.
+   */
+  function markSounds(tokens) {
+    const lit = new Set();
+    for (const token of tokens) {
+      for (const symbol of soundsOf(token.textContent)) {
+        for (const tile of soundTiles.get(symbol) ?? []) lit.add(tile);
+      }
+    }
+    for (const tile of document.querySelectorAll(".symbol-chart .now-sound")) {
+      if (!lit.has(tile)) tile.classList.remove("now-sound");
+    }
+    for (const tile of lit) tile.classList.add("now-sound");
+  }
+
   function markWord(sentence, index) {
     const lit = [];
+    const tokens = []; // the IPA words of the word being said
     const carriers = []; // written words whose IPA, drawn between the lines, is lit
     const word = index >= 0 ? sentence?.querySelector(`.w[data-w="${index}"]`) : null;
     if (word) {
@@ -636,7 +683,10 @@
       const words = [...sentence.querySelectorAll(".w")];
       for (const t of (word.dataset.ipa ?? "").split(" ").filter(Boolean)) {
         const token = ipa?.querySelector(`.w[data-t="${t}"]`);
-        if (token) lit.push(token);
+        if (token) {
+          lit.push(token);
+          tokens.push(token);
+        }
         // Between the lines, an IPA word two written words share is drawn
         // once, under the first of them (full-text.js): "in the" is ɪnðə
         // under "in". So while "the" is said, the light goes to that IPA
@@ -653,6 +703,7 @@
     }
     for (const el of lit) el.classList.add("now-word");
     for (const el of carriers) el.classList.add("now-ipa");
+    if (soundTiles.size) markSounds(tokens);
   }
 
   // Until the measured starts arrive, the light follows an estimate from the
