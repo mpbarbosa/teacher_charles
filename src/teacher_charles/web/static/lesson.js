@@ -510,11 +510,18 @@
    * between words). The reading begins at that word, and what is left of its
    * sentence gets the short opening clause the first sentence gets: it was
    * not fetched before the click, so the clause is what makes it start soon.
+   * With `from.block` the reading stops at the end of that sentence's
+   * paragraph: it is a rehearsal block's "Hear it" (rehearsal.js).
    */
   function pieces(from = null) {
     let sentences = [...document.querySelectorAll(".full-text .reading .sentence")];
     const start = from ? sentences.indexOf(from.sentence) : 0;
     if (start > 0) sentences = sentences.slice(start);
+    if (from?.block) {
+      // `data-s` is "paragraph.sentence", so a paragraph is a shared prefix.
+      const paragraph = from.sentence.dataset.s.split(".")[0];
+      sentences = sentences.filter((s) => s.dataset.s.split(".")[0] === paragraph);
+    }
     const skip = from && start >= 0 ? from.word : 0;
     return sentences.flatMap((sentence, index) => {
       // Skipped words are left out of the text, not muted in the audio: the
@@ -832,7 +839,8 @@
   async function readAloud(button, from = null) {
     const wasReading = reader?.button === button;
     stop();
-    if (wasReading && !from) return;
+    // A block's own button toggles like the Listen button does.
+    if (wasReading && (!from || from.block)) return;
 
     const queue = pieces(from);
     if (!queue.length) return;
@@ -898,7 +906,7 @@
     }
     if (reader === run) {
       endReading();
-      button.title = "Listen to the full text";
+      button.title = from?.block ? "Hear this block read aloud" : "Listen to the full text";
     }
   }
 
@@ -949,6 +957,20 @@
     return { sentence: written, word: owner ? Number(owner.dataset.w) : 0 };
   }
 
+  /**
+   * A rehearsal block's "Hear it": the reader, in the reader's voice, over
+   * that block's paragraph only. The button is the reader's button for the
+   * length of it, so it turns into "■ Stop" and back like Listen does.
+   */
+  function readBlock(button) {
+    const sentence = fullText?.querySelector(`.sentence[data-s="${button.dataset.s}"]`);
+    if (sentence) readAloud(button, { sentence, word: 0, block: true });
+  }
+
+  // The rehearsal asks for quiet when a run-through or a recording starts:
+  // the loudspeaker would talk over the student, and into the microphone.
+  document.addEventListener("tc:silence", stop);
+
   document.addEventListener("click", (event) => {
     const start = readButton && startAt(event.target);
     if (start) {
@@ -957,10 +979,11 @@
       return;
     }
     const target = event.target.closest(
-      "button.say, button.record, button.mine, button.both, button.read-aloud"
+      "button.say, button.record, button.mine, button.both, button.read-aloud, button.read-block"
     );
     if (!target) return;
-    if (target.matches(".read-aloud")) readAloud(target);
+    if (target.matches(".read-block")) readBlock(target);
+    else if (target.matches(".read-aloud")) readAloud(target);
     else if (target.matches(".say")) say(target);
     else if (target.matches(".record")) record(target);
     else if (target.matches(".mine")) playMine(target);

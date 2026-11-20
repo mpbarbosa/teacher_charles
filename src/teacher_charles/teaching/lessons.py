@@ -27,6 +27,22 @@ It is read per request and never cached into the ``Lesson``, so dropping the
 file in needs no restart, and it never enters ``/api/lessons/<slug>`` — that
 payload is the curated lesson, and the copy is not ours to serve.
 
+### A text nobody published
+
+The text may also be the student's own — a pitch or a talk they wrote and
+want to say well. It has no URL to link, so the source is an ``OwnText``
+instead of a ``Source``, and the copy in ``corpus/`` is then the only place the
+text exists. Nothing else changes: the budget still holds, because the lesson
+is public even when the text is private.
+
+### Rehearsing it
+
+With a copy, the page can rehearse it aloud: blocks, a pace, a stopwatch, a
+run-through. The YAML says only what the curator knows about the *structure*
+— each block's title and target time, in ``rehearsal`` — and the cue words
+shown while the text is hidden stay with the copy, for the reason
+``RehearsalBlock`` gives. ``rehearsal_plan`` joins the two per request.
+
 What a lesson may carry from the source is the short phrase an analysis has to
 point at — *heavy heart*, *took place* against *happened*. Those live in
 ``Point.cites`` and nowhere else, and two limits hold them to quotation and
@@ -66,10 +82,18 @@ from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    computed_field,
+    model_validator,
+)
 
 from ..config import get_settings
 from ..store.models import CefrLevel
@@ -114,6 +138,9 @@ class Source(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    # The default, so a lesson written before ``OwnText`` existed needs no edit.
+    kind: Literal["published"] = "published"
+
     # The piece the student opens: headline, outlet, byline, date.
     title: str = Field(min_length=1)
     publication: str = Field(min_length=1)
@@ -128,6 +155,42 @@ class Source(BaseModel):
     # Length of the analysed text, in words. It is the denominator of the
     # citation budget, so it is required: without it the budget means nothing.
     words: int = Field(gt=0)
+
+
+class OwnText(BaseModel):
+    """A text the person running the project wrote, which nobody published.
+
+    A pitch, a talk, a presentation to rehearse. It has no address, outlet or
+    byline, and inventing them to fill ``Source`` would be a citation to
+    nothing — so this is a second kind of source, not ``Source`` with its
+    fields made optional. ``extra="forbid"`` is the guard: an own text with a
+    ``url:`` is refused, and a published source keeps every field required.
+
+    Everything else is the same rule. The text sits in
+    ``corpus/lessons/<slug>.txt``, outside version control, and the citation
+    budget is counted against ``words`` as for any source: a lesson about your
+    own text is still public, and a clone must not be able to rebuild it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["own"]
+    # What the text is, generically: the page says whose it is.
+    title: str = Field(min_length=1)
+    words: int = Field(gt=0)
+
+
+def _source_kind(value: Any) -> str:
+    """Which kind of source ``value`` is; a source that does not say is published."""
+    if isinstance(value, dict):
+        return str(value.get("kind", "published"))
+    return getattr(value, "kind", "published")
+
+
+AnySource = Annotated[
+    Annotated[Source, Tag("published")] | Annotated[OwnText, Tag("own")],
+    Discriminator(_source_kind),
+]
 
 
 # YouTube's video ids: eleven characters from the URL-safe base64 alphabet.
@@ -276,6 +339,34 @@ class Practice(BaseModel):
     starter: str = Field(min_length=1, max_length=200)
 
 
+# The longest block a rehearsal plan may time. A target past ten minutes is a
+# typo for seconds, not a block: a whole run-through of the first plan is 4:45.
+MAX_BLOCK_SECONDS = 600
+
+
+class RehearsalBlock(BaseModel):
+    """One block of a timed rehearsal: one paragraph of the copy, said aloud.
+
+    ## Why there is no ``keywords`` field
+
+    The cue words shown while the text is hidden are words *of the text*, so
+    they are source wording, and the YAML has one place for that: ``cites``,
+    under the budget. A second, unbudgeted channel would let a plan carry the
+    text's key phrases past every guard above. So the cue words live with the
+    copy (``corpus/lessons/<slug>.cues.txt``, ``read_local_cues``), and without
+    that file the page cues each sentence by its first words. ``extra="forbid"``
+    refuses a ``keywords:`` key, the way ``Source`` refuses ``text:``.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    title: str = Field(min_length=1, max_length=60)
+    # Seconds the block should take said aloud. Absent: the block is rehearsed
+    # but not timed (phrases held in reserve, a case to practise on), and the
+    # run-through skips it.
+    target: int | None = Field(default=None, gt=0, le=MAX_BLOCK_SECONDS)
+
+
 class Lesson(BaseModel):
     """A curated lesson. One per YAML file in ``data/lessons/``."""
 
@@ -285,7 +376,7 @@ class Lesson(BaseModel):
     title: str = Field(min_length=1)
     summary: str = Field(min_length=1)
     cefr: CefrLevel
-    source: Source
+    source: AnySource
     # The work performed, when an official recording exists. Optional.
     video: Video | None = None
     sections: list[Section] = Field(min_length=1)
@@ -295,6 +386,10 @@ class Lesson(BaseModel):
     sounds: list[SoundNote] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)
     practice: list[Practice] = Field(default_factory=list)
+    # How the copy is rehearsed: one block per paragraph, in order, each with a
+    # title and a target. Optional — without it every paragraph is a block of
+    # its own, untimed (``rehearsal_plan``).
+    rehearsal: list[RehearsalBlock] | None = None
     # Curation note. Never reaches the student.
     notes: str | None = None
 
@@ -318,6 +413,17 @@ class Lesson(BaseModel):
         repeated = sorted({a for a in aspects if aspects.count(a) > 1})
         if repeated:
             raise ValueError(f"more than one section for {', '.join(repeated)}")
+        return self
+
+    @model_validator(mode="after")
+    def _a_rehearsal_plan_times_something(self) -> Lesson:
+        """A plan that times nothing is the default plan with titles on it.
+
+        It would also leave the run-through with no block to run, which is the
+        one thing a plan is for.
+        """
+        if self.rehearsal is not None and not any(b.target for b in self.rehearsal):
+            raise ValueError("a rehearsal plan with no target; leave `rehearsal` out instead")
         return self
 
     @model_validator(mode="after")
@@ -404,6 +510,142 @@ def read_local_text(corpus_dir: Path, lesson: Lesson) -> LocalText | None:
         paragraphs=paragraphs,
         words=words,
         matches=abs(words - expected) <= expected * LOCAL_TEXT_TOLERANCE,
+    )
+
+
+# --- rehearsing the copy --------------------------------------------------- #
+
+# Without cue words of its own, a block shows each sentence by this many of
+# its first words: the opening is what a speaker forgets, and the rest of a
+# sentence they know usually follows from it.
+CUE_OPENING_WORDS = 3
+
+
+def local_cues_path(corpus_dir: Path, lesson: Lesson) -> Path:
+    """Where the cue words for ``lesson``'s copy would sit, beside the copy."""
+    return corpus_dir / "lessons" / f"{lesson.slug}.cues.txt"
+
+
+def read_local_cues(corpus_dir: Path, lesson: Lesson) -> tuple[tuple[str, ...], ...] | None:
+    """The cue words from ``corpus/lessons/<slug>.cues.txt``, or ``None``.
+
+    One line per paragraph of the copy, in order, the phrases on a line
+    separated by ``·`` or ``;``. An empty line is a paragraph with no cues of
+    its own, and so is every paragraph past the last line: trailing blank
+    lines are what an editor trims first, so they cannot carry meaning. The
+    file sits beside the copy and outside version control for the
+    copy's reason (``RehearsalBlock`` says why it is not in the YAML), and it
+    is read per request, like the copy. ``None`` covers every way of not
+    having it, as in ``read_local_text``.
+    """
+    try:
+        raw = local_cues_path(corpus_dir, lesson).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return None
+    # Only trailing blank lines go: a leading one is the first paragraph's.
+    lines = raw.replace("\r\n", "\n").rstrip().split("\n")
+    cues = tuple(
+        tuple(phrase for part in re.split(r"[·;]", line) if (phrase := " ".join(part.split())))
+        for line in lines
+    )
+    return cues if any(cues) else None
+
+
+def sentence_openings(sentences: Sequence[str]) -> tuple[str, ...]:
+    """Each sentence by its first ``CUE_OPENING_WORDS`` words, ``…`` if it goes on."""
+    out = []
+    for sentence in sentences:
+        words = sentence.split()
+        if words:
+            more = "…" if len(words) > CUE_OPENING_WORDS else ""
+            out.append(" ".join(words[:CUE_OPENING_WORDS]) + more)
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class Block:
+    """One paragraph of the copy, as the rehearsal shows it."""
+
+    paragraph: int
+    title: str
+    # Seconds; ``None`` is untimed.
+    target: int | None
+    words: int
+    cues: tuple[str, ...]
+    # True when the cues came from the cue file, False when they are the
+    # sentence openings the page made up.
+    own_cues: bool
+
+
+@dataclass(frozen=True)
+class RehearsalPlan:
+    """The copy cut into blocks, with what the lesson says about each.
+
+    ## Why a plan that does not fit is set aside, not stretched
+
+    A plan is aligned with the copy by position: block *k* is paragraph *k*.
+    A copy with one paragraph more or less shifts every block after the
+    difference, and the page would time paragraph 4 against paragraph 3's
+    target and show it the wrong cue words — a wrong number on screen, which
+    is worse than no number. So when the counts differ the plan is set aside
+    whole, the blocks fall back to plain paragraphs, and the page says why,
+    as it says when the copy's length is off. A cue file with more lines than
+    the copy has paragraphs is set aside the same way; a shorter one is not
+    (``read_local_cues`` says why).
+    """
+
+    blocks: tuple[Block, ...]
+    # The lesson has a plan, and the copy fits it.
+    planned: bool
+    # The lesson has a plan, and the copy does not fit it.
+    plan_set_aside: bool
+    # A cue file exists, and has more lines than the copy has paragraphs. A
+    # shorter one fits: its last paragraphs simply have no cues of their own.
+    cues_set_aside: bool
+
+    @property
+    def timed(self) -> tuple[Block, ...]:
+        return tuple(b for b in self.blocks if b.target)
+
+    @property
+    def target(self) -> int:
+        return sum(b.target or 0 for b in self.blocks)
+
+
+def rehearsal_plan(
+    lesson: Lesson,
+    paragraphs: Sequence[Sequence[str]],
+    cues: Sequence[Sequence[str]] | None = None,
+) -> RehearsalPlan:
+    """The rehearsal of ``lesson`` over its copy.
+
+    ``paragraphs`` is the copy as the page shows it — each paragraph cut into
+    sentences — and ``cues`` what ``read_local_cues`` returned. Computed per
+    request from the copy, like ``place_cites``, and never stored: the cue
+    words are the copy's, so nothing of this reaches ``/api/lessons``.
+    """
+    plan = lesson.rehearsal
+    plan_fits = plan is not None and len(plan) == len(paragraphs)
+    cues_fit = cues is not None and len(cues) <= len(paragraphs)
+    blocks = []
+    for i, sentences in enumerate(paragraphs):
+        planned = plan[i] if plan is not None and plan_fits else None
+        own = tuple(cues[i]) if cues is not None and cues_fit and i < len(cues) else ()
+        blocks.append(
+            Block(
+                paragraph=i,
+                title=planned.title if planned else f"Paragraph {i + 1}",
+                target=planned.target if planned else None,
+                words=sum(word_count(s) for s in sentences),
+                cues=own or sentence_openings(sentences),
+                own_cues=bool(own),
+            )
+        )
+    return RehearsalPlan(
+        blocks=tuple(blocks),
+        planned=plan_fits,
+        plan_set_aside=plan is not None and not plan_fits,
+        cues_set_aside=cues is not None and not cues_fit,
     )
 
 
@@ -550,17 +792,24 @@ def get_shelf(directory: Path | None = None) -> LessonShelf:
 __all__ = [
     "ASPECTS",
     "CITE_BUDGET",
+    "CUE_OPENING_WORDS",
     "LESSON_ID_PATTERN",
     "LOCAL_TEXT_TOLERANCE",
+    "MAX_BLOCK_SECONDS",
     "MAX_CITE_WORDS",
+    "AnySource",
     "Aspect",
+    "Block",
     "Lesson",
     "LessonError",
     "LessonShelf",
     "LocalText",
+    "OwnText",
     "Point",
     "Practice",
     "Question",
+    "RehearsalBlock",
+    "RehearsalPlan",
     "Section",
     "SoundNote",
     "Source",
@@ -568,7 +817,11 @@ __all__ = [
     "get_shelf",
     "load_lessons",
     "load_shelf",
+    "local_cues_path",
     "local_text_path",
+    "read_local_cues",
     "read_local_text",
+    "rehearsal_plan",
+    "sentence_openings",
     "word_count",
 ]

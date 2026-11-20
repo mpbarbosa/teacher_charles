@@ -37,6 +37,7 @@ corpus/
       <show>-<season>x<episode>.en.srt
   lessons/
     <lesson-slug>.txt
+    <lesson-slug>.cues.txt
 ```
 
 `lessons/<lesson-slug>.txt` is your copy of the text a lesson in
@@ -47,6 +48,18 @@ it whole under **Full text**; when it is not, the page shows the link to the
 source, which is what every clone shows. If its word count is more than a tenth
 off the lesson's `source.words`, the page says the copy may be a different
 version. It is read on every request, so no restart is needed.
+
+`lessons/<lesson-slug>.cues.txt` is optional: the cue words the lesson's
+rehearsal mode shows when the text is hidden, one line per paragraph of the
+copy, phrases separated by `·` or `;`, an empty line for a paragraph with none.
+They are words of the text, which is why they live here and not in the YAML
+(`docs/adr/0001-own-text-and-rehearsal-mode.md`). Without the file, each
+sentence is cued by its first three words.
+
+A lesson whose source is `kind: own` reads a text of your own that nobody
+published — a pitch, a talk. Its copy here is then the only place the text
+exists, so keep a backup of it somewhere that is yours: this folder is
+deliberately left out of every commit.
 
 Normalize on the way in: strip the UTF-8 BOM, LF line endings, lower-case
 slug with no spaces, so a path can be written in a script without quoting.
@@ -66,6 +79,8 @@ script that reads one of them can be understood without the file present.
 |---|---|---|---|
 | `subtitles/friends/friends-1x01.en.srt` | *Friends*, season 1 episode 1, English, from a BluRay release | 365 | 22m38s |
 | `lessons/mon-mothma-senate-speech.txt` | Mon Mothma's Senate speech, *Andor* season 2 episode 9, 3 paragraphs, 266 words | — | — |
+| `lessons/interview-video-pitch.txt` | The person running the project's own pitch for a recorded job interview, 7 paragraphs (5 timed blocks, 2 reserve), 465 words | — | — |
+| `lessons/interview-video-pitch.cues.txt` | Their cue words for the 5 timed blocks of that pitch | — | — |
 
 The subtitles were imported 2026-11-10 from a local archive supplied by the
 person running the project. Rights are theirs to hold; this repo asserts none.

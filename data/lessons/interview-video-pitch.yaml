@@ -1,0 +1,378 @@
+# A curated lesson (model in src/teacher_charles/teaching/lessons.py).
+#
+# The text is a pitch the person running this copy wrote for a recorded job
+# interview. Nobody published it, so the source is an own text (`kind: own`):
+# no URL, no outlet, no byline. It is personal, and this repository is public,
+# so the text lives only in corpus/lessons/interview-video-pitch.txt, outside
+# version control, and this file says nothing about whose it is, where it was
+# sent, or what its author did. `cites` holds the few short, generic phrases
+# the analysis names, inside the loader's budget of a tenth of the text.
+#
+# The rehearsal plan below is the structure: one block per paragraph of the
+# copy, with a title and a target in seconds (5 timed blocks, 4:45 in all).
+# The cue words for each block are the copy's and stay beside it, in
+# corpus/lessons/interview-video-pitch.cues.txt (RehearsalBlock says why).
+#
+# No IPA anywhere in this file: the transcriptions on the page come from espeak
+# (teaching/phonetics.py), the same G2P the voice speaks with.
+
+id: lesson.interview-video-pitch
+title: A five-minute interview video pitch
+summary: >-
+  A short spoken pitch for a recorded job interview, in five timed blocks: who
+  you are, the problem in your own words, the plan, how you check the work,
+  and the close — plus phrases that buy time and a case to practise on. Read
+  at six levels, with the sounds a Portuguese speaker tends to change, and a
+  rehearsal mode to say it against the clock.
+cefr: B1
+
+source:
+  kind: own
+  title: Your interview video pitch
+  words: 465
+
+rehearsal:
+  - title: Who you are
+    target: 60
+  - title: The problem, in your words
+    target: 45
+  - title: The plan
+    target: 90
+  - title: How you check the work
+    target: 75
+  - title: The close
+    target: 15
+  - title: Phrases that buy time
+  - title: A case to practise on
+
+sections:
+  - aspect: lexicon
+    title: Where the words come from
+    points:
+      - heading: Short words carry the plan, long words name the system
+        body: >-
+          Most of the pitch is short, everyday verbs from Old English: build,
+          ask, check, show, grow, keep, break. The long words came through
+          Latin and French, and they are the technical anchors: reconciliation,
+          production, permissions, validated. On camera, in a second language,
+          that mix is an advantage — the short words are easy to say and easy
+          to follow, and the long ones are the few you have to practise.
+      - heading: Workplace English that is made of plain words
+        body: >-
+          Several key terms are ordinary words put together: a go-live, a test
+          set, a slice of the system, a change that lands. The meaning is not
+          in a dictionary entry for any single word, so they are in the word
+          list below. One is a fixed phrase that works as an adverb.
+        cites: ["end to end"]
+      - heading: Phrasal verbs instead of formal ones
+        body: >-
+          Native speakers prefer a verb plus a particle where Portuguese uses
+          one formal verb: grow from there rather than expand, go out to a
+          customer rather than be sent, go through checks rather than be
+          submitted to. They sound natural in speech, and they keep the
+          sentence short.
+        cites: ["grow from there"]
+
+  - aspect: vocabulary
+    title: Words worth learning
+    points:
+      - heading: The vocabulary of delivering a system
+        body: >-
+          Go-live, reconciliation, slice, end to end, test set, graded by hand,
+          a change that lands: these are the words people use about putting
+          software into real use and proving that it works. The list below
+          explains them, with the traps for Portuguese speakers — including
+          two calques the chat already corrects.
+
+  - aspect: grammar
+    title: Grammar in use
+    points:
+      - heading: '"Would" for a plan that depends on them'
+        body: >-
+          The middle of the pitch describes what you would do if they hired
+          you, so it uses "would" all the way: I would ask, I would build, I
+          would keep. The condition, "if you hired me", is never said — it is
+          understood. Switching to "will" would sound as if the job were
+          already yours.
+        cites: ["I would not build"]
+      - heading: The present simple for principles
+        body: >-
+          Where the pitch says what you always do, the verb goes back to the
+          present simple: I keep money in rules, I check totals, a person
+          approves. That is the tense for habits and rules, and here it says
+          that this is how you work, not only what you plan.
+      - heading: The present perfect continuous for a span up to now
+        body: >-
+          A length of time that started in the past and is still going needs
+          the present perfect, often in its continuous form, and "for" before
+          the length. Portuguese says it in the present ("faço isso há",
+          "desde"), and "I build software since..." is the calque the chat
+          corrects. With a date, use "since"; with a length, use "for".
+        cites: ["I've been building"]
+      - heading: '"Must never" for what cannot happen'
+        body: >-
+          "Must" plus "never" is the strongest way to say that something is
+          not allowed, and as a question it asks the client to name their
+          biggest risk. Note the word order: the question word, then the modal,
+          then "never", then the verb.
+        cites: ["what must never go wrong"]
+
+  - aspect: syntax
+    title: How the sentences are built
+    points:
+      - heading: Numbers as headings
+        body: >-
+          A listener cannot scroll back, so the pitch numbers its points out
+          loud: one, two, three for the questions, and first, second, third
+          for the checks. Each number is followed by a colon and a short
+          answer. These are the headings of a spoken text, and they also tell
+          you, the speaker, where you are.
+      - heading: The time clause comes first
+        body: >-
+          Several sentences open with a clause that sets the frame — before
+          when, then what. Put first, the clause tells the listener what kind
+          of information is coming; put last, it would arrive after the point.
+        cites: ["Before I build anything"]
+      - heading: A short sentence to turn a corner
+        body: >-
+          The fourth block opens with one short sentence that says the next
+          part matters most, and it ends with a preposition. That is normal in
+          speech — "the part about which I care most" would sound like a
+          contract. A short sentence after long ones works as a pause the
+          listener can hear.
+        cites: ["care most about"]
+
+  - aspect: semantics
+    title: What it means
+    points:
+      - heading: Checking you understood, without sounding unsure
+        body: >-
+          Opening the problem with a conditional restates the client's request
+          in your own words and invites a correction, while still sounding in
+          control. It is a hedge on the understanding, not on the plan.
+        cites: ["if I understand it right"]
+      - heading: '"While" as contrast, not time'
+        body: >-
+          Here "while" does not mean "during"; it means "and at the same
+          time, in contrast". The sentence says that a correct total can hide
+          a wrong record, which is why the pitch checks both.
+        cites: ["while one customer is wrong"]
+      - heading: Phrases that buy time instead of filler
+        body: >-
+          The reserve block holds sentences that give you a second to think
+          without "uh" or "é...": announcing that you will think, naming the
+          first step, naming your concern, or promising to keep it simple.
+          They sound like structure, not like hesitation.
+        cites: ["To keep it simple"]
+
+  - aspect: phonetics
+    title: How it sounds
+    points:
+      - heading: 'Final "-ed" is a syllable only after "t" or "d"'
+        body: >-
+          After a "t" or a "d" sound, "-ed" adds a syllable: validated, graded,
+          trusted. After any other sound it adds no syllable at all, only the
+          sound of "t" (after k, p, s, sh, ch, f) or "d" (after the rest):
+          checked is one syllable, agreed is two. Saying "check-ed" with an
+          extra vowel is one of the clearest signs of a Portuguese accent.
+        cites: ["graded by hand", "checked"]
+      - heading: No vowel before "s" plus a consonant
+        body: >-
+          Portuguese never starts a word with "s" plus a consonant, so speakers
+          add a vowel in front: "ismall", "islice", "ispeak". English starts
+          right on the "s" — hiss first, then the consonant. Practise small,
+          slice, speak and start slowly, with no sound before the "s".
+      - heading: No vowel after a final consonant
+        body: >-
+          The opposite trap, at the end of the word: "check" becomes
+          "checky", "code" becomes "codgy", "test set" becomes "testy set".
+          Close the word on the consonant and stop. Recording yourself is the
+          quickest way to hear the extra vowel, because you do not notice it
+          while you speak.
+      - heading: '"Th" puts the tongue between the teeth'
+        body: >-
+          Neither "t" nor "f" nor "d": for "th" the tip of the tongue rests
+          lightly between the teeth. The pitch has the voiceless one in three,
+          thousand and think, and the voiced one in the, that, then and they.
+          The voiced one is the more frequent, because it is in the commonest
+          words.
+      - heading: The stress moves where Portuguese would not put it
+        body: >-
+          Career is stressed on its second syllable; with the stress on the
+          first it sounds like "carrier", someone who carries things. Parallel
+          and automated are stressed on their first syllable, not on the
+          syllable before the end as Portuguese would do. A word with the
+          wrong stress is harder to understand than a word with a wrong sound.
+      - heading: Final "l" is a consonant
+        body: >-
+          In Brazilian Portuguese a final "l" turns into a "u", so "Brasil"
+          sounds like "Brasiu". In English the tongue tip must touch the ridge
+          behind the top teeth at the end of small, real, parallel and will —
+          a dark "l", but an "l".
+      - heading: Pace, and what to cut when you are over
+        body: >-
+          A clear pace for a recorded pitch in a second language is around 110
+          words a minute, with real pauses between the blocks. If a block runs
+          over its target at that pace, cut words rather than speaking faster:
+          speed is where every trap above comes back. The rehearsal mode on
+          the full text times each block against its target.
+
+level:
+  summary: >-
+    B1 to read, harder to say. The sentences are short and the grammar is the
+    grammar of B1, but saying it well on camera, at an even pace, with the
+    technical words stressed right, is a B2 speaking task.
+  points:
+    - heading: The surface says B1
+      body: >-
+        Measured on the copy, the sentences average 11 words and there is
+        almost no subordination. The app's own level rubric, the one that rates
+        your messages, places the text at B1, and one block at A2.
+    - heading: The task says B2
+      body: >-
+        The technical vocabulary is B2 and above, and a pitch has to be
+        fluent, not only correct: it is said once, to a camera, with no chance
+        to rephrase. That is why the lesson spends its effort on sounds,
+        stress and pace rather than on grammar.
+
+words:
+  - word: go-live
+    gloss: The moment a new system starts being used for real.
+    note: >-
+      A noun here, often with no article: "before go-live". As a verb it is
+      two words: "the system goes live".
+  - word: reconciliation
+    gloss: Checking that two sets of records agree, in total and line by line.
+    note: >-
+      Portuguese "conciliação" in accounting. In everyday English it also
+      means making peace, so the context matters.
+  - word: slice
+    gloss: >-
+      A thin piece; at work, a small part of a system built all the way
+      through, from the data to the screen.
+    note: '"A thin slice" or "a vertical slice": a piece that works, not a layer.'
+  - word: end to end
+    gloss: From the first step to the last, with nothing left out.
+    note: 'Hyphenated before a noun: "an end-to-end test".'
+  - word: test set
+    gloss: A fixed list of questions with known right answers, used to measure a system.
+  - word: graded by hand
+    gloss: Scored by a person, not by a program.
+  - word: land
+    gloss: For a change to code, to be accepted and take effect.
+    note: 'Informal developer English: "the change lands on main".'
+  - word: approach
+    gloss: To decide how to deal with a problem.
+    note: >-
+      The verb takes no preposition: "approach this case". The noun takes
+      "to": "my approach to this case".
+  - word: own
+    gloss: At work, to be the person responsible for something and decide about it.
+    note: '"Who owns the data?" asks who is responsible for it, not who bought it.'
+  - word: ask a question
+    gloss: To put a question to someone.
+    note: '"Fazer uma pergunta" is "ask a question", never "make a question".'
+    rule_ids: [calque.make-question]
+  - word: since
+    gloss: From a point in the past until now.
+    note: >-
+      With "since" and "for", the verb goes into the present perfect: "I have
+      worked here since 2020", never "I work here since 2020".
+    rule_ids: [grammar.since-present]
+
+sounds:
+  - word: validated
+    trap: Four syllables; the "-ed" is a syllable here, because it comes after a "t".
+  - word: checked
+    trap: One syllable. The "-ed" is only a "t" sound — no vowel before it, none after.
+  - word: graded
+    trap: Two syllables; the "-ed" is a syllable after "d".
+  - word: trusted
+    trap: Two syllables, the "-ed" after "t", and no vowel before the "tr".
+  - word: small
+    trap: >-
+      No vowel before the "s", and the final "l" is an "l", with the tongue up
+      — not "ismau".
+  - word: slice
+    trap: Starts right on the "s". Not "islice".
+  - word: career
+    trap: Stressed on the second syllable. Stressed on the first, it sounds like "carrier".
+  - word: parallel
+    trap: Stressed on the first syllable, and it ends in a real "l".
+  - word: automated
+    trap: Stressed on the first syllable; the "t" in the middle is soft in American English.
+  - word: reconciliation
+    trap: The main stress is on the "a" of "-ation", near the end — not on the "con".
+  - word: three
+    trap: The tongue between the teeth, then "r". Not "tree", not "free".
+  - word: thousand
+    trap: Voiceless "th", like "three". Not "tousand".
+  - word: data
+    trap: In American English the "t" is soft, almost a quick "d" — "day-da".
+  - word: measure
+    trap: The middle sound is the "j" of Portuguese "já", not "z".
+  - word: permissions
+    trap: Stressed on the second syllable, and it ends in "z", not "s".
+  - word: production
+    trap: Stressed on the second syllable; the first vowel is weak.
+  - word: approach
+    trap: Stressed on the second syllable, and it ends in the "ch" of "church".
+  - word: customer
+    trap: Stressed on the first syllable, and no vowel added after the final "r".
+
+questions:
+  - prompt: How many syllables does "checked" have?
+    options: [one, two]
+    answer: 0
+    why: >-
+      After a "k" sound, "-ed" is only a "t" sound. It adds a syllable only
+      after "t" or "d".
+  - prompt: In which word is "-ed" a syllable of its own?
+    options: [checked, graded, agreed]
+    answer: 1
+    why: '"Graded" ends in "d" before the "-ed", so the "-ed" is a syllable.'
+  - prompt: Which syllable of "career" is stressed?
+    options: [the first, the second]
+    answer: 1
+    why: Stressed on the first syllable it sounds like "carrier".
+  - prompt: Why does the plan say "I would not build" and not "I will not build"?
+    options:
+      - '"Would" is the past of "will"'
+      - The plan depends on being hired, which has not happened
+      - '"Will" is wrong after "not"'
+    answer: 1
+    why: >-
+      "Would" is the conditional: it describes what you would do if a
+      condition were met — here, being hired.
+  - prompt: In "while one customer is wrong", what does "while" mean?
+    options: [during the time that, and in contrast, because]
+    answer: 1
+    why: Here "while" sets two facts against each other; it says nothing about time.
+  - prompt: How do you say "fazer uma pergunta" in English?
+    options: [make a question, ask a question, do a question]
+    answer: 1
+    why: Questions are asked in English, never made or done.
+
+practice:
+  - task: >-
+      Restate a problem in your own words before you solve it, the way the
+      second block opens. Finish the sentence below.
+    starter: "So, if I understand it right, "
+  - task: >-
+      Say how long you have been doing something you still do, with the
+      present perfect continuous and "for".
+    starter: "I've been "
+  - task: >-
+      Write the three questions you would ask before building anything, each
+      one starting with its number.
+    starter: "One: "
+  - task: Use a phrase that buys time, then finish the thought.
+    starter: "To keep it simple, "
+
+notes: >-
+  Written 2026-11-20 from the copy in corpus/lessons/ (465 words, 7
+  paragraphs). The text is not in the repository: only the phrases in
+  `cites`, inside the 10% budget the loader checks, and none of them says
+  anything about its author. Level measured with teaching/level.py on the
+  copy: B1 for the whole text, A2 to B1 by block. The pronunciation points
+  follow the traps the author listed while rehearsing; the IPA is espeak's.
