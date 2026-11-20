@@ -29,7 +29,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 468
+  words: 483
 
 rehearsal:
   - title: Who you are
@@ -78,11 +78,12 @@ sections:
     points:
       - heading: The vocabulary of delivering a system
         body: >-
-          Go-live, reconciliation, slice, end to end, test set, graded by hand,
-          a change that lands: these are the words people use about putting
-          software into real use and proving that it works. The list below
-          explains them, with the traps for Portuguese speakers — including
-          two calques the chat already corrects.
+          Requirements, pain points, go-live, reconciliation, user acceptance
+          testing, slice, end to end, test set, graded by hand, a change that
+          lands: these are the words people use about putting software into
+          real use and proving that it works. The list below explains them,
+          with the traps for Portuguese speakers — including a false friend
+          from Brazilian IT and two calques the chat already corrects.
 
   - aspect: grammar
     title: Grammar in use
@@ -225,9 +226,10 @@ level:
   points:
     - heading: The surface says B1
       body: >-
-        Measured on the copy, the sentences average 11 words and there is
+        Measured on the copy, the sentences average 12 words and there is
         almost no subordination. The app's own level rubric, the one that rates
-        your messages, places the text at B1, and one block at A2.
+        your messages, places the text at B1 — the opening block at B2, because
+        its sentences are the longest, and one block at A2.
     - heading: The task says B2
       body: >-
         The technical vocabulary is B2 and above, and a pitch has to be
@@ -279,6 +281,17 @@ words:
       With "since" and "for", the verb goes into the present perfect: "I have
       worked here since 2020", never "I work here since 2020".
     rule_ids: [grammar.since-present]
+  - word: user acceptance testing
+    gloss: >-
+      The last round of tests before go-live, in which the people who will use
+      the system check that it does what they need. Often shortened to UAT.
+    note: >-
+      This is what Brazilian IT calls "homologação". "Homologation" is a false
+      friend: in English it means official approval of a product against a
+      standard, such as a new car model for sale.
+  - word: pain points
+    gloss: The problems that cost a client the most time, money or patience.
+    note: '"Pains" alone sounds physical; at work, say "pain points".'
 
 sounds:
   - word: validated
@@ -325,6 +338,12 @@ sounds:
       after the "s" is silent, and the last syllable ends in "z".
   - word: solutions
     trap: Stressed on the second syllable, and it ends in "z", not "s".
+  - word: requirements
+    trap: >-
+      Stressed on the second syllable, which rhymes with "fire"; it ends in
+      "nts", with no vowel after the "s".
+  - word: acceptance
+    trap: Stressed on the second syllable, and the first syllable is a weak "ak".
   # Not in the pitch: it names the mode the pitch is practised in.
   - word: rehearsal
     trap: >-
@@ -365,6 +384,13 @@ questions:
     options: [make a question, ask a question, do a question]
     answer: 1
     why: Questions are asked in English, never made or done.
+  - prompt: How do you say "homologação" of a system in English?
+    options: [homologation, user acceptance testing, homologation testing]
+    answer: 1
+    why: >-
+      "Homologation" is official certification of a product, like a car
+      model. The tests in which users approve a system are user acceptance
+      testing, or UAT.
 
 practice:
   - task: >-
@@ -383,9 +409,9 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (468 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (483 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
-  copy: B1 for the whole text, A2 to B1 by block. The pronunciation points
+  copy: B1 for the whole text, A2 to B2 by block. The pronunciation points
   follow the traps the author listed while rehearsing; the IPA is espeak's.
