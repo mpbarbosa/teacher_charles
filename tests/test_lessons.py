@@ -237,6 +237,26 @@ def test_the_shelf_page_lists_the_lesson(client):
     assert f'href="/lessons/{SLUG}"' in response.text
 
 
+def test_the_shelf_shows_each_lessons_level_and_links_it_to_the_reasons(client):
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    page = client.get("/lessons").text
+    assert f'href="/lessons/{SLUG}#level"' in page
+    assert f"Level {lesson.cefr}</a>" in page
+
+
+def test_a_lesson_without_a_level_reading_shows_its_level_unlinked(tmp_path, monkeypatch):
+    directory = tmp_path / "lessons"
+    write_lesson(directory, valid_lesson())
+    shelf = load_shelf(directory)
+    monkeypatch.setattr("teacher_charles.app.load_shelf", lambda _directory=None: shelf)
+    with TestClient(create_app(settings_for(tmp_path), provider=FakeProvider())) as c:
+        page = c.get("/lessons").text
+        card = c.get("/api/lessons").json()["lessons"][0]
+    assert "Level B2</span>" in page
+    assert 'href="/lessons/sample#level"' not in page
+    assert card["level_explained"] is False
+
+
 def test_the_lesson_page_links_the_source_and_shows_every_section(client):
     lesson = load_shelf(LESSONS_DIR).get(SLUG)
     response = client.get(f"/lessons/{SLUG}")

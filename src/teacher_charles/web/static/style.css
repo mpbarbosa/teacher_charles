@@ -592,6 +592,21 @@ main.lesson .tag {
   text-transform: uppercase;
   margin-right: 0.3rem;
 }
+/* The text's CEFR level on a shelf card. A pill like the student's own level
+   in the header, so the two read as the same scale; pushed to the right of the
+   title so it is seen before the summary is read. */
+main.lesson .level-badge {
+  margin-left: auto;
+  flex: none;
+  font: 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curated);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+main.lesson a.level-badge:hover { border-color: var(--curated); }
 main.lesson .source {
   border: 1px solid var(--line);
   border-radius: var(--radius);
