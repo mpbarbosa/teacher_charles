@@ -142,6 +142,25 @@ def test_short_citations_cannot_add_up_to_a_copy():
         Lesson.model_validate(lesson)
 
 
+def test_citations_in_the_level_reading_count_in_the_budget():
+    """The level reading is a second place a point can cite from; without
+    counting it, the budget would have a side door."""
+    lesson = valid_lesson()
+    budget = int(lesson["source"]["words"] * CITE_BUDGET)
+    lesson["level"] = {
+        "summary": "B2.",
+        "points": [{"heading": "h", "body": "b", "cites": ["one two"] * (budget // 2 + 1)}],
+    }
+    with pytest.raises(ValueError, match="budget"):
+        Lesson.model_validate(lesson)
+
+
+def test_a_level_reading_needs_a_point():
+    lesson = valid_lesson(level={"summary": "B2.", "points": []})
+    with pytest.raises(ValueError, match="points"):
+        Lesson.model_validate(lesson)
+
+
 def test_word_count_counts_contractions_as_one_word():
     assert word_count("we've helped create") == 3
 
@@ -225,6 +244,28 @@ def test_the_lesson_page_links_the_source_and_shows_every_section(client):
     assert lesson.source.url in response.text
     for aspect in ASPECTS:
         assert f'id="{aspect}"' in response.text
+
+
+def test_the_lesson_page_explains_its_level(client):
+    lesson = load_shelf(LESSONS_DIR).get(SLUG)
+    page = client.get(f"/lessons/{SLUG}").text
+    assert 'href="#level"' in page
+    assert 'id="level"' in page
+    assert f"{lesson.cefr}: why this level" in page
+    for point in lesson.level.points:
+        assert point.heading in page
+
+
+def test_a_lesson_without_a_level_reading_draws_no_level_section(tmp_path, monkeypatch):
+    directory = tmp_path / "lessons"
+    write_lesson(directory, valid_lesson())
+    shelf = load_shelf(directory)
+    monkeypatch.setattr("teacher_charles.app.load_shelf", lambda _directory=None: shelf)
+    with TestClient(create_app(settings_for(tmp_path), provider=FakeProvider())) as c:
+        page = c.get("/lessons/sample").text
+    assert "A lesson for tests." in page
+    assert 'id="level"' not in page
+    assert 'href="#level"' not in page
 
 
 def test_the_lesson_page_embeds_the_video_from_its_id(client):
