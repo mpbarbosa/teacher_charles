@@ -142,16 +142,21 @@
         Each has a curated example word; its IPA is espeak's, made when the
         page is served. With voice, a tile is a speaker like the one beside a
         word (button.say, lesson.js): it plays the example in Charles's voice.
+        While the reader speaks, the tiles of the word being said light up
+        (`data-symbol`, lesson.js's markWord), and the chart docks at the
+        bottom of the window, symbols only, so it stays in view beside the
+        sentence being read (lesson.js's dockChart).
       #}
       {% if symbol_chart %}{% set hear = voice and voice.enabled %}
       <details class="symbol-chart">
         <summary>The sounds in this text{% if hear %}: click one to hear it in a word{% endif %}</summary>
+        <div class="symbol-groups">
         {% for group in symbol_chart %}
         <div class="symbol-group">
           <h3>{{ group.kind|capitalize }}s</h3>
           <div class="symbols">
             {%- for row in group.symbols %}
-            {% if hear %}<button type="button" class="say symbol" data-say="{{ row.example }}" aria-label="Hear /{{ row.symbol }}/ in “{{ row.example }}”">{% else %}<span class="symbol">{% endif -%}
+            {% if hear %}<button type="button" class="say symbol" data-symbol="{{ row.symbol }}" data-say="{{ row.example }}" aria-label="Hear /{{ row.symbol }}/ in “{{ row.example }}”">{% else %}<span class="symbol" data-symbol="{{ row.symbol }}">{% endif -%}
               <span class="glyph">{{ row.symbol }}</span>
               <span class="example">{{ row.example }}</span>
               {%- if row.example_ipa %}<span class="example-ipa">/{{ row.example_ipa }}/</span>{% endif %}
@@ -161,6 +166,7 @@
           </div>
         </div>
         {% endfor %}
+        </div>
       </details>
       {% endif %}
     </section>

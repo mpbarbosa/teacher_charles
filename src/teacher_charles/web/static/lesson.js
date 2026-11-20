@@ -626,8 +626,55 @@
    * lights none. The IPA words are named by the word's `data-ipa`, inside the
    * IPA span that shares the sentence's `data-s`.
    */
+  // The sound chart's tiles (lessons.html), by symbol, and the symbols
+  // longest first: an IPA word is cut the way teaching/ipa_symbols.py cuts
+  // it, so the vowel of "face" lights eɪ and not e, and "church" lights tʃ.
+  // The chart lists exactly the symbols the text uses, so every sound of a
+  // word being read has its tile.
+  const soundTiles = new Map();
+  for (const tile of document.querySelectorAll(".symbol-chart .symbol[data-symbol]")) {
+    soundTiles.set(tile.dataset.symbol, [...(soundTiles.get(tile.dataset.symbol) ?? []), tile]);
+  }
+  const soundSymbols = [...soundTiles.keys()].sort((a, b) => b.length - a.length);
+
+  /** The chart symbols in `ipa`, longest match first; stress and the rest skipped. */
+  function soundsOf(ipa) {
+    const found = new Set();
+    let i = 0;
+    while (i < ipa.length) {
+      const symbol = soundSymbols.find((s) => ipa.startsWith(s, i));
+      if (symbol) {
+        found.add(symbol);
+        i += symbol.length;
+      } else {
+        i += 1;
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Lights the chart tiles of the sounds in `tokens`, the IPA words lit in
+   * the text, and only those. A word's sounds light together, for as long
+   * as the word is said: the timings are per word, and no finer timing of
+   * the sounds inside it exists to light them one by one.
+   */
+  function markSounds(tokens) {
+    const lit = new Set();
+    for (const token of tokens) {
+      for (const symbol of soundsOf(token.textContent)) {
+        for (const tile of soundTiles.get(symbol) ?? []) lit.add(tile);
+      }
+    }
+    for (const tile of document.querySelectorAll(".symbol-chart .now-sound")) {
+      if (!lit.has(tile)) tile.classList.remove("now-sound");
+    }
+    for (const tile of lit) tile.classList.add("now-sound");
+  }
+
   function markWord(sentence, index) {
     const lit = [];
+    const tokens = []; // the IPA words of the word being said
     const carriers = []; // written words whose IPA, drawn between the lines, is lit
     const word = index >= 0 ? sentence?.querySelector(`.w[data-w="${index}"]`) : null;
     if (word) {
@@ -636,7 +683,10 @@
       const words = [...sentence.querySelectorAll(".w")];
       for (const t of (word.dataset.ipa ?? "").split(" ").filter(Boolean)) {
         const token = ipa?.querySelector(`.w[data-t="${t}"]`);
-        if (token) lit.push(token);
+        if (token) {
+          lit.push(token);
+          tokens.push(token);
+        }
         // Between the lines, an IPA word two written words share is drawn
         // once, under the first of them (full-text.js): "in the" is ɪnðə
         // under "in". So while "the" is said, the light goes to that IPA
@@ -653,6 +703,7 @@
     }
     for (const el of lit) el.classList.add("now-word");
     for (const el of carriers) el.classList.add("now-ipa");
+    if (soundTiles.size) markSounds(tokens);
   }
 
   // Until the measured starts arrive, the light follows an estimate from the
@@ -711,10 +762,59 @@
     requestAnimationFrame(frame);
   }
 
+  // ## The chart beside the voice
+  //
+  // The sound chart sits below the whole text, and the reader keeps the
+  // sentence it is saying on screen, so while it read the tiles lit up where
+  // nobody could see them. While a reading runs, the chart docks: sticky at
+  // the bottom of the window (style.css, .docked), symbols only. Sticky and
+  // not fixed, so nothing below it moves when it docks, and it lets go on
+  // its own once the student scrolls past the full text. The scroller's
+  // scroll-padding takes its height, so the sentence the reader brings into
+  // view lands above the chart and not under it. The scroller is the
+  // lesson's <main>, not the window (style.css gives it overflow: auto), and
+  // padding the window instead left the sentence under the chart.
+  const soundChart = document.querySelector(".full-text .symbol-chart");
+  let dockWatch = null;
+
+  /** The element the page scrolls in: the nearest ancestor that scrolls. */
+  function scrollerOf(el) {
+    for (let node = el?.parentElement; node; node = node.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
+    }
+    return document.scrollingElement;
+  }
+  const dockScroller = soundChart ? scrollerOf(soundChart) : null;
+
+  function padForDock() {
+    const docked = soundChart?.classList.contains("docked");
+    dockScroller.style.scrollPaddingBottom = docked ? `${soundChart.offsetHeight + 8}px` : "";
+  }
+
+  function dockChart(on) {
+    if (!soundChart) return;
+    soundChart.classList.toggle("docked", on);
+    // Sticky measures from the scroller's padding edge, and <main> has 2rem
+    // of bottom padding: at `bottom: 0` the chart stopped that far above the
+    // window's edge, with the text showing through underneath it.
+    const below = on ? parseFloat(getComputedStyle(dockScroller).paddingBottom) || 0 : 0;
+    soundChart.style.bottom = on ? `${-below}px` : "";
+    padForDock();
+    // Opening or closing the chart while docked changes its height.
+    if (on && !dockWatch && window.ResizeObserver) {
+      dockWatch = new ResizeObserver(padForDock);
+      dockWatch.observe(soundChart);
+    } else if (!on && dockWatch) {
+      dockWatch.disconnect();
+      dockWatch = null;
+    }
+  }
+
   function endReading() {
     if (!reader) return;
     const { button, label } = reader;
     reader = null;
+    dockChart(false);
     button.textContent = label;
     button.classList.remove("loading");
     button.setAttribute("aria-pressed", "false");
@@ -742,6 +842,7 @@
     const fromTop = !from || (from.sentence === firstSentence && from.word === 0);
     const run = { button, label: button.textContent, fromTop };
     reader = run;
+    dockChart(true);
     button.classList.remove("failed");
     button.title = "Stop reading";
     button.setAttribute("aria-pressed", "true");

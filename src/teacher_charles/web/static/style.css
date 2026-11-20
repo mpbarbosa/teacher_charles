@@ -629,9 +629,49 @@ main.lesson .symbol-chart button.say.symbol { cursor: pointer; }
 main.lesson .symbol-chart button.say.symbol:hover { border-color: var(--accent); }
 main.lesson .symbol-chart button.say.symbol.playing { border-color: var(--accent); color: var(--accent); }
 main.lesson .symbol-chart .glyph { font-size: 1.35rem; line-height: 1.1; }
+/* The sounds of the word the reader is saying (lesson.js, markSounds). The
+   button form is named too: `button.say.symbol` above outranks a bare class. */
+main.lesson .symbol-chart .symbol.now-sound,
+main.lesson .symbol-chart button.say.symbol.now-sound {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 45%, var(--student));
+  box-shadow: 0 0 0 0.1rem color-mix(in srgb, var(--accent) 45%, transparent);
+}
 main.lesson .symbol-chart .example-ipa,
 main.lesson .symbol-chart .count { color: var(--muted); font-size: 0.72rem; }
 body.no-ipa .symbol-chart { display: none; }
+/* While the reader speaks, the chart docks at the bottom of the window,
+   symbols only, so its lit tiles stay in view (lesson.js, dockChart). */
+main.lesson .symbol-chart.docked {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.4rem 0 0.5rem;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -0.5rem 0.8rem -0.6rem rgb(0 0 0 / 0.35);
+}
+main.lesson .symbol-chart.docked .symbol-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+main.lesson .symbol-chart.docked .symbol-group,
+main.lesson .symbol-chart.docked .symbols { display: contents; }
+main.lesson .symbol-chart.docked h3,
+main.lesson .symbol-chart.docked .example,
+main.lesson .symbol-chart.docked .example-ipa,
+main.lesson .symbol-chart.docked .count { display: none; }
+main.lesson .symbol-chart.docked .symbol,
+main.lesson .symbol-chart.docked button.say.symbol {
+  min-width: 2.4rem;
+  padding: 0.2rem 0.3rem;
+}
+main.lesson .symbol-chart.docked .glyph { font-size: 1.1rem; }
 main.lesson .video .frame {
   position: relative;
   aspect-ratio: 16 / 9;

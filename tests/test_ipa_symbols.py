@@ -174,8 +174,9 @@ def _page(tmp_path, **overrides) -> str:
 def test_with_voice_each_sound_is_a_speaker_for_its_example(tmp_path):
     page = _page(tmp_path, phonetics_enabled=True, voice_enabled=True)
     assert 'class="symbol-chart"' in page
-    # "First paragraph..." has the vowel of "bird" in "First".
-    assert 'class="say symbol" data-say="bird"' in page
+    # "First paragraph..." has the vowel of "bird" in "First". The tile names
+    # its symbol, which is how the reader lights it (lesson.js, markSounds).
+    assert 'class="say symbol" data-symbol="ɜː" data-say="bird"' in page
     assert '<span class="glyph">ɜː</span>' in page
     # The example's IPA is espeak's, made for the page.
     assert "/bˈɜːd/" in page
@@ -184,7 +185,7 @@ def test_with_voice_each_sound_is_a_speaker_for_its_example(tmp_path):
 def test_without_voice_the_chart_shows_but_plays_nothing(tmp_path):
     page = _page(tmp_path, phonetics_enabled=True)
     assert 'class="symbol-chart"' in page
-    assert 'class="symbol"' in page
+    assert 'class="symbol" data-symbol="ɜː"' in page
     assert 'data-say="bird"' not in page
 
 
