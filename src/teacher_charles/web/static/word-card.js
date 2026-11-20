@@ -182,6 +182,26 @@
     return node;
   }
 
+  function link(text, url, title) {
+    const a = el("a", null, text);
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    if (title) a.title = title;
+    return a;
+  }
+
+  /** The word's page in Cambridge's English–Portuguese dictionary, one per lemma. */
+  function cambridge(entry) {
+    if (!entry.cambridge?.length) return [];
+    const line = el("p", "wc-more-at", "Cambridge Dictionary: ");
+    entry.cambridge.forEach((page, i) => {
+      if (i) line.append(" · ");
+      line.append(link(page.lemma, page.url, `“${page.lemma}” in English–Portuguese`));
+    });
+    return [line];
+  }
+
   /** The entry as DOM. Text only, never HTML: definitions come from a file. */
   function render(entry, written) {
     const parts = [];
@@ -189,6 +209,7 @@
       parts.push(el("div", "wc-head", null));
       parts[0].append(el("span", "wc-lemma", written));
       parts.push(el("p", "wc-miss", entry.note));
+      parts.push(...cambridge(entry));
       return parts;
     }
     for (const headword of entry.headwords) {
@@ -218,16 +239,12 @@
     if (entry.more) {
       parts.push(el("p", "wc-more", `+${entry.more} more sense${entry.more === 1 ? "" : "s"}`));
     }
+    parts.push(...cambridge(entry));
     parts.push(el("p", "wc-note", entry.note));
     const sources = el("p", "wc-src");
     entry.sources.forEach((source, i) => {
       if (i) sources.append(" · ");
-      const link = el("a", null, source.name);
-      link.href = source.url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.title = source.licence;
-      sources.append(link);
+      sources.append(link(source.name, source.url, source.licence));
     });
     parts.push(sources);
     return parts;
