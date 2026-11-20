@@ -293,10 +293,13 @@
     <ul class="rules">
       {% for card in lessons %}
       <li class="rule-card">
-        <div class="headline"><a href="/lessons/{{ card.slug }}">{{ card.title }}</a></div>
+        <div class="headline">
+          <a href="/lessons/{{ card.slug }}">{{ card.title }}</a>
+          {% if card.level_explained %}<a class="level-badge" href="/lessons/{{ card.slug }}#level" title="CEFR level of the text: see why">Level {{ card.cefr }}</a>
+          {%- else %}<span class="level-badge" title="CEFR level of the text">Level {{ card.cefr }}</span>{% endif %}
+        </div>
         <p>{{ card.summary }}</p>
         <div class="footnote">
-          <span class="rule">{{ card.cefr }}</span>
           <span class="category">{{ card.source.publication }}, {{ card.source.published }}</span>
         </div>
       </li>

@@ -638,6 +638,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "title": lesson.title,
             "summary": lesson.summary,
             "cefr": lesson.cefr,
+            # Whether the lesson says why it is at that level (LevelReading):
+            # the shelf links the badge to that section only when it exists.
+            "level_explained": lesson.level is not None,
             "source": lesson.source.model_dump(mode="json"),
         }
 
