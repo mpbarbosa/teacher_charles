@@ -1238,6 +1238,6 @@ def test_the_pitch_lesson_is_an_own_text_with_a_timed_plan():
     assert isinstance(lesson.source, OwnText)
     assert [s.aspect for s in lesson.ordered_sections()] == list(ASPECTS)
     assert lesson.words and lesson.sounds and lesson.questions and lesson.practice
-    assert [b.target for b in lesson.rehearsal] == [60, 45, 90, 75, 15, None, None]
-    assert sum(b.target or 0 for b in lesson.rehearsal) == 285  # 4:45
+    assert [b.target for b in lesson.rehearsal] == [75, 45, 90, 75, 15, None, None]
+    assert sum(b.target or 0 for b in lesson.rehearsal) == 300  # 5:00
     assert lesson.cited_words <= int(lesson.source.words * CITE_BUDGET)
