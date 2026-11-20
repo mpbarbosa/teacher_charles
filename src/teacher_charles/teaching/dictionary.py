@@ -118,6 +118,12 @@ PARTS_OF_SPEECH = {
     "r": "adverb",
 }
 
+# The order a word's parts of speech go on the card: WordNet's own (noun,
+# verb, adjective, adverb). Not the file's row order, which follows the
+# lexicon's ids and so the alphabet of their pos letter — that put *garden*
+# the adjective ("the usual type") above *garden* the noun.
+POS_ORDER = {"n": 0, "v": 1, "a": 2, "s": 2, "r": 3}
+
 # Goes with every result and the page prints it, for ``syntax.NOTE``'s reason.
 NOTE = "Senses in the dictionary's order: the card does not know which one this text means."
 
@@ -423,13 +429,22 @@ class Dictionary:
         exact: list[tuple[int, str]] = []
         for spelling in spellings(word):
             exact += conn.execute(
-                "SELECT w.id, w.lemma FROM form f JOIN word w ON w.id = f.word_id "
+                "SELECT w.id, w.lemma, w.pos FROM form f JOIN word w ON w.id = f.word_id "
                 "WHERE f.form = ? ORDER BY w.id",
                 (spelling,),
             ).fetchall()
-        # Stable: within each group the lexicon's own order stands.
-        exact.sort(key=lambda row: row[1] != written)
-        found = exact
+
+        # Case first — the text's own case, then lower case (a capital may
+        # only open the sentence), then any other — and then WordNet's order
+        # of parts of speech. Stable, so within those the lexicon's order
+        # stands.
+        def rank(row: tuple[int, str, str]) -> tuple[int, int]:
+            lemma, pos = row[1], row[2]
+            case = 0 if lemma == written else 1 if lemma == lemma.lower() else 2
+            return case, POS_ORDER.get(pos, len(POS_ORDER))
+
+        exact.sort(key=rank)
+        found = [(word_id, lemma) for word_id, lemma, _ in exact]
         for base, pos in base_forms(word):
             found += conn.execute(
                 "SELECT w.id, w.lemma FROM form f JOIN word w ON w.id = f.word_id "

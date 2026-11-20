@@ -1,26 +1,31 @@
 "use strict";
 
-// The card that opens when the pointer rests on a word of the speech — in a
-// lesson's full text, or in the quote beside one of its points: the word's
-// senses, each with an English definition, an example and the Portuguese for
-// it, from WordNet through POST /api/define (teaching/dictionary.py) — never
-// from the model.
+// The card that opens when the pointer rests on a word — of a lesson's full
+// text, of the quote beside one of its points, or of a chat message: the
+// word's senses, each with an English definition, an example and the
+// Portuguese for it, from WordNet through POST /api/define
+// (teaching/dictionary.py) — never from the model.
 //
-// Loaded only when the lookup file is on this machine (the template leaves
+// Loaded only when the lookup file is on this machine (the templates leave
 // the script out otherwise), so a hover never meets a 503 in normal use.
 //
-// Hover only, on purpose. A click on a word already starts the reading from
-// there (lesson.js), and a touch has no hover: a tap that both opened a card
-// and started the voice would do two things nobody asked for at once.
+// Hover only, on purpose. A click on a word of the full text already starts
+// the reading from there (lesson.js), and a touch has no hover: a tap that
+// both opened a card and started the voice would do two things nobody asked
+// for at once.
 
 (() => {
   const reading = document.getElementById("full-text-reading");
   const quotes = [...document.querySelectorAll(".point .from-text")];
-  if (!reading && !quotes.length) return;
-  const roots = [reading, ...quotes].filter(Boolean);
+  const transcript = document.getElementById("transcript");
+  const roots = [reading, ...quotes, transcript].filter(Boolean);
+  if (!roots.length) return;
   // Written words only: the full text's IPA line has `.w` words too, under
   // `.ipa`, and those are symbols, not words to look up.
   const WORD = ".sentence .w, .from-text .w";
+  // A chat message's own text. Not its IPA line, its corrections or the
+  // Structure panel: those are the app's words about the message.
+  const BUBBLE = ".turn .what";
 
   /**
    * Cuts a point's quote into one `.w` per word, as the template cuts the
@@ -49,11 +54,73 @@
   }
   quotes.forEach(cutIntoWords);
 
-  /** The word under `target`, if it is one of ours. */
-  function wordAt(target) {
-    const word = target?.closest?.(WORD);
-    return word && roots.some((root) => root.contains(word)) ? word : null;
+  // --- What is under the pointer ------------------------------------------ //
+  //
+  // A target is a word as a text range: `node` and `start` say which, `text`
+  // is what gets looked up, `range` is what the card is placed against, and
+  // `owner` is the element that carries `aria-describedby` while it is open.
+
+  function spanTarget(word) {
+    const range = document.createRange();
+    range.selectNodeContents(word);
+    return { node: word, start: 0, text: word.textContent.trim(), range, owner: word };
   }
+
+  function caretAt(x, y) {
+    if (document.caretPositionFromPoint) {
+      const p = document.caretPositionFromPoint(x, y);
+      return p && { node: p.offsetNode, offset: p.offset };
+    }
+    const r = document.caretRangeFromPoint?.(x, y);
+    return r && { node: r.startContainer, offset: r.startOffset };
+  }
+
+  /**
+   * The word of a chat message under the pointer, found from the caret.
+   *
+   * A message is not cut into spans like the lesson's text, and on purpose:
+   * the conversation is an `aria-live` region, and replacing a finished
+   * bubble's text with spans reads to a screen reader as new content — it
+   * would say Charles's whole answer a second time. Read from the caret,
+   * the bubble's DOM is never touched, and a reply still streaming in is as
+   * hoverable as a finished one.
+   */
+  function bubbleTarget(event) {
+    const what = event.target.closest?.(BUBBLE);
+    if (!what || !transcript?.contains(what)) return null;
+    const caret = caretAt(event.clientX, event.clientY);
+    if (!caret || caret.node.nodeType !== Node.TEXT_NODE || !what.contains(caret.node)) {
+      return null;
+    }
+    const text = caret.node.data;
+    let start = caret.offset;
+    let end = caret.offset;
+    while (start > 0 && !/\s/.test(text[start - 1])) start--;
+    while (end < text.length && !/\s/.test(text[end])) end++;
+    if (start === end) return null;
+    const range = document.createRange();
+    range.setStart(caret.node, start);
+    range.setEnd(caret.node, end);
+    // The caret snaps to the nearest position, also from the blank beside a
+    // short line or the space between two words: only a pointer actually on
+    // the word's glyphs counts.
+    const { clientX: x, clientY: y } = event;
+    const onIt = [...range.getClientRects()].some(
+      (r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom,
+    );
+    if (!onIt) return null;
+    return { node: caret.node, start, text: text.slice(start, end), range, owner: what };
+  }
+
+  function targetAt(event) {
+    const word = event.target.closest?.(WORD);
+    if (word && roots.some((root) => root.contains(word))) return spanTarget(word);
+    return bubbleTarget(event);
+  }
+
+  const same = (a, b) => Boolean(a && b && a.node === b.node && a.start === b.start);
+
+  // --- The card ------------------------------------------------------------ //
 
   // Long enough that sweeping the pointer across a line opens nothing; short
   // enough that resting on a word feels like asking.
@@ -74,11 +141,12 @@
   const looked = new Map();
   let openTimer = 0;
   let closeTimer = 0;
-  let current = null; // the .w the card is for, or is about to be for
+  let current = null; // the target the card is for, or is about to be for
 
   function lookup(text) {
     const key = text.toLowerCase();
     if (!looked.has(key)) {
+      // A body, not a query string: in the chat the word is the student's.
       const request = fetch("/api/define", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -158,8 +226,10 @@
    * holds the whole card, it takes the roomier one and scrolls inside: a card
    * running off the viewport hides the senses it was opened for.
    */
-  function place(word) {
-    const box = word.getBoundingClientRect();
+  function place(target) {
+    // The first line's box when the word wraps: the card belongs to where
+    // the word begins.
+    const box = target.range.getClientRects()[0] ?? target.range.getBoundingClientRect();
     card.style.left = "0px";
     card.style.top = "0px";
     card.style.maxHeight = "";
@@ -175,67 +245,82 @@
     card.style.top = `${below ? box.bottom + GAP_PX : box.top - GAP_PX - shown}px`;
   }
 
-  function show(word, parts) {
+  function show(target, parts) {
     card.replaceChildren(...parts);
     card.hidden = false;
-    place(word);
-    word.setAttribute("aria-describedby", card.id);
+    place(target);
+    target.owner.setAttribute("aria-describedby", card.id);
+  }
+
+  function forget() {
+    if (current) current.owner.removeAttribute("aria-describedby");
+    current = null;
   }
 
   function close() {
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
-    if (current) current.removeAttribute("aria-describedby");
-    current = null;
+    // Zero, not just cleared: `onMove` reads 0 as "no close pending".
+    closeTimer = 0;
+    forget();
     card.hidden = true;
   }
 
-  async function open(word) {
-    const written = word.textContent.trim();
-    // A dash or a lone quote is a `.w` too; there is nothing to look up.
-    if (!/[\p{L}\p{N}]/u.test(written)) return;
+  async function open(target) {
+    // A dash or a lone quote is a word to the page; there is nothing to look up.
+    if (!/[\p{L}\p{N}]/u.test(target.text)) return;
     let parts;
     try {
-      parts = render(await lookup(written), written);
+      parts = render(await lookup(target.text), target.text);
     } catch (error) {
       parts = [el("p", "wc-miss", `The dictionary did not answer: ${error.message}`)];
     }
     // The pointer may have moved on while the lookup ran.
-    if (current === word) show(word, parts);
+    if (same(current, target)) show(current, parts);
   }
 
-  function onOver(event) {
+  function leaveSoon() {
+    clearTimeout(openTimer);
+    if (current) closeTimer = setTimeout(close, CLOSE_DELAY_MS);
+  }
+
+  function onMove(event) {
     if (event.pointerType && event.pointerType !== "mouse" && event.pointerType !== "pen") return;
-    const word = wordAt(event.target);
-    if (!word) return;
+    const target = targetAt(event);
+    if (!target) {
+      // Off any word — between two, or past the end of a line.
+      if (current && !closeTimer) leaveSoon();
+      return;
+    }
     clearTimeout(closeTimer);
-    if (word === current) return;
+    closeTimer = 0;
+    if (same(target, current)) return;
     clearTimeout(openTimer);
     if (current && !card.hidden) {
       // Moving along the line with a card open: follow at once.
       card.hidden = true;
-      current.removeAttribute("aria-describedby");
-      current = word;
-      open(word);
+      forget();
+      current = target;
+      open(target);
       return;
     }
-    current = word;
-    openTimer = setTimeout(() => open(word), OPEN_DELAY_MS);
-  }
-
-  function onOut(event) {
-    const word = wordAt(event.target);
-    if (!word || word !== current || word.contains(event.relatedTarget)) return;
-    clearTimeout(openTimer);
-    closeTimer = setTimeout(close, CLOSE_DELAY_MS);
+    forget();
+    current = target;
+    openTimer = setTimeout(() => open(target), OPEN_DELAY_MS);
   }
 
   for (const root of roots) {
-    root.addEventListener("pointerover", onOver);
-    root.addEventListener("pointerout", onOut);
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerleave", () => {
+      closeTimer = 0;
+      leaveSoon();
+    });
   }
 
-  card.addEventListener("pointerenter", () => clearTimeout(closeTimer));
+  card.addEventListener("pointerenter", () => {
+    clearTimeout(closeTimer);
+    closeTimer = 0;
+  });
   card.addEventListener("pointerleave", () => {
     closeTimer = setTimeout(close, CLOSE_DELAY_MS);
   });
@@ -243,7 +328,16 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !card.hidden) close();
   });
-  // Fixed to the viewport, so it would drift off its word on scroll.
-  window.addEventListener("scroll", () => card.hidden || close(), { passive: true });
+  // Fixed to the viewport, so it would drift off its word on scroll — of the
+  // page or of the conversation, which scrolls on its own. A scroll does not
+  // bubble, hence the capture — which also hears the card's own scrolling,
+  // and reading the senses further down must not close it.
+  window.addEventListener(
+    "scroll",
+    // `instanceof Node`: a scroll can target `window`, which `contains` rejects.
+    (event) =>
+      card.hidden || (event.target instanceof Node && card.contains(event.target)) || close(),
+    { capture: true, passive: true },
+  );
   window.addEventListener("resize", () => card.hidden || close());
 })();
