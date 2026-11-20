@@ -629,6 +629,14 @@ main.lesson .symbol-chart button.say.symbol { cursor: pointer; }
 main.lesson .symbol-chart button.say.symbol:hover { border-color: var(--accent); }
 main.lesson .symbol-chart button.say.symbol.playing { border-color: var(--accent); color: var(--accent); }
 main.lesson .symbol-chart .glyph { font-size: 1.35rem; line-height: 1.1; }
+/* The sounds of the word the reader is saying (lesson.js, markSounds). The
+   button form is named too: `button.say.symbol` above outranks a bare class. */
+main.lesson .symbol-chart .symbol.now-sound,
+main.lesson .symbol-chart button.say.symbol.now-sound {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 45%, var(--student));
+  box-shadow: 0 0 0 0.1rem color-mix(in srgb, var(--accent) 45%, transparent);
+}
 main.lesson .symbol-chart .example-ipa,
 main.lesson .symbol-chart .count { color: var(--muted); font-size: 0.72rem; }
 body.no-ipa .symbol-chart { display: none; }
