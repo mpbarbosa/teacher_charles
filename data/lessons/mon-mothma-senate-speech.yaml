@@ -182,6 +182,58 @@ sections:
           pitch and volume — the same turn from formal to blunt, heard in the
           voice instead of the words.
 
+# Why the label above is C1. Measured 2026-11-20 on this machine's copy of the
+# speech: 266 words, 22 sentences, Flesch-Kincaid grade 6.2, reading ease 72,
+# and teaching/level.py says B2 for the whole text and for each paragraph. No
+# citations here: the budget is 25 of 26 words, so the words are named in prose.
+level:
+  summary: >-
+    C1. Measured by sentence length and word length alone, the speech reads
+    like B2. What makes it C1 is what those measures cannot see: rare words,
+    figures of speech, a literary structure, and a change of register in the
+    middle of a sentence. A few words are C2, but too few to make the whole
+    text C2.
+  points:
+    - heading: The surface says B2
+      body: >-
+        Sentences average 12 words, and the longest has 29. The Flesch-Kincaid
+        grade is 6, which is plain English. The app's own level rubric, the one
+        that rates your messages, places the speech at B2, paragraph by
+        paragraph. Read only for its shape, this is not a hard text.
+    - heading: The vocabulary says C1, with some C2 words
+      body: >-
+        Constituents, uphold, vouch for, credibility, unprovoked, exiled and
+        genocide are C1 words. Cleave, cauldron used as a metaphor, and abyss
+        are C2. They are rare in everyday English, and cleave has two opposite
+        meanings. Most of the C2 words are in the first paragraph, where she
+        speaks the language of institutions.
+    - heading: One structure is literary, and one is formal
+      body: >-
+        A concession with the verb first, the one the grammar section explains,
+        is rare in speech and almost never taught before C1. A passive followed
+        by an infinitive, in the line about what is said and what is known,
+        belongs to formal writing. Most other sentences are simple or use
+        structures from B1 and B2.
+    - heading: The meaning is figurative
+      body: >-
+        A chamber that is a cauldron, a distance that becomes an abyss, the
+        death of truth, a monster with an appetite. To follow the argument you
+        have to read every one of these images, and recognising implied meaning
+        is how the CEFR describes C1 reading. A B2 reader understands each word
+        and can still miss the point.
+    - heading: Listening is harder than reading
+      body: >-
+        The climax is shouted, fast, over interruptions, and the register drops
+        from formal to blunt in the middle of a sentence. Understanding it from
+        the video alone asks more than reading it. Read first, then watch.
+    - heading: Why not C2
+      body: >-
+        The C2 words are few, the text is short, and the argument is clear once
+        the images are understood. A C1 reader with the notes on this page can
+        follow everything. The speech is a good stretch for a B2 reader, and
+        for a B1 reader it is a lesson to read with the analysis beside it, not
+        a text to read alone.
+
 words:
   - word: cleave
     gloss: To stick closely to something or someone.

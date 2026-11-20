@@ -198,6 +198,23 @@ class Section(BaseModel):
     points: list[Point] = Field(min_length=1)
 
 
+class LevelReading(BaseModel):
+    """Why the lesson carries the CEFR label it does.
+
+    The label alone is a claim; this is the evidence for it. A text's level is not one
+    number: the surface (sentence length, word length) can read a step below
+    what its vocabulary and figures of speech ask of the reader, and
+    ``teaching/level.py`` sees only the surface, so the curator says which
+    measures were taken and which way each one pulls.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # One or two sentences: the verdict and the reason it is not a step either side.
+    summary: str = Field(min_length=1)
+    points: list[Point] = Field(min_length=1)
+
+
 class WordNote(BaseModel):
     """A word from the text worth learning, with what a Brazilian reader needs."""
 
@@ -272,6 +289,8 @@ class Lesson(BaseModel):
     # The work performed, when an official recording exists. Optional.
     video: Video | None = None
     sections: list[Section] = Field(min_length=1)
+    # Why ``cefr`` is what it is. Optional; its citations count in the budget.
+    level: LevelReading | None = None
     words: list[WordNote] = Field(default_factory=list)
     sounds: list[SoundNote] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)
@@ -285,7 +304,10 @@ class Lesson(BaseModel):
 
     @property
     def cited_words(self) -> int:
-        return sum(word_count(c) for s in self.sections for p in s.points for c in p.cites)
+        points = [p for s in self.sections for p in s.points]
+        if self.level:
+            points += self.level.points
+        return sum(word_count(c) for p in points for c in p.cites)
 
     def ordered_sections(self) -> list[Section]:
         return sorted(self.sections, key=lambda s: ASPECTS.index(s.aspect))
