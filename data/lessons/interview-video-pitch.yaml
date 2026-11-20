@@ -319,6 +319,13 @@ sounds:
     trap: Stressed on the second syllable, and it ends in the "ch" of "church".
   - word: customer
     trap: Stressed on the first syllable, and no vowel added after the final "r".
+  # Not in the pitch: it names the mode the pitch is practised in.
+  - word: rehearsal
+    trap: >-
+      Not in the pitch, but it names how you practise it. Stressed on the
+      second syllable, which sounds like "her", not "hear". The first "r" is
+      the English one, not the Portuguese "r" of "rato", which would make it
+      "hehearsal"; and the final "l" is a real "l".
 
 questions:
   - prompt: How many syllables does "checked" have?
