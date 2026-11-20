@@ -146,5 +146,9 @@
      dependencia. #}
   {% if voice.enabled %}<script src="/static/voice.js"></script>{% endif %}
   <script src="/static/app.js"></script>
+  {# The word card under the pointer (word-card.js), the lesson pages' own
+     script: it reads the messages' words from the caret and never rewrites a
+     bubble, so app.js and the aria-live region do not know it is there. #}
+  {% if word_cards %}<script src="/static/word-card.js" defer></script>{% endif %}
 </body>
 </html>

@@ -62,6 +62,9 @@ WORDS = [
     BuiltWord("silenced", "s", senses=(sense("reduced to silence"),)),
     BuiltWord("silence", "v", senses=(sense("cause to be quiet", "silenciar"),)),
     BuiltWord("pre-war", "a", senses=(sense("existing before a war", "pré-guerra"),)),
+    # The lexicon's ids sort the adjective first; the card must not.
+    BuiltWord("garden", "a", senses=(sense("the usual or familiar type"),)),
+    BuiltWord("garden", "n", senses=(sense("a plot of ground for plants", "jardim"),)),
     # A word with no senses is not written at all.
     BuiltWord("empty", "n"),
 ]
@@ -157,6 +160,10 @@ def test_a_capital_in_the_text_puts_its_own_case_first_and_keeps_both(dictionary
 def test_a_lower_case_word_is_never_a_name_or_a_symbol(dictionary):
     assert blocks(dictionary.lookup("nation’s")) == [("nation", "n")]
     assert blocks(dictionary.lookup("as")) == [("as", "r")]
+
+
+def test_parts_of_speech_come_in_wordnets_order_not_the_files(dictionary):
+    assert blocks(dictionary.lookup("garden")) == [("garden", "n"), ("garden", "a")]
 
 
 def test_a_hyphenated_word_is_found(dictionary):
@@ -356,6 +363,32 @@ def test_the_card_script_cuts_the_point_quotes_into_words():
     script = (PACKAGE_ROOT / "web" / "static" / "word-card.js").read_text(encoding="utf-8")
     assert '".point .from-text"' in script
     assert ".from-text .w" in script
+
+
+def test_the_conversation_loads_the_card_when_the_file_is_there(tmp_path, lookup_path):
+    settings = settings_for(tmp_path, dictionary_path=lookup_path)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get("/").text
+    assert "/static/word-card.js" in page
+    # After app.js: the transcript it hooks into is on the page by then.
+    assert page.index("/static/app.js") < page.index("/static/word-card.js")
+
+
+def test_without_the_file_the_conversation_has_no_card(tmp_path):
+    with TestClient(create_app(settings_for(tmp_path), provider=FakeProvider())) as c:
+        assert "/static/word-card.js" not in c.get("/").text
+
+
+def test_the_card_reads_the_messages_from_the_caret_and_never_rewrites_them():
+    # The conversation is an aria-live region: cutting a finished bubble into
+    # spans would read to a screen reader as new content, and it would say
+    # Charles's answer twice. The words of a message are found from the
+    # caret instead, and the bubble's text is never replaced.
+    script = (PACKAGE_ROOT / "web" / "static" / "word-card.js").read_text(encoding="utf-8")
+    assert '".turn .what"' in script
+    assert "caretPositionFromPoint" in script
+    assert "cutIntoWords(what" not in script
+    assert "quotes.forEach(cutIntoWords)" in script
 
 
 def test_the_dictionary_does_not_decide_the_health_status(tmp_path, lookup_path):

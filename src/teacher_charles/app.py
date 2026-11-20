@@ -816,6 +816,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "voice": voice_payload(),
                 "phonetics": phonetics_payload(),
                 "syntax": syntax_payload(),
+                # The word card on the messages, as on a lesson's text: only
+                # with the lookup file fetched (teaching/dictionary.py).
+                "word_cards": dictionary_on_screen(app.state.dictionary),
                 # A saudação com a transcrição junto: a tela vazia também é
                 # inglês escrito, e a linha vale ali como em qualquer outra.
                 "greeting": {"content": GREETING, "ipa": spell(GREETING)},
