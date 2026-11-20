@@ -56,6 +56,9 @@
     </p>
     {% if voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
     <script src="/static/phonetics.js" defer></script>
+    {# The word card on the typed words (word-card.js): it reads them from the
+       caret, so phonetics.js and the aria-live result never know it is there. #}
+    {% if word_cards %}<script src="/static/word-card.js" defer></script>{% endif %}
     {% else %}
     <p class="lead empty">
       The IPA is off on this server. Start Charles without

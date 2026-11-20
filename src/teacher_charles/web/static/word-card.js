@@ -1,8 +1,8 @@
 "use strict";
 
 // The card that opens when the pointer rests on a word — of a lesson's full
-// text, of the quote beside one of its points, or of a chat message: the
-// word's senses, each with an English definition, an example and the
+// text, of the quote beside one of its points, of a chat message, or of a
+// sentence spelled out on the phonetics page: the word's senses, each with an English definition, an example and the
 // Portuguese for it, from WordNet through POST /api/define
 // (teaching/dictionary.py) — never from the model.
 //
@@ -18,14 +18,18 @@
   const reading = document.getElementById("full-text-reading");
   const quotes = [...document.querySelectorAll(".point .from-text")];
   const transcript = document.getElementById("transcript");
-  const roots = [reading, ...quotes, transcript].filter(Boolean);
+  const spelled = document.getElementById("phonetics-result");
+  const roots = [reading, ...quotes, transcript, spelled].filter(Boolean);
   if (!roots.length) return;
   // Written words only: the full text's IPA line has `.w` words too, under
   // `.ipa`, and those are symbols, not words to look up.
   const WORD = ".sentence .w, .from-text .w";
-  // A chat message's own text. Not its IPA line, its corrections or the
-  // Structure panel: those are the app's words about the message.
-  const BUBBLE = ".turn .what";
+  // Text read from the caret (see `caretTarget`): a chat message's own text,
+  // and on the phonetics page the typed words — over their IPA when the
+  // sentence is paired, or as one line when it is too long to pair. Never
+  // the IPA, the corrections or the Structure panel: those are the app's
+  // words about the text, not the text.
+  const CARET_TEXT = ".turn .what, #phonetics-result .word, #phonetics-result .said";
 
   /**
    * Cuts a point's quote into one `.w` per word, as the template cuts the
@@ -76,18 +80,23 @@
   }
 
   /**
-   * The word of a chat message under the pointer, found from the caret.
+   * The word under the pointer in a chat message or a spelled-out sentence,
+   * found from the caret.
    *
-   * A message is not cut into spans like the lesson's text, and on purpose:
-   * the conversation is an `aria-live` region, and replacing a finished
-   * bubble's text with spans reads to a screen reader as new content — it
-   * would say Charles's whole answer a second time. Read from the caret,
-   * the bubble's DOM is never touched, and a reply still streaming in is as
+   * That text is not cut into spans like the lesson's, and on purpose: the
+   * conversation and the phonetics result are both `aria-live` regions, and
+   * replacing their text with spans reads to a screen reader as new content —
+   * it would say Charles's whole answer a second time. Read from the caret,
+   * their DOM is never touched, and a reply still streaming in is as
    * hoverable as a finished one.
+   *
+   * The caret also gets the phonetics page right where a span could not: a
+   * `.word` there holds every word espeak ran together (*in the* over one
+   * IPA word), and the caret picks the one under the pointer, not the pair.
    */
-  function bubbleTarget(event) {
-    const what = event.target.closest?.(BUBBLE);
-    if (!what || !transcript?.contains(what)) return null;
+  function caretTarget(event) {
+    const what = event.target.closest?.(CARET_TEXT);
+    if (!what || !roots.some((root) => root !== what && root.contains(what))) return null;
     const caret = caretAt(event.clientX, event.clientY);
     if (!caret || caret.node.nodeType !== Node.TEXT_NODE || !what.contains(caret.node)) {
       return null;
@@ -109,13 +118,16 @@
       (r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom,
     );
     if (!onIt) return null;
-    return { node: caret.node, start, text: text.slice(start, end), range, owner: what };
+    // On the phonetics page the word's IPA sits right under it, and it is
+    // what the page is for: a card opening below the word would cover it.
+    const clear = what.closest("#phonetics-result .pair");
+    return { node: caret.node, start, text: text.slice(start, end), range, owner: what, clear };
   }
 
   function targetAt(event) {
     const word = event.target.closest?.(WORD);
     if (word && roots.some((root) => root.contains(word))) return spanTarget(word);
-    return bubbleTarget(event);
+    return caretTarget(event);
   }
 
   const same = (a, b) => Boolean(a && b && a.node === b.node && a.start === b.start);
@@ -229,7 +241,12 @@
   function place(target) {
     // The first line's box when the word wraps: the card belongs to where
     // the word begins.
-    const box = target.range.getClientRects()[0] ?? target.range.getBoundingClientRect();
+    const first = target.range.getClientRects()[0] ?? target.range.getBoundingClientRect();
+    // `clear`: an element the card must not cover either, below the word.
+    const bottom = target.clear
+      ? Math.max(first.bottom, target.clear.getBoundingClientRect().bottom)
+      : first.bottom;
+    const box = { left: first.left, top: first.top, bottom };
     card.style.left = "0px";
     card.style.top = "0px";
     card.style.maxHeight = "";

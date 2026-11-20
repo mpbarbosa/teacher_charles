@@ -871,6 +871,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # without one, and a button that always fails is worse than none.
                 "voice": voice_payload(),
                 "max_chars": PHONETICS_MAX_CHARS,
+                # The word card on the typed words, as on a lesson's text:
+                # only with the lookup file fetched (teaching/dictionary.py).
+                "word_cards": dictionary_on_screen(app.state.dictionary),
             },
         )
 

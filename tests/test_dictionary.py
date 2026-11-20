@@ -6,6 +6,7 @@ fetch script uses — so nothing here needs WordNet or the network.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -385,10 +386,40 @@ def test_the_card_reads_the_messages_from_the_caret_and_never_rewrites_them():
     # Charles's answer twice. The words of a message are found from the
     # caret instead, and the bubble's text is never replaced.
     script = (PACKAGE_ROOT / "web" / "static" / "word-card.js").read_text(encoding="utf-8")
-    assert '".turn .what"' in script
+    caret_text = re.search(r'const CARET_TEXT = "([^"]+)"', script).group(1).split(", ")
+    assert ".turn .what" in caret_text
     assert "caretPositionFromPoint" in script
     assert "cutIntoWords(what" not in script
     assert "quotes.forEach(cutIntoWords)" in script
+
+
+def test_the_phonetics_page_loads_the_card_when_the_file_is_there(tmp_path, lookup_path):
+    settings = settings_for(tmp_path, dictionary_path=lookup_path, phonetics_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        page = c.get("/phonetics").text
+    assert "/static/word-card.js" in page
+    assert 'id="phonetics-result"' in page
+
+
+def test_without_the_file_the_phonetics_page_has_no_card(tmp_path):
+    settings = settings_for(tmp_path, phonetics_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        assert "/static/word-card.js" not in c.get("/phonetics").text
+
+
+def test_the_phonetics_page_is_read_from_the_caret_typed_words_only():
+    # The result is aria-live like the conversation, and a `.word` there can
+    # hold several words espeak ran together: the caret picks the one under
+    # the pointer. The IPA under them is symbols, never a word to look up.
+    script = (PACKAGE_ROOT / "web" / "static" / "word-card.js").read_text(encoding="utf-8")
+    caret_text = re.search(r'const CARET_TEXT = "([^"]+)"', script).group(1).split(", ")
+    assert "#phonetics-result .word" in caret_text
+    assert "#phonetics-result .said" in caret_text
+    assert not any("ipa" in selector for selector in caret_text)
+    phonetics_js = (PACKAGE_ROOT / "web" / "static" / "phonetics.js").read_text(encoding="utf-8")
+    # The class names the selectors rely on, as phonetics.js draws them.
+    assert 'el("span", "word", pair.text)' in phonetics_js
+    assert 'el("p", "said", sentence.text)' in phonetics_js
 
 
 def test_the_dictionary_does_not_decide_the_health_status(tmp_path, lookup_path):
