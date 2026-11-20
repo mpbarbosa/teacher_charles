@@ -762,10 +762,59 @@
     requestAnimationFrame(frame);
   }
 
+  // ## The chart beside the voice
+  //
+  // The sound chart sits below the whole text, and the reader keeps the
+  // sentence it is saying on screen, so while it read the tiles lit up where
+  // nobody could see them. While a reading runs, the chart docks: sticky at
+  // the bottom of the window (style.css, .docked), symbols only. Sticky and
+  // not fixed, so nothing below it moves when it docks, and it lets go on
+  // its own once the student scrolls past the full text. The scroller's
+  // scroll-padding takes its height, so the sentence the reader brings into
+  // view lands above the chart and not under it. The scroller is the
+  // lesson's <main>, not the window (style.css gives it overflow: auto), and
+  // padding the window instead left the sentence under the chart.
+  const soundChart = document.querySelector(".full-text .symbol-chart");
+  let dockWatch = null;
+
+  /** The element the page scrolls in: the nearest ancestor that scrolls. */
+  function scrollerOf(el) {
+    for (let node = el?.parentElement; node; node = node.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
+    }
+    return document.scrollingElement;
+  }
+  const dockScroller = soundChart ? scrollerOf(soundChart) : null;
+
+  function padForDock() {
+    const docked = soundChart?.classList.contains("docked");
+    dockScroller.style.scrollPaddingBottom = docked ? `${soundChart.offsetHeight + 8}px` : "";
+  }
+
+  function dockChart(on) {
+    if (!soundChart) return;
+    soundChart.classList.toggle("docked", on);
+    // Sticky measures from the scroller's padding edge, and <main> has 2rem
+    // of bottom padding: at `bottom: 0` the chart stopped that far above the
+    // window's edge, with the text showing through underneath it.
+    const below = on ? parseFloat(getComputedStyle(dockScroller).paddingBottom) || 0 : 0;
+    soundChart.style.bottom = on ? `${-below}px` : "";
+    padForDock();
+    // Opening or closing the chart while docked changes its height.
+    if (on && !dockWatch && window.ResizeObserver) {
+      dockWatch = new ResizeObserver(padForDock);
+      dockWatch.observe(soundChart);
+    } else if (!on && dockWatch) {
+      dockWatch.disconnect();
+      dockWatch = null;
+    }
+  }
+
   function endReading() {
     if (!reader) return;
     const { button, label } = reader;
     reader = null;
+    dockChart(false);
     button.textContent = label;
     button.classList.remove("loading");
     button.setAttribute("aria-pressed", "false");
@@ -793,6 +842,7 @@
     const fromTop = !from || (from.sentence === firstSentence && from.word === 0);
     const run = { button, label: button.textContent, fromTop };
     reader = run;
+    dockChart(true);
     button.classList.remove("failed");
     button.title = "Stop reading";
     button.setAttribute("aria-pressed", "true");
