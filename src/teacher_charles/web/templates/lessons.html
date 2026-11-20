@@ -29,6 +29,9 @@
     The reference for the symbols themselves: every IPA line on this page is
     espeak's, and this chart says what each symbol sounds like, with audio.
   #}
+  {% macro clock(seconds) -%}
+    {{ "%d:%02d"|format(seconds // 60, seconds % 60) }}
+  {%- endmacro %}
   {% macro ipa_chart() -%}
     <p class="ipa-chart">New to a symbol? <a href="https://www.ipachart.com/" target="_blank" rel="noopener noreferrer">Interactive IPA chart</a>: click any symbol to hear it.</p>
   {%- endmacro %}
@@ -51,7 +54,19 @@
     #}
     <p class="lead">{{ lesson.summary }}</p>
 
+    {#
+      An own text (OwnText) was never published, so there is no link to give:
+      the copy in corpus/ is the only place it exists, and without it the page
+      says where to put it instead of pointing at nothing.
+    #}
     <section class="source">
+      {% if lesson.source.kind == "own" %}
+      <div><strong>Your own text:</strong> {{ lesson.source.title }}</div>
+      <div class="byline">
+        {{ lesson.source.words }} words · level {{ lesson.cefr }}
+      </div>
+      {% if not full_text %}<div class="byline own-text-missing">This lesson reads a text of your own, which is not in the repository. Save yours as <code>corpus/lessons/{{ lesson.slug }}.txt</code>, a blank line between blocks, and it appears here.</div>{% endif %}
+      {% else %}
       <div><strong>{{ "Source:" if full_text else "Read the text first:" }}</strong>
         <a href="{{ lesson.source.url }}" target="_blank" rel="noopener noreferrer">{{ lesson.source.title }}</a>
       </div>
@@ -60,6 +75,7 @@
         · {{ lesson.source.words }} words · level {{ lesson.cefr }}
       </div>
       {% if lesson.source.work %}<div class="byline">{{ lesson.source.work }}</div>{% endif %}
+      {% endif %}
     </section>
 
     {% if lesson.video %}
@@ -125,7 +141,55 @@
       <h2>Full text{% if voice and voice.enabled %}
         <button type="button" class="read-aloud" data-voice="{{ reader_voice }}" aria-label="Listen to the full text" title="Listen to the full text">🔊 Listen</button>{% endif %}{% if has_ipa %}
         <button type="button" class="show-ipa" aria-pressed="false" aria-controls="full-text-reading" title="Show how the text is pronounced, in IPA">/ə/ Phonetics</button>
-        <button type="button" class="ipa-layout" aria-pressed="false" aria-controls="full-text-reading" title="Show the IPA under each line instead of after each paragraph" hidden>⇅ Between lines</button>{% endif %}</h2>
+        <button type="button" class="ipa-layout" aria-pressed="false" aria-controls="full-text-reading" title="Show the IPA under each line instead of after each paragraph" hidden>⇅ Between lines</button>{% endif %}{% if rehearsal %}
+        <button type="button" class="rehearse" aria-pressed="false" aria-controls="rehearsal" title="Practise saying the text aloud, block by block, against the clock">⏱ Rehearse</button>{% endif %}</h2>
+      {#
+        The rehearsal (rehearsal.js): the copy as blocks to say aloud, one per
+        paragraph, with a pace, a stopwatch per block and a run-through. What
+        the lesson knows about each block -- title, target -- is the YAML's
+        `rehearsal`; the cue words are the copy's (teaching/lessons.py,
+        RehearsalBlock). Nothing here reaches the server: the times stay in
+        this browser and the recordings in this page's memory.
+      #}
+      {% if rehearsal %}
+      <div class="rehearsal" id="rehearsal" data-slug="{{ lesson.slug }}" data-target="{{ rehearsal.target }}" hidden>
+        <div class="rehearsal-bar">
+          <label class="pace">Pace
+            <input type="range" class="pace-input" min="80" max="180" step="5" value="110" aria-label="Speaking pace, in words per minute">
+            <span class="pace-value">110 wpm</span></label>
+          <span class="stat">Estimated <b class="total-est">–</b>{% if rehearsal.target %} / target {{ clock(rehearsal.target) }}{% endif %}</span>
+          <span class="stat">Timed <b class="total-timed">–</b></span>
+          <button type="button" class="run-start" title="Say every {{ 'timed ' if rehearsal.timed }}block in a row against one clock">▶ Run-through</button>
+          <label class="cues-toggle"><input type="checkbox" class="cues-only"> Hide the text, show the cue words</label>
+        </div>
+        {#- Bar and panel stick to the top of the window together, so the
+            clock and the cue words stay in view through the whole text. -#}
+        <section class="run-panel" aria-live="polite" hidden>
+          <div class="run-head">
+            <div>
+              <div class="byline">Run-through, block <span class="run-index">1</span> of <span class="run-count">1</span></div>
+              <div class="run-name headline">–</div>
+            </div>
+            <div class="run-clock">0:00</div>
+          </div>
+          <div class="run-cues"></div>
+          <div class="run-tools">
+            <button type="button" class="run-next">Next block (Space)</button>
+            <button type="button" class="run-stop">Stop (Esc)</button>
+          </div>
+        </section>
+      </div>
+      <div class="rehearsal-notes" hidden>
+        <p class="howto">Each block is a paragraph. Say it aloud and time it, or run through {{ "the timed blocks" if rehearsal.timed else "all of them" }} in a row: <kbd>Space</kbd> moves to the next block, <kbd>Esc</kbd> stops. Your times stay in this browser. A recording stays in this page's memory: it is never sent anywhere, and it is gone when you leave the page.</p>
+        {% if rehearsal.plan_set_aside %}<p class="trap">The lesson plans {{ rehearsal.planned_blocks }} blocks and your copy has {{ rehearsal.blocks|length }} paragraphs, so the blocks are your paragraphs, with no targets.</p>{% endif %}
+        {% if rehearsal.cues_set_aside %}<p class="trap">Your cue file has more lines than the copy has paragraphs, so the cue words are each sentence's first words instead.</p>{% endif %}
+        <details class="run-history">
+          <summary>Run-throughs</summary>
+          <div class="table-wrap"><table class="runs"></table></div>
+          <button type="button" class="runs-clear">Clear the run-throughs</button>
+        </details>
+      </div>
+      {% endif %}
       {#
         The IPA rides in the page, hidden, one line under each paragraph: the
         button only shows it, so it costs no request (full-text.js). It is
@@ -138,7 +202,22 @@
         use, and `data-ipa` names the IPA words (`data-t`) it is part of.
       #}
       <div class="reading" id="full-text-reading">
-        {% for paragraph in full_text_sentences %}{% set p = loop.index0 %}<p>
+        {% for paragraph in full_text_sentences %}{% set p = loop.index0 %}{% if rehearsal %}{% set b = rehearsal.blocks[p] %}
+        {#- A block's head sits right before its paragraph, drawn only in rehearsal. -#}
+        <div class="rehearsal-block" data-block="{{ p }}" data-title="{{ b.title }}" data-words="{{ b.words }}"{% if b.target %} data-target="{{ b.target }}"{% endif %}>
+          <div class="block-title"><strong>{{ b.title }}</strong>
+            <span class="block-stat">{{ b.words }} words · about <b class="est">–</b>{% if b.target %} / target {{ clock(b.target) }}{% else %} · untimed{% endif %}</span></div>
+          <div class="block-tools">
+            <button type="button" class="time-block" aria-pressed="false" title="Start the stopwatch, say the block, stop it">⏱ Time it</button>
+            <span class="block-clock">0:00</span>
+            <span class="laps">not timed yet</span>
+            <button type="button" class="record-block" aria-pressed="false" title="Record yourself saying this block, to play it back">🎙 Record yourself</button>
+            <span class="block-take"></span>{% if voice and voice.enabled %}
+            <button type="button" class="read-block" data-s="{{ b.first }}" data-voice="{{ reader_voice }}" title="Hear this block read aloud">🔊 Hear it</button>{% endif %}
+          </div>
+          <div class="block-cues" title="{{ 'Your cue words, from your cue file' if b.own_cues else 'The first words of each sentence' }}">{% for cue in b.cues %}<span class="cue">{{ cue }}</span>{% endfor %}</div>
+        </div>
+        {%- endif %}<p>
           {%- for s in paragraph %}<span class="sentence" data-s="{{ p }}.{{ loop.index0 }}">
             {%- for w in s.words %}<span class="w" data-w="{{ loop.index0 }}"{% if s.ipa_of %} data-ipa="{{ s.ipa_of[loop.index0] }}"{% endif %}>{{ w }}</span>{{ " " if not loop.last }}{% endfor -%}
           </span>{{ " " if not loop.last }}{% endfor -%}
@@ -300,7 +379,7 @@
         </div>
         <p>{{ card.summary }}</p>
         <div class="footnote">
-          <span class="category">{{ card.source.publication }}, {{ card.source.published }}</span>
+          <span class="category">{% if card.source.kind == "own" %}Your own text{% else %}{{ card.source.publication }}, {{ card.source.published }}{% endif %}</span>
         </div>
       </li>
       {% endfor %}
@@ -312,6 +391,8 @@
   {% if lesson and voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
   {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
+  {# The rehearsal needs no voice and no IPA: only the copy, and the browser's own clock and microphone. #}
+  {% if lesson and rehearsal %}<script src="/static/rehearsal.js" defer></script>{% endif %}
   {#
     The word card (word-card.js) on every lesson page once the lookup file
     is fetched: without it every hover would be a 503. Not only with a full

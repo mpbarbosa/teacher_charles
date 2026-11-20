@@ -65,7 +65,9 @@ from .teaching.lessons import (
     LocalText,
     load_shelf,
     place_cites,
+    read_local_cues,
     read_local_text,
+    rehearsal_plan,
 )
 from .teaching.level import LevelTracker
 from .teaching.level import partial_name as level_partial_name
@@ -716,6 +718,45 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             out.append(row)
         return out
 
+    def rehearsal_view(
+        lesson: Lesson, sentences: list[list[dict[str, Any]]]
+    ) -> dict[str, Any] | None:
+        """The copy as blocks to rehearse aloud, or ``None`` without a copy.
+
+        Cut from the sentences the full text already shows, so a block is a
+        paragraph of that text and its word count is the one the page reads.
+        The cue words are the copy's (``read_local_cues``), so this is here
+        with the copy and never in ``lesson_payload``.
+        """
+        if not sentences:
+            return None
+        plan = rehearsal_plan(
+            lesson,
+            [[s["text"] for s in paragraph] for paragraph in sentences],
+            read_local_cues(settings.resolved_corpus_dir, lesson),
+        )
+        return {
+            "blocks": [
+                {
+                    "paragraph": b.paragraph,
+                    "title": b.title,
+                    "target": b.target,
+                    "words": b.words,
+                    "cues": list(b.cues),
+                    "own_cues": b.own_cues,
+                    # The sentence the block's "Hear it" starts the reader on.
+                    "first": f"{b.paragraph}.0",
+                }
+                for b in plan.blocks
+            ],
+            "planned": plan.planned,
+            "plan_set_aside": plan.plan_set_aside,
+            "planned_blocks": len(lesson.rehearsal or []),
+            "cues_set_aside": plan.cues_set_aside,
+            "timed": len(plan.timed),
+            "target": plan.target,
+        }
+
     def symbol_chart(sentences: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
         """The IPA symbols the full text uses, grouped, each with its example.
 
@@ -924,6 +965,8 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 # Beside each point, the sentence of the copy it quotes. From
                 # the copy, so it is here and not in lesson_payload either.
                 "point_passages": point_passages(lesson, full_text),
+                # The copy as blocks to rehearse: from the copy, so here too.
+                "rehearsal": rehearsal_view(lesson, sentences),
                 # The speaker beside each word asks /api/tts, which answers
                 # 503 with voice off — so with voice off there is no button.
                 "voice": voice_payload(),

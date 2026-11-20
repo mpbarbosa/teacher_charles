@@ -1414,6 +1414,22 @@ from the other side: here the **presence** of a complaint is not a fail. The
 student's own accent through the same line is the plano 1.5 §2.3 debt, still
 unmeasured.
 
+**A lesson can be about the student's own text, and any copy can be
+rehearsed.** It came from a student preparing a five-minute recorded pitch,
+and it took two changes, recorded in `docs/adr/0001-own-text-and-rehearsal-mode.md`.
+`OwnText` is a source with no URL, for a text nobody published; the text lives
+only in `corpus/`, and the citation budget holds as for any source. The
+rehearsal mode sits on the full text: a pace in words per minute and the
+estimate it gives, a stopwatch per paragraph that keeps its last five times, a
+run-through against one clock (Space for the next block, Esc to stop) with its
+history, the text hidden behind cue words, and a recording of the student's
+voice for playback. The YAML's `rehearsal` gives each paragraph a title and a
+target; the cue words stay beside the copy, because they are the text's own
+words. Nothing of it reaches the server — times in the browser, recordings in
+the page's memory — and it is not E11 for the microphone's reason above: no
+recognizer, no score. The first such lesson is `interview-video-pitch`, five
+blocks to 4:45.
+
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela
 entrou com a E9 ainda aberta, e a §7 registra o que isso custou: a fonte

@@ -19,14 +19,20 @@ from teacher_charles.teaching.contrastive import load_base as load_contrastive
 from teacher_charles.teaching.lessons import (
     ASPECTS,
     CITE_BUDGET,
+    CUE_OPENING_WORDS,
     MAX_CITE_WORDS,
     Lesson,
     LessonError,
+    OwnText,
     load_lessons,
     load_shelf,
+    local_cues_path,
     local_text_path,
     place_cites,
+    read_local_cues,
     read_local_text,
+    rehearsal_plan,
+    sentence_openings,
     word_count,
 )
 from teacher_charles.teaching.vocabulary import load_base as load_vocabulary
@@ -965,3 +971,273 @@ def test_without_voice_no_word_promises_a_reading(tmp_path):
         page = c.get(f"/lessons/{SLUG}").text
     assert 'id="full-text"' in page
     assert "read-hint" not in page
+
+
+# --- a text nobody published ------------------------------------------------ #
+
+PITCH = "interview-video-pitch"
+
+
+def own_source(**overrides) -> dict:
+    source = {"kind": "own", "title": "Your pitch", "words": 100}
+    source.update(overrides)
+    return source
+
+
+def test_an_own_text_needs_no_url():
+    lesson = Lesson.model_validate(valid_lesson(source=own_source()))
+    assert isinstance(lesson.source, OwnText)
+    assert lesson.source.kind == "own"
+
+
+def test_an_own_text_cannot_carry_a_url():
+    """A link for a text nobody published would be a citation to nothing."""
+    with pytest.raises(ValueError, match="url"):
+        Lesson.model_validate(valid_lesson(source=own_source(url="https://example.com/x")))
+
+
+def test_an_own_text_cannot_carry_the_text_either():
+    with pytest.raises(ValueError, match="text"):
+        Lesson.model_validate(valid_lesson(source=own_source(text="The whole pitch.")))
+
+
+def test_a_source_that_does_not_say_is_published_and_needs_its_url():
+    """The default kind keeps every existing lesson strict: no kind, no URL, refused."""
+    lesson = valid_lesson()
+    del lesson["source"]["url"]
+    with pytest.raises(ValueError, match="url"):
+        Lesson.model_validate(lesson)
+
+
+def test_an_own_text_counts_in_the_citation_budget_like_any_source():
+    lesson = valid_lesson(source=own_source(words=20))
+    lesson["sections"][0]["points"][0]["cites"] = ["one two", "three four"]
+    with pytest.raises(ValueError, match="budget"):
+        Lesson.model_validate(lesson)
+
+
+def test_the_page_of_an_own_text_says_where_the_copy_goes(tmp_path, monkeypatch):
+    directory = tmp_path / "lessons"
+    write_lesson(directory, valid_lesson(source=own_source()))
+    shelf = load_shelf(directory)
+    monkeypatch.setattr("teacher_charles.app.load_shelf", lambda _directory=None: shelf)
+    with TestClient(create_app(settings_for(tmp_path), provider=FakeProvider())) as c:
+        page = c.get("/lessons/sample").text
+        listed = c.get("/lessons").text
+    assert "Your own text:" in page
+    assert "corpus/lessons/sample.txt" in page
+    assert 'href="None"' not in page and "Read the text first:" not in page
+    assert "Your own text" in listed
+
+
+# --- the rehearsal plan ------------------------------------------------------ #
+
+PLAN = [{"title": "Opening", "target": 60}, {"title": "Close", "target": 15}, {"title": "Spare"}]
+
+
+def plan_lesson(**overrides) -> Lesson:
+    return Lesson.model_validate(valid_lesson(rehearsal=PLAN, **overrides))
+
+
+def test_a_plan_block_has_no_place_for_keywords():
+    """Cue words are words of the text: in the YAML they would be an
+    unbudgeted second channel for source wording. They live with the copy."""
+    plan = [{"title": "Opening", "target": 60, "keywords": ["heavy heart"]}]
+    with pytest.raises(ValueError, match="keywords"):
+        Lesson.model_validate(valid_lesson(rehearsal=plan))
+
+
+def test_a_plan_that_times_nothing_is_refused():
+    with pytest.raises(ValueError, match="no target"):
+        Lesson.model_validate(valid_lesson(rehearsal=[{"title": "A"}, {"title": "B"}]))
+    with pytest.raises(ValueError, match="no target"):
+        Lesson.model_validate(valid_lesson(rehearsal=[]))
+
+
+def test_a_target_past_the_ceiling_is_refused():
+    with pytest.raises(ValueError, match="rehearsal"):
+        Lesson.model_validate(valid_lesson(rehearsal=[{"title": "A", "target": 601}]))
+    Lesson.model_validate(valid_lesson(rehearsal=[{"title": "A", "target": 600}]))
+
+
+def test_a_plan_that_fits_the_copy_titles_and_times_each_paragraph():
+    plan = rehearsal_plan(plan_lesson(), [["Hello there, all of you."], ["Bye."], ["Um."]])
+    assert plan.planned and not plan.plan_set_aside
+    assert [(b.title, b.target, b.words) for b in plan.blocks] == [
+        ("Opening", 60, 5),
+        ("Close", 15, 1),
+        ("Spare", None, 1),
+    ]
+    assert plan.target == 75
+    assert [b.title for b in plan.timed] == ["Opening", "Close"]
+
+
+def test_a_plan_that_does_not_fit_the_copy_is_set_aside_whole():
+    """Paired by position, one paragraph more shifts every target after it."""
+    plan = rehearsal_plan(plan_lesson(), [["One."], ["Two."], ["Three."], ["Four."]])
+    assert plan.plan_set_aside and not plan.planned
+    assert [b.title for b in plan.blocks] == [f"Paragraph {i}" for i in range(1, 5)]
+    assert all(b.target is None for b in plan.blocks)
+    assert plan.target == 0
+
+
+def test_without_a_plan_every_paragraph_is_an_untimed_block():
+    plan = rehearsal_plan(Lesson.model_validate(valid_lesson()), [["One."], ["Two."]])
+    assert not plan.planned and not plan.plan_set_aside
+    assert [b.title for b in plan.blocks] == ["Paragraph 1", "Paragraph 2"]
+    assert plan.timed == ()
+
+
+def test_without_cue_words_a_sentence_is_cued_by_its_opening():
+    assert sentence_openings(["I stand before you today.", "Go now.", " "]) == (
+        "I stand before…",
+        "Go now.",
+    )
+    assert CUE_OPENING_WORDS == 3
+    plan = rehearsal_plan(plan_lesson(), [["I stand before you today."], ["Bye."], ["Um."]])
+    assert plan.blocks[0].cues == ("I stand before…",)
+    assert plan.blocks[0].own_cues is False
+
+
+def put_cues(corpus_dir: Path, lesson: Lesson, text: str) -> None:
+    path = local_cues_path(corpus_dir, lesson)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_the_cue_file_is_one_line_per_paragraph(tmp_path):
+    lesson = plan_lesson()
+    put_cues(tmp_path, lesson, "﻿hello · all of you;  you\n\nbye\n\n\n")
+    cues = read_local_cues(tmp_path, lesson)
+    # The trailing blank lines are gone; the one in the middle is a paragraph.
+    assert cues == (("hello", "all of you", "you"), (), ("bye",))
+    plan = rehearsal_plan(lesson, [["Hello there."], ["Close it."], ["Um."]], cues)
+    assert plan.blocks[0].cues == ("hello", "all of you", "you")
+    assert plan.blocks[0].own_cues is True
+    # A paragraph with an empty line falls back to its openings.
+    assert plan.blocks[1].cues == ("Close it.",) and plan.blocks[1].own_cues is False
+
+
+def test_a_cue_file_shorter_than_the_copy_cues_the_paragraphs_it_reaches(tmp_path):
+    lesson = plan_lesson()
+    plan = rehearsal_plan(lesson, [["A."], ["B."], ["C."]], (("one",),))
+    assert not plan.cues_set_aside
+    assert [b.own_cues for b in plan.blocks] == [True, False, False]
+
+
+def test_a_cue_file_longer_than_the_copy_is_set_aside(tmp_path):
+    lesson = plan_lesson()
+    cues = (("one",), ("two",), ("three",), ("four",))
+    plan = rehearsal_plan(lesson, [["A."], ["B."], ["C."]], cues)
+    assert plan.cues_set_aside
+    assert not any(b.own_cues for b in plan.blocks)
+
+
+def test_no_cue_file_or_an_empty_one_means_no_cues(tmp_path):
+    lesson = plan_lesson()
+    assert read_local_cues(tmp_path, lesson) is None
+    put_cues(tmp_path, lesson, "\n \n")
+    assert read_local_cues(tmp_path, lesson) is None
+
+
+def test_the_cue_file_sits_beside_the_copy_and_is_not_versioned(tmp_path):
+    lesson = plan_lesson()
+    assert local_cues_path(tmp_path, lesson).parent == local_text_path(tmp_path, lesson).parent
+    ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "corpus/*" in ignored
+
+
+# --- the rehearsal on the page ---------------------------------------------- #
+
+COPY = "Hello there, all of you.\n\nIt is time to close.\n\nUm, well."
+
+
+@pytest.fixture
+def rehearsal_client(tmp_path, monkeypatch):
+    """A shelf of one planned lesson, and a machine that holds its copy."""
+    directory = tmp_path / "lessons"
+    write_lesson(directory, valid_lesson(rehearsal=PLAN))
+    shelf = load_shelf(directory)
+    monkeypatch.setattr("teacher_charles.app.load_shelf", lambda _directory=None: shelf)
+    settings = settings_for(tmp_path)
+    lesson = shelf.get("sample")
+    put_copy(settings.resolved_corpus_dir, COPY, lesson)
+    put_cues(settings.resolved_corpus_dir, lesson, "secret cue · another one\n")
+
+    def make(**overrides):
+        return TestClient(create_app(settings_for(tmp_path, **overrides), provider=FakeProvider()))
+
+    return make
+
+
+def test_with_a_copy_the_page_rehearses_it_block_by_block(rehearsal_client):
+    with rehearsal_client() as c:
+        page = c.get("/lessons/sample").text
+    assert 'class="rehearse"' in page and 'id="rehearsal"' in page
+    assert "/static/rehearsal.js" in page
+    assert page.count('class="rehearsal-block"') == 3
+    assert 'data-title="Opening" data-words="5" data-target="60"' in page
+    assert "/ target 1:00" in page and "/ target 1:15" in page
+    assert 'data-title="Spare" data-words="2"' in page and "untimed" in page
+    assert '<span class="cue">secret cue</span>' in page
+    # The blocks do not disturb the reading: the same three paragraphs.
+    assert sentences_of(page) == [
+        ["Hello there, all of you."],
+        ["It is time to close."],
+        ["Um, well."],
+    ]
+
+
+def test_the_rehearsal_needs_no_voice_and_hears_with_one(rehearsal_client):
+    with rehearsal_client() as c:
+        quiet = c.get("/lessons/sample").text
+    with rehearsal_client(voice_enabled=True) as c:
+        voiced = c.get("/lessons/sample").text
+    assert "/static/rehearsal.js" in quiet
+    assert 'class="read-block"' not in quiet
+    assert voiced.count('class="read-block"') == 3
+    assert 'class="read-block" data-s="1.0"' in voiced
+
+
+def test_the_page_says_the_recording_is_never_sent(rehearsal_client):
+    with rehearsal_client() as c:
+        page = c.get("/lessons/sample").text
+    assert "it is never sent anywhere" in page
+
+
+def test_without_a_copy_there_is_nothing_to_rehearse(client):
+    page = client.get(f"/lessons/{SLUG}").text
+    assert 'class="rehearse"' not in page
+    assert "rehearsal.js" not in page
+
+
+def test_a_plan_that_does_not_fit_says_so_on_the_page(rehearsal_client, tmp_path):
+    with rehearsal_client() as c:
+        put_copy(
+            tmp_path / "corpus", "One.\n\nTwo.", load_shelf(tmp_path / "lessons").get("sample")
+        )
+        page = c.get("/lessons/sample").text
+    assert "The lesson plans 3 blocks and your copy has 2 paragraphs" in page
+    assert 'data-title="Paragraph 1"' in page
+
+
+def test_the_cue_words_never_reach_the_api(rehearsal_client):
+    """They are the copy's words, so they stay where the copy is shown."""
+    with rehearsal_client() as c:
+        body = c.get("/api/lessons/sample").text
+    assert "secret cue" not in body
+    # The plan itself is curated structure, and the API carries it.
+    assert '"target":60' in body.replace(" ", "")
+
+
+# --- the pitch lesson -------------------------------------------------------- #
+
+
+def test_the_pitch_lesson_is_an_own_text_with_a_timed_plan():
+    lesson = load_shelf(LESSONS_DIR).get(PITCH)
+    assert isinstance(lesson.source, OwnText)
+    assert [s.aspect for s in lesson.ordered_sections()] == list(ASPECTS)
+    assert lesson.words and lesson.sounds and lesson.questions and lesson.practice
+    assert [b.target for b in lesson.rehearsal] == [60, 45, 90, 75, 15, None, None]
+    assert sum(b.target or 0 for b in lesson.rehearsal) == 285  # 4:45
+    assert lesson.cited_words <= int(lesson.source.words * CITE_BUDGET)

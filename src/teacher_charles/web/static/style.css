@@ -1006,3 +1006,108 @@ main.phonetics .pair.now-word .word-ipa { color: var(--fg); }
 .word-card .wc-miss { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.75rem; }
 .word-card .wc-miss { font-size: 0.8rem; }
 .word-card .wc-src a { color: var(--muted); }
+
+/* --- the rehearsal (rehearsal.js) ---------------------------------------- */
+/* The block heads are in the page from the start, one before each paragraph,
+   and drawn only while rehearsing: a class, not `hidden`, because an author
+   `display` would beat the attribute and show them all the time. */
+main.lesson button.rehearse { margin-left: 0.3rem; }
+main.lesson button.rehearse[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+/* The bar and the run panel stick together: the section is their containing
+   block, so they stay at the top while any of the text is on screen. */
+main.lesson .rehearsal {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+main.lesson .rehearsal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.5rem 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+main.lesson .rehearsal-bar .pace input { width: 7rem; vertical-align: middle; }
+main.lesson .rehearsal .stat b,
+main.lesson .rehearsal-block .block-stat b,
+main.lesson .rehearsal-block .laps b,
+main.lesson .rehearsal-block .block-clock,
+main.lesson .run-clock { font-variant-numeric: tabular-nums; }
+main.lesson .rehearsal .on-time { color: var(--curated); }
+main.lesson .rehearsal .close,
+main.lesson .rehearsal-block .close { color: var(--loose); }
+main.lesson .rehearsal .over,
+main.lesson .rehearsal-block .over { color: var(--danger); }
+main.lesson .rehearsal-block .on-time { color: var(--curated); }
+main.lesson .rehearsal kbd {
+  font: inherit;
+  font-size: 0.8em;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  padding: 0 0.3rem;
+}
+main.lesson .full-text .reading .rehearsal-block { display: none; }
+main.lesson .full-text .reading.rehearsing .rehearsal-block {
+  display: block;
+  margin: 1.1rem 0 0.2rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line);
+  font-size: 0.85rem;
+}
+main.lesson .rehearsal-block .block-title { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; align-items: baseline; }
+main.lesson .rehearsal-block .block-stat { color: var(--muted); }
+main.lesson .rehearsal-block .block-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin-top: 0.3rem;
+}
+main.lesson .rehearsal-block .block-tools button { font-size: 0.8rem; padding: 0.15rem 0.5rem; }
+main.lesson .rehearsal-block .block-tools button[aria-pressed="true"],
+main.lesson .rehearsal-block button.read-block.playing { border-color: var(--accent); color: var(--accent); }
+main.lesson .rehearsal-block button.record-block.recording { border-color: var(--danger); color: var(--danger); }
+main.lesson .rehearsal-block .laps { color: var(--muted); }
+main.lesson .rehearsal-block .block-take audio { height: 2rem; max-width: 100%; vertical-align: middle; }
+main.lesson .rehearsal-block .heard.failed { color: var(--danger); }
+/* The cue words: hidden until the text is, then in its place. */
+main.lesson .rehearsal-block .block-cues { display: none; }
+main.lesson .full-text .reading.rehearsing.cues-only .block-cues,
+main.lesson .run-cues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  margin: 0.5rem 0 0.3rem;
+}
+main.lesson .cue {
+  background: var(--student);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.65rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+main.lesson .full-text .reading.rehearsing.cues-only p,
+main.lesson .full-text .reading.rehearsing.cues-only .ipa { display: none; }
+/* The run-through: the block being said at full strength, the rest faded. */
+main.lesson .full-text .reading.running .rehearsal-block:not(.current),
+main.lesson .full-text .reading.running p:not(.current),
+main.lesson .full-text .reading.running .ipa { opacity: 0.35; }
+main.lesson .run-panel {
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+main.lesson .run-panel .run-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+main.lesson .run-panel .run-clock { font-size: 2.4rem; line-height: 1; }
+main.lesson .run-panel .run-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+main.lesson .run-history { margin: 0.4rem 0 0.8rem; font-size: 0.85rem; }
+main.lesson .run-history .table-wrap { overflow-x: auto; }
+main.lesson .run-history table { border-collapse: collapse; width: 100%; margin: 0.4rem 0; }
+main.lesson .run-history th,
+main.lesson .run-history td { border-bottom: 1px solid var(--line); padding: 0.25rem 0.4rem; text-align: left; }
