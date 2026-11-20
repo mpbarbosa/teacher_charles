@@ -29,7 +29,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 465
+  words: 468
 
 rehearsal:
   - title: Who you are
@@ -319,6 +319,12 @@ sounds:
     trap: Stressed on the second syllable, and it ends in the "ch" of "church".
   - word: customer
     trap: Stressed on the first syllable, and no vowel added after the final "r".
+  - word: businesses
+    trap: >-
+      Three syllables, not four: the "u" sounds like the "i" of "bit", the "i"
+      after the "s" is silent, and the last syllable ends in "z".
+  - word: solutions
+    trap: Stressed on the second syllable, and it ends in "z", not "s".
 
 questions:
   - prompt: How many syllables does "checked" have?
@@ -370,7 +376,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (465 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (468 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
