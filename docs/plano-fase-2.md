@@ -1428,7 +1428,7 @@ target; the cue words stay beside the copy, because they are the text's own
 words. Nothing of it reaches the server — times in the browser, recordings in
 the page's memory — and it is not E11 for the microphone's reason above: no
 recognizer, no score. The first such lesson is `interview-video-pitch`, five
-blocks to 4:45.
+blocks to about five minutes.
 
 A **E13 não depende da E9** e pode correr em paralelo: ela consome
 `correction`, que existe desde a primeira migração. Foi o que aconteceu — ela

@@ -9,7 +9,8 @@
 # the analysis names, inside the loader's budget of a tenth of the text.
 #
 # The rehearsal plan below is the structure: one block per paragraph of the
-# copy, with a title and a target in seconds (5 timed blocks, 4:45 in all).
+# copy, with a title and a target in seconds (5 timed blocks, 5:00 in all).
+# The targets are a guide, not a limit: the video asks for about five minutes.
 # The cue words for each block are the copy's and stay beside it, in
 # corpus/lessons/interview-video-pitch.cues.txt (RehearsalBlock says why).
 #
@@ -29,11 +30,11 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 483
+  words: 481
 
 rehearsal:
   - title: Who you are
-    target: 60
+    target: 75
   - title: The problem, in your words
     target: 45
   - title: The plan
@@ -210,11 +211,12 @@ sections:
           sounds like "Brasiu". In English the tongue tip must touch the ridge
           behind the top teeth at the end of small, real, parallel and will —
           a dark "l", but an "l".
-      - heading: Pace, and what to cut when you are over
+      - heading: Pace, and what to do when you run long
         body: >-
           A clear pace for a recorded pitch in a second language is around 110
-          words a minute, with real pauses between the blocks. If a block runs
-          over its target at that pace, cut words rather than speaking faster:
+          words a minute, with real pauses between the blocks. The targets are
+          a guide, not a limit: "about five minutes" leaves room either way.
+          If a block runs well over, cut words rather than speaking faster:
           speed is where every trap above comes back. The rehearsal mode on
           the full text times each block against its target.
 
@@ -409,7 +411,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (483 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (481 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
