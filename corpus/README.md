@@ -79,7 +79,7 @@ script that reads one of them can be understood without the file present.
 |---|---|---|---|
 | `subtitles/friends/friends-1x01.en.srt` | *Friends*, season 1 episode 1, English, from a BluRay release | 365 | 22m38s |
 | `lessons/mon-mothma-senate-speech.txt` | Mon Mothma's Senate speech, *Andor* season 2 episode 9, 3 paragraphs, 266 words | — | — |
-| `lessons/interview-video-pitch.txt` | The person running the project's own pitch for a recorded job interview, 7 paragraphs (5 timed blocks, 2 reserve), 491 words | — | — |
+| `lessons/interview-video-pitch.txt` | The person running the project's own pitch for a recorded job interview, 7 paragraphs (5 timed blocks, 2 reserve), 487 words | — | — |
 | `lessons/interview-video-pitch.cues.txt` | Their cue words for the 5 timed blocks of that pitch | — | — |
 
 The subtitles were imported 2026-11-10 from a local archive supplied by the
