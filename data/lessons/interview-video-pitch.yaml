@@ -30,7 +30,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 488
+  words: 503
 
 rehearsal:
   - title: Who you are
@@ -174,7 +174,7 @@ sections:
       - heading: 'Final "-ed" is a syllable only after "t" or "d"'
         body: >-
           After a "t" or a "d" sound, "-ed" adds a syllable: validated, graded,
-          trusted. After any other sound it adds no syllable at all, only the
+          automated. After any other sound it adds no syllable at all, only the
           sound of "t" (after k, p, s, sh, ch, f) or "d" (after the rest):
           checked is one syllable, agreed is two. Saying "check-ed" with an
           extra vowel is one of the clearest signs of a Portuguese accent.
@@ -303,8 +303,10 @@ sounds:
     trap: One syllable. The "-ed" is only a "t" sound — no vowel before it, none after.
   - word: graded
     trap: Two syllables; the "-ed" is a syllable after "d".
-  - word: trusted
-    trap: Two syllables, the "-ed" after "t", and no vowel before the "tr".
+  - word: taught
+    trap: >-
+      One syllable that rhymes with "bought": the "gh" is silent. With "th"
+      at the start it would be "thought", another word.
   - word: small
     trap: >-
       No vowel before the "s", and the final "l" is an "l", with the tongue up
@@ -410,7 +412,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (488 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (503 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
