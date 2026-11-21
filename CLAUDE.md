@@ -562,6 +562,20 @@ which breaks decision 1.1 while the persona forbids it. Both claim *think* and
 *this* share a sound, six times out of six. A fix to the 3B's failures belongs
 in code, the way `syntax.request_note` did it, and not in the persona.
 
+**The Portuguese one is fixed that way.** `teaching/language.py` decides
+whether the student's message is Portuguese, and when it is, a note
+(`language.NOTE`) rides inside that message through `_with_notes`, last among
+the notes. Measured on the 3B, five runs of three Portuguese turns: 10 of 15
+replies in Portuguese without it, 0 of 15 with it. The 4B stayed at 0. The
+detector compares Portuguese function words with English ones and leaves
+quoted words out. It does not measure a share of the message: *Eu trabalho
+num banco desde 2019* has one listed word in six, and that share sank the
+first version. A tie goes to English, because *I went to the feira* is an
+English turn with a gap in it, and a note there would tell the teacher
+something false. The note fixes the language of the reply and nothing else.
+The 3B's English answers to those turns are often generic. Once it claimed
+English says *saudade* too, and once it gave no gloss at all.
+
 **If the 4B comes back, the suffix is load-bearing.** Bare
 `qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
 with an unconditional `<think>` and never reads the request's `think` field. It
