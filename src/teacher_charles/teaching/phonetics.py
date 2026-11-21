@@ -58,6 +58,7 @@ from functools import lru_cache
 from typing import Any
 
 from ..config import Settings
+from ..stress_shift import read_nouns_as_nouns
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +187,11 @@ class Phonetics:
     def _phonemize(self, text: str) -> str:
         with self._lock:
             backend = self._ensure()
-            return str(backend.phonemize([text])[0]).strip()
+            ipa = str(backend.phonemize([text])[0]).strip()
+            # Still under the lock: the readings that settle "record by
+            # record" come from the same espeak, which is what makes them
+            # comparable — and Kokoro settles its own the same way.
+            return read_nouns_as_nouns(text, ipa, lambda t: str(backend.phonemize([t])[0]))
 
     def transcribe(self, text: str) -> str:
         """O IPA deste texto, ou string vazia quando não dá para produzi-lo.

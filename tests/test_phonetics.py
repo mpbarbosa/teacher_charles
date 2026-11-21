@@ -220,3 +220,74 @@ def test_a_lone_dash_keeps_its_place():
 
 def test_no_ipa_is_no_owners():
     assert ipa_owners(["a", "b"], [], ["", ""]) == [[], []]
+
+
+# --- "record by record": the noun espeak reads as a verb -------------------- #
+
+from teacher_charles.stress_shift import (  # noqa: E402
+    reduplications,
+    settle_reduplications,
+)
+
+NOUN_RECORD = "ɹˈɛkɚd"
+VERB_RECORD = "ɹᵻkˈɔːɹd"
+
+
+def test_record_by_record_is_a_noun_twice(g2p):
+    """The sentence a student brought: after "then", espeak read a verb first.
+
+    It came out ``ðˈɛn ɹᵻkˈɔːɹd baɪ ɹˈɛkɚd`` — reˈcord by ˈrecord, one phrase
+    with two stresses — and the student asked why the word changed.
+    """
+    ipa = g2p.transcribe(
+        "Before each go-live, I ran the reconciliation, first the totals, "
+        "then record by record, and we validated the numbers together with the client."
+    )
+    assert f"ðˈɛn {NOUN_RECORD} baɪ {NOUN_RECORD}," in ipa
+    assert VERB_RECORD not in ipa
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("then object by object", "ðˈɛn ˈɑːbdʒɛkt baɪ ˈɑːbdʒɛkt"),
+        ("then record after record", f"ðˈɛn {NOUN_RECORD} ˈæftɚ {NOUN_RECORD}"),
+        ("then contract upon contract", "ðˈɛn kˈɑːntɹækt əpˌɑːn kˈɑːntɹækt"),
+        ("Then Record for record.", f"ðˈɛn {NOUN_RECORD} fɔːɹ {NOUN_RECORD}."),
+    ],
+)
+def test_every_reduplicating_preposition_settles_the_noun(g2p, text, expected):
+    assert g2p.transcribe(text) == expected
+
+
+def test_a_verb_that_is_not_repeated_stays_a_verb(g2p):
+    """The guard is the repetition, not "then" or "by": *we record by hand* is a verb."""
+    assert g2p.transcribe("We record by hand.") == f"wiː {VERB_RECORD} baɪ hˈænd."
+
+
+def test_to_is_not_a_reduplicating_preposition(g2p):
+    """After "to" espeak reads a verb, and *refuse to refuse* is one on both sides."""
+    assert reduplications("I refuse to refuse") == []
+    assert g2p.transcribe("I refuse to refuse") == "aɪ ɹᵻfjˈuːz tə ɹᵻfjˈuːz"
+
+
+def test_reduplications_are_found_once_whatever_the_case():
+    text = "Record by record, step by step, then record BY Record."
+    assert reduplications(text) == [("record", "by"), ("step", "by")]
+
+
+def test_settling_keeps_the_punctuation_around_the_word():
+    ipa = f"“{VERB_RECORD} baɪ {NOUN_RECORD},” ðˈɛn"
+    readings = [f"tə {VERB_RECORD} baɪ {NOUN_RECORD}"]
+    assert settle_reduplications(ipa, readings) == f"“{NOUN_RECORD} baɪ {NOUN_RECORD},” ðˈɛn"
+
+
+def test_settling_never_writes_a_sound_espeak_did_not_give():
+    """A reading that came back joined, or the same both ways, changes nothing."""
+    ipa = f"ðˈɛn {VERB_RECORD} baɪ {NOUN_RECORD}"
+    joined = [f"tə {VERB_RECORD} baɪɹˈɛkɚd"]
+    split = [f"tə ɹᵻ kˈɔːɹd baɪ {NOUN_RECORD}"]
+    same = [f"tə {NOUN_RECORD} baɪ {NOUN_RECORD}"]
+    assert settle_reduplications(ipa, joined) == ipa
+    assert settle_reduplications(ipa, split) == ipa
+    assert settle_reduplications(ipa, same) == ipa
