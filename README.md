@@ -121,6 +121,12 @@ scripts/run.sh --help
 scripts/run.sh --check --reload
 ```
 
+Para ensaiar em voz alta — voz, a linha de IPA e o `/read-aloud` juntos:
+
+```bash
+scripts/run.sh --voice --pronunciation
+```
+
 Ele **não** roda `uv sync` por conta própria: `uv sync` poda o que os extras
 pedidos não nomeiam, então sincronizar só com `--extra dev` desinstalaria a voz
 — e com ela o `onnxruntime` de que as medições da Fase 2 dependem.

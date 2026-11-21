@@ -49,7 +49,7 @@ Pronunciation (E11) is off by default too. It needs the `voice` extra and
 fetches a 318 MB recognizer into the Hugging Face cache on the first warm-up:
 
 ```bash
-TC_PRONUNCIATION_ENABLED=true uv run teacher-charles
+TC_PRONUNCIATION_ENABLED=true uv run teacher-charles    # or scripts/run.sh --pronunciation
 ```
 
 With it on, `/read-aloud` is the drill (E12): the contrast pair needs the
