@@ -23,7 +23,7 @@ order. The order proposed here is different:
 | Phase | Theme | Why here |
 |---|---|---|
 | **3** | The analysis debt | Touches every text turn with an error, needs no new weight or hardware, and its baseline is already measured (`docs/plano-fase-1.md` §5.5). The cheapest phase with the widest effect. |
-| **4** | Conversation without a button | Its gate is the same STT accent measurement E14 waits for, so whichever runs first pays it for both. |
+| **4** | Conversation without a button | E14 has paid half of its gate: Whisper on Brazilian **read** speech is measured (3.2% WER on `base.en`). The half left, spontaneous speech, is what decides whether a transcript can become a turn unread, and it is cheaper to measure now that `scripts/measure_stt_accent.py` exists. |
 | **5** | Prosody and rhythm | Builds on E10's corpus of human takes and E11's recognizer; it needs those to mature first. |
 | **6** | Mobile, multi-user, login, installer | Breaks three invariants that every earlier phase relies on (§6.1). It goes last so it breaks them once, over a finished product. |
 
@@ -102,18 +102,27 @@ The push-to-talk button is not only an interface. It carries an invariant:
 **the microphone transcript goes to the text field, not to the turn** (plano
 1.5 §3.2, `test_nao_grava_turno_nenhum`). The student reads what Whisper heard
 and fixes it before Charles sees it. That is the one safeguard that does not
-depend on STT accuracy, and it exists because that accuracy with a Brazilian
-accent has never been measured.
+depend on STT accuracy.
+
+E14 measured that accuracy on **one voice reading known phrases**: over the
+Brazilian takes on disk, `base.en` came out at 3.2% WER and heard 23 of 26 correct readings word
+for word (`scripts/measure_stt_accent.py`). `CLAUDE.md` draws the line that
+matters here: *low enough to judge a sound against and not low enough to make
+a turn of*. A 3.2% WER is about one wrong word every three ten-word
+turns, and a wrong word that becomes a turn unread is a correction
+the student never earned.
 
 Hands-free conversation removes the moment where the student reads. So the
 question is not "how to detect the end of speech". It is:
 
-> **Is Whisper accurate enough on this student's voice for its transcript to
-> become a turn without being read?**
+> **On spontaneous speech, which hesitates, restarts and reaches for words in a
+> way a read phrase never does, is there a confidence floor above which the
+> transcript is right often enough to become a turn unread?**
 
-If it is not, hands-free mode makes Charles correct errors the student never
-made, which is the failure E3 and E4 exist to prevent. This is the same
-measurement E14 waits for, and that is why the two share a gate.
+If there is none, hands-free mode makes Charles correct errors the student
+never made, which is the failure E3 and E4 exist to prevent. Then the mode
+can still exist, but only with the transcript shown and confirmed, and that is
+a smaller feature than "no button".
 
 ### 4.2 What is already in place
 
@@ -129,7 +138,7 @@ measurement E14 waits for, and that is why the two share a gate.
 
 | | Deliverable | Done when |
 |---|---|---|
-| **E19** | **Opening measurement** — Whisper WER on human Brazilian speech (the E14 gate, if E14 has not paid it), and the **distribution of pauses inside utterances** on the same recordings | WER is recorded per speaker, not as a single pooled number. Pause lengths inside sentences are recorded, because a B1 speaker who stops to search for a word must not be cut off: that distribution, not a constant, sets the end-of-turn silence. The decision to continue, change the design or stop is written with both numbers in hand |
+| **E19** | **Opening measurement** — `scripts/measure_stt_accent.py` extended from read takes to **spontaneous** Brazilian speech (answers to open questions, not curated phrases), WER against Whisper's own confidence, and the **distribution of pauses inside utterances** on the same recordings | WER is recorded per speaker, not as a single pooled number, and next to E14's 3.2% on read speech, so the gap between reading and talking is a number. Whether a confidence floor separates right transcripts from wrong ones is answered either way. Pause lengths inside sentences are recorded, because a B1 speaker who stops to search for a word must not be cut off: that distribution, not a constant, sets the end-of-turn silence. The decision to continue, change the design or stop is written with both numbers in hand |
 | **E20** | **Endpointing** — a state machine (idle → listening → speech → trailing silence → submitted) in `voice/`, importing nothing from `teaching/` | `teaching/turn.py` does not change a line. The transcript policy E19 decided is enforced in code (for example: hands-free sends the transcript only when its confidence passes a measured floor, and otherwise drops it into the text field as push-to-talk does). The time from end of speech to first spoken word is measured with `scripts/measure_voice.py` and recorded next to §7.5's 3.99 s |
 | **E21** | **Barge-in** — the student speaking stops Charles's playback queue in `voice.js` | Charles's own voice from the loudspeaker is never taken as the student's speech. Whether the browser's echo cancellation is enough with loudspeakers is measured, not assumed. If it is not, headphones are the documented requirement for hands-free mode and push-to-talk stays the default |
 
