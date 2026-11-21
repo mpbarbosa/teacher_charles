@@ -35,6 +35,7 @@ Modos
   --fake            sem modelo nenhum, para trabalhar na interface
   --voice           liga a voz: extra, pesos e TC_VOICE_ENABLED=true
   --syntax          liga o botão Structure: extra e TC_SYNTAX_ENABLED=true
+  --pronunciation   liga o /read-aloud: extra voice e TC_PRONUNCIATION_ENABLED=true
   --model NOME      usa um modelo já baixado (TC_LLM_MODEL)
 
 Antes de subir
@@ -52,6 +53,7 @@ Exemplos
   scripts/run.sh --fake --reload           # interface, sem modelo
   scripts/run.sh --check                   # confere o ambiente e sobe
   scripts/run.sh --sync --voice            # primeira vez com voz
+  scripts/run.sh --voice --pronunciation   # ensaio: voz e pronúncia juntas
 EOF
 }
 
@@ -63,6 +65,7 @@ die() {
 fake=false
 voice=false
 syntax=false
+pronunciation=false
 check=false
 sync=false
 model=""
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --fake) fake=true ;;
         --voice) voice=true ;;
         --syntax) syntax=true ;;
+        --pronunciation) pronunciation=true ;;
         --check) check=true ;;
         --sync) sync=true ;;
         --model)
@@ -134,7 +138,9 @@ command -v uv >/dev/null 2>&1 ||
 
 if $sync; then
     extras=(--extra dev)
-    $voice && extras+=(--extra voice)
+    # The recognizer adds no wheel of its own: it runs on the voice extra's
+    # onnxruntime, so asking for pronunciation is asking for that extra.
+    ($voice || $pronunciation) && extras+=(--extra voice)
     $syntax && extras+=(--extra syntax)
     echo "==> uv sync ${extras[*]}"
     uv sync "${extras[@]}"
@@ -166,6 +172,18 @@ if $syntax; then
         die "o botão Structure pede o extra: rode outra vez com --sync --syntax"
 
     export TC_SYNTAX_ENABLED=true
+fi
+
+if $pronunciation; then
+    # The recognizer needs only onnxruntime from the voice extra; the 318 MB
+    # weight is fetched into the Hugging Face cache on the first warm-up, so
+    # the first start with it on is slow once and not after. Without the
+    # extra the server comes up, the recognizer fails to load, and the
+    # reason is only in `/health` -- the voice's quiet failure again.
+    uv run python -c 'import importlib.util as u, sys; sys.exit(0 if u.find_spec("onnxruntime") else 1)' ||
+        die "a pronúncia pede o extra voice: rode outra vez com --sync --pronunciation"
+
+    export TC_PRONUNCIATION_ENABLED=true
 fi
 
 # `exec`, so Ctrl-C reaches uvicorn instead of this shell, and so the server is
