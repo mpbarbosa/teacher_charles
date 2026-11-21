@@ -43,11 +43,16 @@ body {
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* Both rows wrap: the chat page's controls are a dozen wide, and as one row
+ * that never wraps they pushed a 375px phone's page out to 1211px. Wrapping
+ * keeps every control on screen; a sideways scroll inside the header would
+ * have hidden Shut down off the edge. */
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--line);
 }
@@ -56,8 +61,15 @@ header h1 { font-size: 1.05rem; margin: 0; }
 
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: flex-end;
+  gap: 0.4rem 0.75rem;
+  /* Beside the title while 20rem are left, wrapping in place; only on a
+     phone does the whole row drop under the title. As a plain item its basis
+     was its full one-row width, and it dropped under the title at 1280px. */
+  flex: 1 1 20rem;
+  min-width: 0;
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -319,6 +331,10 @@ button.talk.latched { box-shadow: 0 0 0 2px var(--danger); }
   /* Em tela estreita o rotulo vai embora e sobra a bolinha: o botao continua
      grande o bastante para o dedo, e o campo de texto nao fica sem espaco. */
   button.talk .talk-label { display: none; }
+  /* Narrow, the controls start under the title, left-aligned, at the same
+     16px gutter as the page: a right-aligned ragged row reads as leftovers. */
+  header { padding: 0.6rem 1rem; }
+  .meta { justify-content: flex-start; gap: 0.4rem 0.5rem; }
 }
 
 footer {
