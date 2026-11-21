@@ -58,6 +58,8 @@ class FakeSTT(SpeechToText):
             raise ValueError("FakeSTT precisa de ao menos uma transcrição")
         self.error = error
         self.calls: list[bytes] = []
+        # The takes handed back as PCM, for the after-turn route (E14).
+        self.decoded: list[bytes] = []
         self.warmed = False
         self.closed = False
 
@@ -83,6 +85,13 @@ class FakeSTT(SpeechToText):
             elapsed_ms=1.0,
             confidence=0.9,
         )
+
+    async def decode(self, audio: bytes) -> Speech:
+        """The bytes taken as 16 kHz PCM already, which is what a test sends."""
+        self.decoded.append(audio)
+        if self.error is not None:
+            raise self.error
+        return Speech(pcm=audio[: len(audio) // 2 * 2], sample_rate=16_000, elapsed_ms=1.0)
 
     async def word_times(self, speech: Speech) -> list[TimedWord]:
         self.timed.append(speech)

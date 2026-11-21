@@ -55,6 +55,7 @@ from .teaching import (
     Leveled,
     Phonemized,
     TurnRunner,
+    after_turn,
     read_aloud,
 )
 from .teaching.contrastive import ContrastiveError, load_base
@@ -244,6 +245,13 @@ class SpeakRequest(BaseModel):
 # page that never asks from growing the server. ~8 s of 24 kHz PCM is ~380 KB.
 TIMED_SPEECH_KEPT = 16
 
+# How many microphone takes ``/api/stt`` holds for the pronunciation after the
+# turn (E14), in memory and nowhere else. The page asks for the one it sent as
+# soon as the turn ends, so the working set is the take of the turn in flight
+# plus any the student recorded and threw away; the cap is what keeps a page
+# that never asks from growing the server.
+HEARD_TAKES_KEPT = 4
+
 
 # The longest stretch of the microphone ``/api/follow`` takes, in seconds. The
 # page sends the last ~3.5 s; the ceiling is what keeps one request from
@@ -271,6 +279,17 @@ class PronunciationRequest(BaseModel):
     rule_id: str = Field(min_length=1, max_length=80)
     phrase: int = Field(default=0, ge=0)
     audio: str = Field(min_length=1, max_length=PRONUNCIATION_MAX_AUDIO_CHARS)
+
+
+class AfterTurnRequest(BaseModel):
+    """The take behind the turn just sent, for its pronunciation (E14).
+
+    Only the id: the expected text is the transcript the server holds, and
+    whether it is what the student sent is checked against the turn the
+    server recorded — never against anything the page says it sent.
+    """
+
+    take_id: str = Field(min_length=1, max_length=64)
 
 
 class ReadAloudStart(BaseModel):
@@ -471,6 +490,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # Synthesised sentences awaiting their word timings, oldest first;
         # see ``/api/tts/{speech_id}/words``.
         app.state.timed_speech = OrderedDict()
+        # Microphone takes ``/api/stt`` transcribed, awaiting the
+        # pronunciation after the turn; see ``/api/pronunciation/turn``.
+        app.state.heard_takes = OrderedDict()
         app.state.phonetics = phonetics
         app.state.phonemes = phonemes
         app.state.pronunciation = pronunciation
@@ -1340,7 +1362,18 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # Tipado, nunca por substring: ver ``voice/base.py``.
             return JSONResponse({"detail": str(exc)}, status_code=422)
 
-        return JSONResponse({"bytes": len(audio), **transcript.as_dict()})
+        body: dict[str, Any] = {"bytes": len(audio), **transcript.as_dict()}
+        if transcript.text and app.state.phonemes is not None and app.state.pronunciation:
+            # Held for the pronunciation after the turn (E14), in memory: the
+            # page sends the id back once the turn is over. This still records
+            # nothing — no row, no file — and the oldest take falls off first.
+            kept: OrderedDict[str, tuple[bytes, str]] = app.state.heard_takes
+            take_id = uuid.uuid4().hex
+            kept[take_id] = (audio, transcript.text.strip())
+            while len(kept) > HEARD_TAKES_KEPT:
+                kept.popitem(last=False)
+            body["take_id"] = take_id
+        return JSONResponse(body)
 
     @app.post("/api/tts")
     async def text_to_speech(payload: SpeakRequest) -> Response:
@@ -1559,6 +1592,81 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         except PronunciationUnavailable as exc:
             return JSONResponse({"detail": str(exc)}, status_code=503)
         return JSONResponse(judgement.as_dict(), headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/pronunciation/turn")
+    async def pronunciation_after_turn(payload: AfterTurnRequest) -> JSONResponse:
+        """The pronunciation of the turn just sent, judged against its own transcript (E14).
+
+        The expected text is the one thing a free turn cannot have by
+        construction, so it is Whisper's transcript — and only when the turn
+        the server recorded **is** that transcript, unedited. An edit means
+        the audio and the text no longer say the same thing (plan 2 §6), and
+        judging the audio against the edited text would correct the student
+        for the words they fixed. The check reads the turn table, not the
+        request, so no page can talk its way past it.
+
+        Then the three gates of the drill, over the whole take
+        (``Evaluator.evaluate_text``): the signal, whether the heard phonemes
+        are the transcript — which here is also a check on Whisper — and the
+        curated signatures. The payload is what ``after_turn.notes`` lets the
+        student read, plus which rules were judged and how; no PER and no
+        transcription, as ``/api/pronunciation``.
+
+        **It records nothing**, and the take is dropped once asked for.
+        """
+        ready = pronunciation_or_503()
+        if isinstance(ready, JSONResponse):
+            return ready
+        phonemes, evaluator = ready
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+        kept: OrderedDict[str, tuple[bytes, str]] = app.state.heard_takes
+        take = kept.pop(payload.take_id, None)
+        if take is None:
+            return JSONResponse(
+                {"detail": "no such take: asked for already, or dropped"}, status_code=404
+            )
+        audio, transcript = take
+
+        conn: sqlite3.Connection = app.state.db
+        sent = TurnRepo(conn).last_student(active_session(conn))
+        if sent is None or sent.content != transcript:
+            return JSONResponse(
+                {
+                    "detail": "the turn sent is not this take's transcript, unedited, "
+                    "so the audio does not say it and nothing is judged"
+                },
+                status_code=409,
+            )
+
+        import numpy as np  # the voice extra: the recognizer cannot be on without it
+
+        try:
+            speech = await voice.stt.decode(audio)
+            capture = diagnose_signal(samples_from_pcm(speech.pcm, np), np)
+            # The vocabulary even when gate 1 refuses: it is what says which
+            # rules the transcript gives an opportunity for, and a refused
+            # take is silence on those rules, not on none. It is the vocab
+            # file, read once — not the 318 MB.
+            vocabulary = await phonemes.vocabulary()
+            heard: tuple[str, ...] = ()
+            if capture.usable:
+                heard = (await phonemes.recognize(speech)).phonemes
+            judgements = evaluator.evaluate_text(
+                transcript, heard, vocabulary, signal_usable=capture.usable
+            )
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+        return JSONResponse(
+            {
+                "notes": after_turn.notes(judgements),
+                "judged": [
+                    {"rule_id": j.rule_id, "verdict": j.verdict, "gate": j.gate} for j in judgements
+                ],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     def read_aloud_rule(item: PronunciationItem, student_id: int, conn: sqlite3.Connection):
         """What the page shows about one graded rule before a session."""
