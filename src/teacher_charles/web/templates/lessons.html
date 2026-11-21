@@ -164,7 +164,10 @@
           <span class="stat">Estimated <b class="total-est">–</b>{% if rehearsal.target %} / target {{ clock(rehearsal.target) }}{% endif %}</span>
           <span class="stat">Timed <b class="total-timed">–</b></span>
           <button type="button" class="run-start" title="Say every {{ 'timed ' if rehearsal.timed }}block in a row against one clock">▶ Run-through</button>
-          <label class="cues-toggle"><input type="checkbox" class="cues-only"> Hide the text, show the cue words</label>
+          <label class="cues-toggle"><input type="checkbox" class="cues-only"> Hide the text, show the cue words</label>{% if voice and voice.enabled %}
+          {#- Lights the word being said, by listening (follow.js): only with a voice, since /api/follow is the timing Whisper. -#}
+          <button type="button" class="follow" aria-pressed="false" title="Light the word you are saying as you read the text aloud">👂 Follow me</button>
+          <span class="follow-state" aria-live="polite"></span>{% endif %}
         </div>
         {#- Bar and panel stick to the top of the window together, so the
             clock and the cue words stay in view through the whole text. -#}
@@ -184,7 +187,7 @@
         </section>
       </div>
       <div class="rehearsal-notes" hidden>
-        <p class="howto">Each block is a paragraph. Say it aloud and time it, or run through {{ "the timed blocks" if rehearsal.timed else "all of them" }} in a row: <kbd>Space</kbd> moves to the next block, <kbd>Esc</kbd> stops. Your times stay in this browser. A recording stays in this page's memory: it is never sent anywhere, and it is gone when you leave the page.</p>
+        <p class="howto">Each block is a paragraph. Say it aloud and time it, or run through {{ "the timed blocks" if rehearsal.timed else "all of them" }} in a row: <kbd>Space</kbd> moves to the next block, <kbd>Esc</kbd> stops. Your times stay in this browser. A recording stays in this page's memory: it is never sent anywhere, and it is gone when you leave the page.{% if voice and voice.enabled %} <b>Follow me</b> lights the word you are saying: it sends a few seconds of your voice at a time to this app's own server, which hears where you are in the text and keeps nothing.{% endif %}</p>
         {% if rehearsal.plan_set_aside %}<p class="trap">The lesson plans {{ rehearsal.planned_blocks }} blocks and your copy has {{ rehearsal.blocks|length }} paragraphs, so the blocks are your paragraphs, with no targets.</p>{% endif %}
         {% if rehearsal.cues_set_aside %}<p class="trap">Your cue file has more lines than the copy has paragraphs, so the cue words are each sentence's first words instead.</p>{% endif %}
         <details class="run-history">
@@ -399,6 +402,8 @@
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
   {# The rehearsal needs no voice and no IPA: only the copy, and the browser's own clock and microphone. #}
   {% if lesson and rehearsal %}<script src="/static/rehearsal.js" defer></script>{% endif %}
+  {# Follow me listens, so it needs the voice; the rest of the rehearsal does not. #}
+  {% if lesson and rehearsal and voice and voice.enabled %}<script src="/static/follow.js" defer></script>{% endif %}
   {#
     The word card (word-card.js) on every lesson page once the lookup file
     is fetched: without it every hover would be a 503. Not only with a full

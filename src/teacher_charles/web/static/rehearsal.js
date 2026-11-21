@@ -489,6 +489,8 @@
       endRun(false);
       stopWatch(false);
       stopRecording();
+      // Follow me (follow.js) has its own microphone, closed by this event.
+      document.dispatchEvent(new CustomEvent("tc:rehearsal-off"));
     }
     applyCues();
   }
