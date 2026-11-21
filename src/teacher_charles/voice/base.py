@@ -194,12 +194,19 @@ class TextToSpeech(Loadable, abc.ABC):
     model: str
 
     @abc.abstractmethod
-    async def speak(self, text: str, voice: str | None = None) -> Speech:
+    async def speak(
+        self, text: str, voice: str | None = None, speed: float | None = None
+    ) -> Speech:
         """Sintetiza **um** trecho curto.
 
         Uma sentença por chamada é escolha de desenho, não limitação: é o que
         permite o professor começar a falar antes de a resposta terminar. Ver
         ``voice/segment.py``.
+
+        ``speed`` is the engine's own speaking rate, 1.0 being its natural
+        pace; ``None`` keeps the one the engine was built with. It is a
+        synthesis choice, not a playback one: the voice says the words slower,
+        rather than a finished sound being stretched.
         """
 
     @abc.abstractmethod

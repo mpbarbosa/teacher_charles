@@ -664,6 +664,21 @@ def test_with_voice_every_word_and_sound_has_a_speaker(tmp_path):
         assert spoken.headers["content-type"] == "audio/wav"
 
 
+def test_without_voice_there_is_no_speed_bar(client):
+    """Both knobs act on sounds that cannot be made with voice off."""
+    assert 'class="speech-speed"' not in client.get(f"/lessons/{SLUG}").text
+
+
+def test_with_voice_the_speed_bar_starts_at_the_configured_speed(tmp_path):
+    settings = settings_for(tmp_path, voice_enabled=True, tts_speed=0.85)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        body = c.get(f"/lessons/{SLUG}").text
+    assert 'class="speech-speed" data-default-speed="0.85"' in body
+    # Kokoro's rate starts where TC_TTS_SPEED put it, the browser's at 1.
+    assert 'class="voice-speed" min="0.5" max="1.5" step="0.05" value="0.85"' in body
+    assert 'class="playback-rate" min="0.5" max="2" step="0.05" value="1"' in body
+
+
 def test_the_shelf_page_has_no_speaker_even_with_voice(tmp_path):
     settings = settings_for(tmp_path, voice_enabled=True)
     with TestClient(create_app(settings, provider=FakeProvider())) as c:

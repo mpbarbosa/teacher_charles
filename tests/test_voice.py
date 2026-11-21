@@ -23,7 +23,7 @@ from teacher_charles.voice import (
     VoiceError,
     build_voice,
 )
-from teacher_charles.voice.kokoro import MAX_SPEECH_CHARS, KokoroTTS
+from teacher_charles.voice.kokoro import MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED, KokoroTTS
 from teacher_charles.voice.whisper import MAX_AUDIO_BYTES, MIN_AUDIO_BYTES, WhisperSTT
 
 
@@ -201,6 +201,25 @@ class TestAnteparos:
         with pytest.raises(VoiceError, match="voice/segment"):
             await tts.speak("word " * (MAX_SPEECH_CHARS // 2))
         assert not tts.ready
+
+    @pytest.mark.parametrize("speed", [MIN_SPEED - 0.01, MAX_SPEED + 0.01])
+    async def test_speed_outside_kokoros_range_is_refused_before_loading(self, tts, speed):
+        # kokoro-onnx would raise a ValueError mid-synthesis; refusing here
+        # names the range and costs no load.
+        with pytest.raises(VoiceError, match="speed"):
+            await tts.speak("Good morning.", speed=speed)
+        assert not tts.ready
+
+    async def test_the_speed_asked_for_reaches_kokoro_and_absent_keeps_the_default(self):
+        np = pytest.importorskip("numpy")
+        tts = KokoroTTS(model_path=Path("/x.onnx"), voices_path=Path("/x.bin"), speed=1.1)
+        engine = _CapturingEngine()
+        # Loaded already, so no weights are read: what is under test is only
+        # which speed `create` is handed.
+        tts._engine, tts._np = engine, np
+        await tts.speak("Good morning.", speed=0.75)
+        await tts.speak("Good morning.")
+        assert [kwargs["speed"] for _, kwargs in engine.created] == [0.75, 1.1]
 
     async def test_aquecimento_nao_propaga_erro_e_guarda_o_motivo(self, tts):
         # Derrubar a subida por causa de um peso ausente seria pior que um
