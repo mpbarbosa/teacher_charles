@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import teacher_charles.app as app_module
+from teacher_charles import __version__
 from teacher_charles.app import create_app
 from teacher_charles.build_stamp import BuildStamp, read_build_stamp
 from teacher_charles.config import Settings
@@ -156,3 +157,25 @@ def test_the_stamp_is_read_once_not_per_request(tmp_path, monkeypatch):
             client.get(page)
 
     assert len(calls) == 1
+
+
+def test_the_footer_shows_the_builds_version_and_keeps_the_release_in_reach(tmp_path, monkeypatch):
+    stamp = BuildStamp(sha=SHA, committed_at=WHEN, version="0.2.0-dev.5")
+    with _client(tmp_path, monkeypatch, stamp) as client:
+        html = client.get("/").text
+        health = client.get("/health").json()
+
+    footer = html[html.rindex("<footer") :]
+    assert "v0.2.0-dev.5" in footer
+    assert f'title="Release {__version__}"' in footer
+    assert health["version"] == __version__
+    assert health["build_version"] == "0.2.0-dev.5"
+
+
+def test_without_a_calculated_version_the_release_stands(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch, BuildStamp()) as client:
+        html = client.get("/").text
+        health = client.get("/health").json()
+
+    assert f"v{__version__}" in html[html.rindex("<footer") :]
+    assert health["build_version"] == __version__

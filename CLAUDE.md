@@ -61,6 +61,15 @@ The voice tests follow the same rule: the stub ones run with no weights at all
 skip themselves without Ollama, but with Ollama up they load a model and the
 time goes from ~3s to minutes. During development use `-m "not integration"`.
 
+The release version is moved by one script, never by hand — it lives in
+`pyproject.toml`, `__version__` and `uv.lock`, and a test fails if they differ:
+
+```bash
+uv run python scripts/bump_version.py              # release, commits since, trailers, next
+uv run python scripts/bump_version.py auto         # or patch | minor | major | X.Y.Z
+uv run python scripts/bump_version.py --check
+```
+
 To work on the interface without a model: `TC_PROVIDER=fake uv run teacher-charles`.
 To use a model that is already downloaded: `TC_LLM_MODEL=qwen2.5:3b-instruct-q4_K_M uv run teacher-charles`.
 
@@ -390,6 +399,19 @@ sample. It is not version caution; it is a measured incompatibility.
 clock-based versions (second and millisecond) broke the same
 switch-and-switch-back profile test: the writes land in the same instant and the
 tiebreak always returns the same student.
+
+**The footer's version is calculated, the release is written.** The release
+is the `version =` line in `pyproject.toml`, and the commit that last changed
+that line *is* the release commit — no tag needed, which is why a bump goes in
+a commit of its own. Past it, the running code is `X.Y.Z-dev.N`: N commits
+since the release, heading to the version the largest `Version-Bump:` trailer
+since then names (`major`/`minor`/`patch`, none → patch). The trailer, not a
+subject prefix, because subjects here are prose. Before 1.0.0 a `major`
+trailer counts as a minor (SemVer §4); 1.0.0 is reached only by naming it.
+A shallow clone gets the bare release, because its oldest commit shows the
+version line as added and would pass for the release commit. `semver.py` does
+the arithmetic, `build_stamp.py` reads git, `scripts/bump_version.py` moves
+the release and does not commit — the shared-checkout rule below.
 
 **Provider errors are typed on purpose** (`ProviderUnavailable`,
 `ModelNotFound`, `ProviderTimeout`, `ProviderBadResponse`). React by type;
