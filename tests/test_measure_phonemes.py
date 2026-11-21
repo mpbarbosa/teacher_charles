@@ -911,3 +911,61 @@ def test_o_rescore_responde_sem_microfone_e_sem_modelo(measure_phonemes, tmp_pat
     gravado = json.loads(com_aviso.read_text())
     assert gravado["assinatura"] == [["sub", "θ", "t"]], "não preencheu o relatório com aviso"
     assert gravado["regra"] == item.rule_id, "não reconheceu a regra pela frase dita"
+
+
+def _blocks_at(levels: list[float], seed: int = 7):
+    """A signal whose 100 ms blocks have these RMS levels, as white noise.
+
+    White noise keeps every other question of `diagnose_signal` quiet — no DC
+    step, no clipping, no energy below 100 Hz — so the only verdict left to
+    give is the one about contrast.
+    """
+    np = pytest.importorskip("numpy")
+    rng = np.random.default_rng(seed)
+    block = int(0.1 * 16_000)
+    return np.concatenate(
+        [rng.normal(0.0, level, size=block).astype(np.float32) for level in levels]
+    )
+
+
+def test_a_short_sentence_in_a_long_window_is_speech(measure_phonemes):
+    """Under a second of speech in ten seconds of quiet is an utterance.
+
+    It is the profile of the two *I know the road* takes, which Whisper
+    understood word for word and the check refused as "the microphone hearing
+    the room": eight or ten loud blocks out of 99. The 90th percentile only
+    reaches the speech when it fills more than a tenth of the file, so there
+    the contrast came out at 3.2 — the loudest block of a silent room, not the
+    sentence.
+    """
+    np = pytest.importorskip("numpy")
+    levels = [0.002] * 30 + [0.018] * 8 + [0.002] * 61
+    assert measure_phonemes.diagnose_signal(_blocks_at(levels), np) is None
+
+
+def test_a_room_with_no_pause_is_still_refused(measure_phonemes):
+    """The recording the contrast question was written for still fails it.
+
+    §3.5 of the Phase 2 plan measured it: every block between 0.009 and 0.050
+    from start to finish, p90/p10 of 2.8, and 65 phonemes of salad from the
+    recognizer. Here the extremes are as far apart as that range allows — a
+    tenth of the blocks at the bottom and half a second at the top — which is
+    the largest contrast such a room can show, 0.050/0.009 = 5.6.
+    """
+    np = pytest.importorskip("numpy")
+    levels = [0.009] * 10 + [0.025] * 55 + [0.050] * 5
+    problem = measure_phonemes.diagnose_signal(_blocks_at(levels), np)
+    assert problem is not None and "contraste" in problem.message
+
+
+def test_one_click_in_a_room_is_not_speech(measure_phonemes):
+    """Half a second, and not the loudest block, is what has to stand out.
+
+    A bump on the desk or a key press is one block far above the floor, and
+    the loudest block alone would read it as a sentence: 0.200/0.009 is 22×.
+    Speech is not one block — the shortest take on disk had eight.
+    """
+    np = pytest.importorskip("numpy")
+    levels = [0.009] * 10 + [0.025] * 55 + [0.200] + [0.050] * 4
+    problem = measure_phonemes.diagnose_signal(_blocks_at(levels), np)
+    assert problem is not None and "contraste" in problem.message

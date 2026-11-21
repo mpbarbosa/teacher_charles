@@ -671,6 +671,21 @@ Com isso: contraste 15,71, pico −11,0 dBFS, 42 blocos de fala em 70, e as cinc
 perguntas caladas. É o melhor sinal da série e o número a reproduzir nas dez
 elocuções — variar o ganho entre elas tornaria os PER incomparáveis.
 
+**The p90 measured the sentence's length, not the room, and the statistic
+changed.** The 90th percentile only reaches the speech when the speech fills
+more than a tenth of the file, and the `--record 7` window above kept it well
+over that. A later round in a 9-second window did not: *I know the road* is a
+second of sound, and both takes came back refused at 3.2, with Whisper
+understanding every word of them. The loud end is now the fifth-loudest block,
+half a second of speech, and the threshold is 6. The top block of a room is
+louder than its p90, and the room above, 0.009 to 0.050 per block, cannot
+put half a second above 5.6. Measured on the 37 takes on disk when it changed,
+every take Whisper understood reads 7.2 or more, and only the two road takes
+change verdict. The E9 refusals for contrast counted in §3.7 were taken under
+the old statistic, and their WAVs have since been overwritten by later takes
+of the same phrase, so whether any of them was a short sentence and not a room
+cannot be checked now.
+
 #### The correct pass, checked by machine: eight clean utterances, one gabarito named
 
 The "erro previsto nomeado?" column was `—` for every take on disk, and it is
