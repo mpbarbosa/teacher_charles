@@ -1259,7 +1259,7 @@ entregas numeradas.
 | **E8** ✅ | **Medição de abertura** — `scripts/measure_phonemes.py` com os quatro modos; piso, sinal e proxy medidos | **Feito.** Piso 0,061, sinal 0,119 com 6 de 8 erros nomeados pelo fonema certo, proxy 0,676 com 2 de 8. Ver §2 |
 | **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com a operação curada nomeada em **8 de 8** regras e em **3 de 8** por tomada limpa (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada, exige nomeação em tomada **limpa**, e nasce com três regras enquanto as outras cinco esperam gravação, não pilha |
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado por voz humana em tomada que o diagnóstico não avisou** (§3.7). O número de itens sai da medição, não do alvo — e `pron.ing-alveolar` entra pela passada correta, com a razão registrada, porque ali o ponto cego era da síntese (§3.5). **Started:** the three rules §3.7 admitted (`pron.th-voiced`, `pron.h-dropping`, `pron.ing-alveolar`) are in `data/contrastive/pronunciation.yaml`, each with its deciding takes by md5 prefix, loaded by `teaching/pronunciation.py` and kept out of the text base, so a sound can never be cited against a typed sentence. The other five wait for a clean take |
-| **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
+| **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** **Feito.** `voice/phonemes.py` (the E8 wav2vec2, behind `base.PhonemeRecognizer`), gate 1 in `voice/signal.py`, gates 2 and 3 in `teaching/pronunciation.py::Evaluator`, and `POST /api/pronunciation`, which records nothing. `TC_PRONUNCIATION_ENABLED=false` by default; no extra of its own, because it adds no wheel to `voice`. Gate 2 changed shape on measurement — see the paragraph below the table |
 | **E12** | **Pronunciation in the product, read aloud** — the drill of `docs/metodo-fonetico.md` §2 as the first surface: the contrast pair, three takes of the curated phrase, and a card over the session. `pronunciation_signal` persisted, `/progress` aggregating by rule | The student picks a rule, or the schedule picks one, hears the pair and reads the phrase three times. Gate 1 runs before each reading and each take ends on silence, not on a clock. The card speaks in takes ("2 of 3"), never in a score. `pronunciation_signal` stores `opportunities` and `errors` per take, and the session gives the schedule **one** review. **`teaching/turn.py` does not change a line.** See the read-aloud paragraphs below the table |
 | **E14** | **Pronunciation after the conversation turn** — the feedback under the student's own bubble, with Whisper's transcript as the expected text | Whisper's accuracy on Brazilian-accented speech is measured first (plano 1.5 §2.3), because here the transcript *is* the expected text. A turn is evaluated only when the text sent is the transcript unedited. The feedback appears after the turn without delaying the teacher's speech (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
@@ -1331,8 +1331,12 @@ of the session around the rule, in four places the method does not cover yet:
    before the student reads, as metodo §7 already asks.
 4. **Gate 2 catches a wrong phrase, but not an extra word.** Twice the speaker
    read the previous phrase instead of the one asked for. Against *I'm ready to
-   go* the PER came out at 1.000, and gate 2's gross PER would refuse that on
-   its own. Against *the car is ready*, reading *the red car is ready* came out
+   go* the PER came out at 1.000, which looked like gate 2's gross PER would
+   refuse that on its own. **It would not, and E11 measured why:** against
+   `pron.th-voiced` the same take scores 0.875, inside any ceiling that keeps a
+   real deliberate take (0.818), and the alignment books a /ð/→/d/ nobody said.
+   So gate 2 is a floor on the share of the phrase heard where it was expected,
+   not a PER ceiling — see the E11 paragraph below the table. Against *the car is ready*, reading *the red car is ready* came out
    at 0.200, with every target phoneme right and the extra word booked as
    insertions: no identity threshold refuses that, and none should. But an
    inserted word inserts vowels, and the epenthesis signatures count an
@@ -1353,6 +1357,24 @@ of the session around the rule, in four places the method does not cover yet:
 - **`/k/` → `/ɡ/` at the start of *car***, once in the 8 takes that had it.
   That is what an unaspirated Portuguese `/k/` sounds like to an English ear. It is a
   hypothesis, not a pattern.
+
+**E11's gate 2 is a floor on what was heard where expected, and it costs two
+takes.** Metodo §3 has gate 2 as a gross aggregate, and the first build used
+the PER. Scoring every take on disk (64) against every unrelated phrase (751
+pairs) showed why it cannot be: a different sentence read in place of the
+phrase reaches PER 0.875 against `pron.th-voiced`, below the 0.818 of a real
+deliberate take plus any margin, and the alignment of that wrong sentence
+books a curated /ð/→/d/. The share of the phrase's phonemes heard unchanged
+separates them where the PER does not: no unrelated pairing passed 0.50, and
+the floor is 0.55 (`PHRASE_HIT_MIN`). Its cost is two of the 24 clean takes of
+the right phrase, which the recognizer heard as mostly noise: `c3e16004`
+(0.18) and `365e3cfb` (0.47), the takes that admitted `pron.h-dropping` and
+`pron.ing-alveolar` in E10. On those the product stays silent. That is §3.3's
+rule — silence is an answer, a false correction is the worst one — and it also
+says the two rules' evidence is thinner than their status: each was admitted
+by a take the product itself would not judge. A second identity witness,
+Whisper's words against the phrase's, is the obvious way to give those takes
+back, and it is measurement, not code, that has to come first.
 
 **O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
 no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer

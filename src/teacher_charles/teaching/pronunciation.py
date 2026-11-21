@@ -1,10 +1,12 @@
-"""The pronunciation base: the sounds Portuguese bends in a student's English.
+"""The pronunciation base and its evaluator: what Portuguese bends in a student's English.
 
-E10 of ``docs/plano-fase-2.md``. This module holds the curated items of
-``data/contrastive/pronunciation.yaml`` and nothing that judges audio yet: the
-evaluator that intersects an alignment with an item's signature is E11, and it
-joins this module then. What an item carries is ``docs/metodo-fonetico.md``
-§1 and §7 read as a schema.
+E10 and E11 of ``docs/plano-fase-2.md``. The first half holds the curated items
+of ``data/contrastive/pronunciation.yaml``; what an item carries is
+``docs/metodo-fonetico.md`` §1 and §7 read as a schema. The second half,
+``Evaluator``, is gates 2 and 3 of metodo §3: it takes the phonemes a
+recognizer heard and returns a verdict that cites the rule, or silence. It
+takes text and symbols, never audio, so ``teaching/`` still imports nothing
+from ``voice/``; gate 1 runs there and arrives here as two values.
 
 **Pronunciation items are not text items, and they never meet the text
 base.** ``ContrastiveBase`` matches a student's *typed* sentence, and the
@@ -31,7 +33,8 @@ graded item the synthetic pair missed has to say why.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -42,6 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..config import get_settings
 from ..store.models import CefrLevel
 from .contrastive import PRONUNCIATION_FILE
+from .phonetics import ipa_owners
 
 PRONUNCIATION_ID_PATTERN = r"^pron\.[a-z0-9]+(?:-[a-z0-9]+)*$"
 
@@ -311,8 +315,318 @@ def schema_json_text() -> str:
     return json.dumps(json_schema(), indent=2, ensure_ascii=False) + "\n"
 
 
+# --- the evaluator (E11) --------------------------------------------------- #
+
+# Gate 2's floor: the share of the phrase's phonemes heard where they were
+# expected (not substituted, not deleted). It asks whether the take *is the
+# phrase*, not whether it was said well, which is why an aggregate is allowed
+# here when plan §3.3 forbids one for quality (metodo §3).
+#
+# It is not the phoneme error rate, and that was measured, not assumed. Reading
+# *the red car is ready* against `pron.th-voiced` scores PER 0.875 — inside
+# any ceiling that keeps a real deliberate take (0.818) — and the alignment
+# then books a /ð/→/d/ that nobody said. Over the 64 takes on disk, each scored
+# against every unrelated phrase (751 pairs), the share heard where expected
+# never passed 0.50; at 0.55 none of the 751 gets through.
+#
+# The cost is two clean takes of the right phrase that the recognizer heard as
+# mostly noise, 0.18 and 0.47 — and they are the takes that admitted
+# `pron.h-dropping` and `pron.ing-alveolar` in E10. Silence on them is the
+# price of never correcting a sentence the student did not read; plan §3.3's
+# rule is that silence is an answer, and the false correction is the worst one.
+PHRASE_HIT_MIN = 0.55
+
+# The classes whose identity this stack does not resolve, on the heard side of
+# a signature operation (plan §3.4; the script's ``PHONEME_CLASSES``). None of
+# the three admitted rules has a vowel on its heard side, so today this widens
+# nothing, and it is here so the first epenthesis item does not have to know.
+PHONEME_CLASSES: tuple[frozenset[str], ...] = (frozenset({"ɪ", "i", "ɐ", "ə"}),)
+
+# Punctuation espeak keeps in its output, which is no phoneme.
+_IPA_PUNCTUATION = str.maketrans("", "", '.,;:!?…—–"“”‘’()')
+
+Verdict = Literal["correction", "no-error", "silence"]
+
+
+class PronunciationUnavailable(RuntimeError):
+    """The expected text could not be built: espeak did not answer."""
+
+
+def tokenize(ipa: str, vocabulary: frozenset[str]) -> list[str]:
+    """Cut one IPA word into the recognizer's symbols, longest match first.
+
+    ``aɪ`` before ``a``: a two-character symbol split in two would read as an
+    error on every take. A character outside the inventory comes back marked
+    with ``?`` so it can be refused, never dropped in silence.
+    """
+    out: list[str] = []
+    longest = max((len(token) for token in vocabulary), default=1)
+    i = 0
+    while i < len(ipa):
+        for size in range(min(longest, len(ipa) - i), 0, -1):
+            if ipa[i : i + size] in vocabulary:
+                out.append(ipa[i : i + size])
+                i += size
+                break
+        else:
+            out.append("?" + ipa[i])
+            i += 1
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class Expected:
+    """The phrase as the recognizer should hear it, each symbol with its word."""
+
+    phonemes: tuple[str, ...]
+    words: tuple[str, ...]
+
+
+def expected_for(text: str, g2p: Callable[[str], str], vocabulary: frozenset[str]) -> Expected:
+    """espeak's reading of ``text``, tokenized, with the written word each symbol belongs to.
+
+    espeak joins words the way a speaker runs them (*I am* is ``aɪɐm``), so the
+    sentence's IPA words are fitted back to the written ones by
+    ``phonetics.ipa_owners`` — the same fit the IPA line uses — and a joined
+    pair is labelled with both words.
+    """
+    sentence = g2p(text).translate(_IPA_PUNCTUATION).split()
+    if not sentence:
+        raise PronunciationUnavailable(f"espeak gave no reading for {text!r}")
+    written = [word.strip(".,;:!?\"'") for word in text.split()]
+    per_word = [g2p(word).translate(_IPA_PUNCTUATION).replace(" ", "") for word in written]
+    owners = ipa_owners(written, sentence, per_word)
+    labels = [
+        " ".join(written[i] for i, owned in enumerate(owners) if j in owned) or ""
+        for j in range(len(sentence))
+    ]
+    phonemes: list[str] = []
+    words: list[str] = []
+    for ipa_word, label in zip(sentence, labels, strict=True):
+        for token in tokenize(ipa_word, vocabulary):
+            phonemes.append(token)
+            words.append(label)
+    return Expected(phonemes=tuple(phonemes), words=tuple(words))
+
+
+@dataclass(frozen=True, slots=True)
+class Operation:
+    """One edit of the alignment. ``at`` indexes the expected side; an insertion sits before it."""
+
+    kind: Literal["sub", "del", "ins"]
+    expected: str | None
+    heard: str | None
+    at: int
+
+    @property
+    def tag(self) -> tuple[str, ...]:
+        if self.kind == "sub":
+            return ("sub", self.expected or "", self.heard or "")
+        if self.kind == "del":
+            return ("del", self.expected or "")
+        return ("ins", self.heard or "")
+
+
+def align(expected: Sequence[str], heard: Sequence[str]) -> list[Operation]:
+    """Levenshtein with a backtrace that keeps *where* each edit is.
+
+    The script's ``align`` keeps only which edits there were, which was enough
+    to measure; a verdict has to say which word the error was in, so this one
+    keeps the position. The tie-breaking order is the script's, so the same
+    take aligns the same way in both.
+    """
+    n, m = len(expected), len(heard)
+    cost = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        cost[i][0] = i
+    for j in range(m + 1):
+        cost[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if expected[i - 1] == heard[j - 1]:
+                cost[i][j] = cost[i - 1][j - 1]
+            else:
+                cost[i][j] = 1 + min(cost[i - 1][j - 1], cost[i - 1][j], cost[i][j - 1])
+    ops: list[Operation] = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        same = i > 0 and j > 0 and expected[i - 1] == heard[j - 1]
+        if same and cost[i][j] == cost[i - 1][j - 1]:
+            i, j = i - 1, j - 1
+        elif i > 0 and j > 0 and cost[i][j] == cost[i - 1][j - 1] + 1:
+            ops.append(Operation("sub", expected[i - 1], heard[j - 1], i - 1))
+            i, j = i - 1, j - 1
+        elif i > 0 and cost[i][j] == cost[i - 1][j] + 1:
+            ops.append(Operation("del", expected[i - 1], None, i - 1))
+            i -= 1
+        else:
+            ops.append(Operation("ins", None, heard[j - 1], i))
+            j -= 1
+    ops.reverse()
+    return ops
+
+
+def heard_where_expected(expected: Sequence[str], ops: Sequence[Operation]) -> float:
+    """The share of ``expected`` that came out unchanged: gate 2's measure."""
+    missed = {op.at for op in ops if op.kind in ("sub", "del")}
+    return 1 - len(missed) / max(len(expected), 1)
+
+
+def _class_of(phoneme: str) -> frozenset[str]:
+    for klass in PHONEME_CLASSES:
+        if phoneme in klass:
+            return klass
+    return frozenset({phoneme})
+
+
+def widen(signature: Sequence[tuple[str, ...]]) -> set[tuple[str, ...]]:
+    """The signature with its heard side opened to the phoneme's class (plan §3.4)."""
+    wider: set[tuple[str, ...]] = set(signature)
+    for op in signature:
+        if op[0] == "sub":
+            wider |= {("sub", op[1], alt) for alt in _class_of(op[2])}
+        elif op[0] == "ins":
+            wider |= {("ins", alt) for alt in _class_of(op[1])}
+    return wider
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """One curated operation, in the word it happened in."""
+
+    word: str
+    expected: str
+    heard: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"word": self.word, "expected": self.expected, "heard": self.heard}
+
+
+@dataclass(frozen=True, slots=True)
+class Judgement:
+    """What one take earned. Never a score: metodo §4 has three verdicts and no fourth.
+
+    ``no-error`` is not ``success``. Metodo §4's success also needs the rule to
+    have been named at least once *for this student* (§2.4's guard against
+    graduating by silence), and that is history, which E12 persists and this
+    request does not have. So the evaluator says what it saw, and the schedule
+    decides what it was worth.
+    """
+
+    rule_id: str
+    verdict: Verdict
+    # For silence: which gate (1, 2), and the sentence the student reads.
+    gate: int | None = None
+    advice: str | None = None
+    opportunities: int = 0
+    findings: tuple[Finding, ...] = field(default_factory=tuple)
+    explanation: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """The payload of ``POST /api/pronunciation``.
+
+        It carries **no PER and no heard transcription**: the operations outside
+        the signature are exactly what plan §3.2 keeps from the student, and a
+        number is the score plan §4 rules out.
+        """
+        return {
+            "rule_id": self.rule_id,
+            "verdict": self.verdict,
+            "gate": self.gate,
+            "advice": self.advice,
+            "opportunities": self.opportunities,
+            "errors": len(self.findings),
+            "findings": [finding.as_dict() for finding in self.findings],
+            "explanation": self.explanation,
+        }
+
+
+GATE_2_ADVICE = "I could not match that to the sentence. Read it once more, just as it is written."
+
+
+class Evaluator:
+    """Gates 2 and 3 of metodo §3, for the graded items of a base."""
+
+    def __init__(self, base: PronunciationBase, g2p: Callable[[str], str]) -> None:
+        self._base = base
+        self._g2p = g2p
+
+    def item(self, rule_id: str) -> PronunciationItem:
+        return self._base.get(rule_id)
+
+    def expected(self, rule_id: str, phrase: int, vocabulary: frozenset[str]) -> Expected:
+        item = self._base.get(rule_id)
+        return expected_for(item.phrases[phrase].text, self._g2p, vocabulary)
+
+    def evaluate(
+        self,
+        rule_id: str,
+        heard: Sequence[str],
+        vocabulary: frozenset[str],
+        *,
+        phrase: int = 0,
+        signal_usable: bool = True,
+        signal_advice: str | None = None,
+    ) -> Judgement:
+        """The verdict on one take of ``phrase`` of ``rule_id``.
+
+        ``signal_usable`` and ``signal_advice`` are gate 1, run in ``voice/``
+        before the recognizer: a take it refused or warned about is silence
+        here, whatever the phonemes say (metodo §7).
+        """
+        item = self._base.get(rule_id)
+        if item.discrimination.status != "graded":
+            raise ValueError(f"{rule_id} is {item.discrimination.status}: it gives no verdict")
+        if not signal_usable:
+            return Judgement(rule_id, "silence", gate=1, advice=signal_advice)
+
+        expected = expected_for(item.phrases[phrase].text, self._g2p, vocabulary)
+        if any(token.startswith("?") for token in expected.phonemes):
+            raise PronunciationUnavailable(
+                f"{rule_id}: the phrase has symbols the recognizer cannot emit: "
+                f"{[t for t in expected.phonemes if t.startswith('?')]}"
+            )
+
+        ops = align(expected.phonemes, heard)
+        if heard_where_expected(expected.phonemes, ops) < PHRASE_HIT_MIN:
+            return Judgement(rule_id, "silence", gate=2, advice=GATE_2_ADVICE)
+
+        signature = widen(item.signature)
+        findings = tuple(
+            Finding(
+                word=expected.words[op.at] if op.at < len(expected.words) else "",
+                expected=op.expected or "",
+                heard=op.heard,
+            )
+            for op in ops
+            if op.tag in signature
+        )
+        opportunities = sum(1 for token in expected.phonemes if token == item.target)
+        if findings:
+            return Judgement(
+                rule_id,
+                "correction",
+                opportunities=opportunities,
+                findings=findings,
+                explanation=item.explanation,
+            )
+        return Judgement(rule_id, "no-error", opportunities=opportunities)
+
+
 __all__ = [
+    "PHRASE_HIT_MIN",
     "Discrimination",
+    "Evaluator",
+    "Expected",
+    "Finding",
+    "Judgement",
+    "Operation",
+    "PronunciationUnavailable",
+    "align",
+    "expected_for",
+    "heard_where_expected",
+    "tokenize",
+    "widen",
     "Equivalence",
     "PRONUNCIATION_ID_PATTERN",
     "Phrase",

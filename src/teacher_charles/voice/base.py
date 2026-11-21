@@ -187,6 +187,45 @@ class SpeechToText(Loadable, abc.ABC):
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class HeardPhonemes:
+    """The phonemes a recognizer heard, in espeak IPA, and what it cost."""
+
+    phonemes: tuple[str, ...]
+    duration_s: float
+    elapsed_ms: float
+
+
+class PhonemeRecognizer(Loadable, abc.ABC):
+    """The phoneme ear of Phase 2 (E11). PCM in, espeak IPA symbols out.
+
+    Not a ``SpeechToText``: it returns no words, and a word is exactly what it
+    must not guess. A decoder that knew which phoneme sequences are English
+    would correct the student's pronunciation before the evaluator saw it.
+    """
+
+    model: str
+
+    @abc.abstractmethod
+    async def recognize(self, speech: Speech) -> HeardPhonemes:
+        """Every phoneme heard in ``speech``, which is 16 kHz mono PCM."""
+
+    @abc.abstractmethod
+    async def vocabulary(self) -> frozenset[str]:
+        """The symbols this recognizer can emit, for tokenizing the expected text.
+
+        The expected side has to be cut into the same inventory the heard side
+        comes in, or a two-character symbol split in two reads as an error.
+        """
+
+    async def warm_up(self) -> None:
+        """Same rule as the other engines: loads early, never propagates."""
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
+
 class TextToSpeech(Loadable, abc.ABC):
     """A boca. Recebe uma sentença, devolve PCM."""
 

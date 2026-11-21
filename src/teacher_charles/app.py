@@ -76,16 +76,28 @@ from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
 from .teaching.phonetics import Phonetics, build_phonetics, ipa_owners, ipa_pairs
+from .teaching.pronunciation import Evaluator, PronunciationError, PronunciationUnavailable
+from .teaching.pronunciation import load_base as load_pronunciation
 from .teaching.schedule import is_graduated
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
-from .voice import SentenceAssembler, Voice, VoiceError, build_voice, split_sentences
+from .voice import (
+    PhonemeRecognizer,
+    SentenceAssembler,
+    Voice,
+    VoiceError,
+    build_phonemes,
+    build_voice,
+    split_sentences,
+)
 from .voice.align import word_starts
 from .voice.base import STT_SAMPLE_RATE, Speech
 from .voice.follow import last_heard
 from .voice.kokoro import MAX_SPEED as KOKORO_MAX_SPEED
 from .voice.kokoro import MIN_SPEED as KOKORO_MIN_SPEED
+from .voice.signal import diagnose as diagnose_signal
+from .voice.signal import samples_from_pcm
 
 log = logging.getLogger(__name__)
 
@@ -233,6 +245,26 @@ FOLLOW_MAX_SECONDS = 8
 FOLLOW_MAX_AUDIO_CHARS = (FOLLOW_MAX_SECONDS * STT_SAMPLE_RATE * 2 * 4) // 3 + 4
 
 
+# A read-aloud take: one curated phrase, a breath long. Ten seconds is the
+# window with room; the recognizer's own ceiling is thirty.
+PRONUNCIATION_MAX_SECONDS = 10
+PRONUNCIATION_MAX_AUDIO_CHARS = (PRONUNCIATION_MAX_SECONDS * STT_SAMPLE_RATE * 2 * 4) // 3 + 4
+
+
+class PronunciationRequest(BaseModel):
+    """One take of one curated phrase, for a verdict (E11).
+
+    ``audio`` is 16 kHz mono 16-bit PCM in base64, as ``/api/follow`` takes it.
+    The phrase is named by rule and index, never sent as text: the expected
+    text is the curated one, and a page that could send its own would let any
+    sentence be judged against a rule written for another.
+    """
+
+    rule_id: str = Field(min_length=1, max_length=80)
+    phrase: int = Field(default=0, ge=0)
+    audio: str = Field(min_length=1, max_length=PRONUNCIATION_MAX_AUDIO_CHARS)
+
+
 class FollowRequest(BaseModel):
     """The last seconds of a student reading aloud, and the words around them.
 
@@ -353,6 +385,25 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # derrubar a aula.
         phonetics = build_phonetics(settings)
 
+        # The phoneme ear of E11, ``None`` with pronunciation off (the
+        # default). Building loads nothing; the 318 MB arrive in the warm-up.
+        phonemes = build_phonemes(settings)
+        pronunciation: Evaluator | None = None
+        pronunciation_error: str | None = None
+        if phonemes is not None:
+            # Curated content, so the shelf's policy: a broken base is reported
+            # by /health and the route answers 503, the lesson goes on. The
+            # expected text comes from its own espeak with no stress marks,
+            # which is how the recognizer writes and how E9's reports wrote it.
+            try:
+                pronunciation = Evaluator(
+                    load_pronunciation(settings.data_dir / "contrastive" / "pronunciation.yaml"),
+                    Phonetics(with_stress=False).transcribe,
+                )
+            except PronunciationError as exc:
+                pronunciation_error = str(exc)
+                log.error("the pronunciation base did not load: %s", exc)
+
         # ``None`` with the syntax view off, which is the default. Building
         # loads nothing; whether the extra is even installed is asked of the
         # import system, not found out by importing 3 s of spaCy here.
@@ -394,6 +445,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # see ``/api/tts/{speech_id}/words``.
         app.state.timed_speech = OrderedDict()
         app.state.phonetics = phonetics
+        app.state.phonemes = phonemes
+        app.state.pronunciation = pronunciation
+        app.state.pronunciation_error = pronunciation_error
         app.state.syntax = syntax
         app.state.dictionary = dictionary
         app.state.lessons = lessons
@@ -467,6 +521,12 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             asyncio.create_task(syntax.warm_up()) if syntax_on_screen(syntax) else None
         )
 
+        # 318 MB on the first start, then a ~2 s load. In the background and
+        # without propagating, like every other warm-up here.
+        app.state.phonemes_warmup = (
+            asyncio.create_task(phonemes.warm_up()) if phonemes is not None else None
+        )
+
         try:
             yield
         finally:
@@ -475,6 +535,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 app.state.voice_warmup,
                 app.state.phonetics_warmup,
                 app.state.syntax_warmup,
+                app.state.phonemes_warmup,
             ):
                 if task is not None and not task.done():
                     task.cancel()
@@ -483,6 +544,8 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             await chat.aclose()
             if voice is not None:
                 await voice.aclose()
+            if phonemes is not None:
+                await phonemes.aclose()
             conn.close()
 
     app = FastAPI(
@@ -1314,6 +1377,82 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.post("/api/pronunciation")
+    async def pronunciation_verdict(payload: PronunciationRequest) -> JSONResponse:
+        """The verdict on one read-aloud take of a curated phrase (E11).
+
+        Three gates in order, ``docs/metodo-fonetico.md`` §3: the signal
+        (``voice/signal.py``), whether the take is the phrase, and whether the
+        alignment holds an operation of the rule's signature. Only that last
+        one ever names an error, and only with the rule's ``rule_id``; the
+        payload carries no PER and no transcription (``Judgement.as_dict``).
+
+        **It records nothing.** No turn, no signal row, no review: E12 is what
+        persists a take, because what a take is worth to the schedule depends
+        on the student's history, which this request does not read.
+        """
+        phonemes: PhonemeRecognizer | None = app.state.phonemes
+        evaluator: Evaluator | None = app.state.pronunciation
+        if phonemes is None:
+            return JSONResponse(
+                {
+                    "detail": "pronunciation is off on this server",
+                    "how": "start with TC_PRONUNCIATION_ENABLED=true "
+                    "(and `uv sync --extra voice` first, if it is the first time)",
+                },
+                status_code=503,
+            )
+        if evaluator is None:
+            return JSONResponse(
+                {
+                    "detail": "the pronunciation base did not load",
+                    "why": app.state.pronunciation_error,
+                },
+                status_code=503,
+            )
+        try:
+            item = evaluator.item(payload.rule_id)
+        except LookupError:
+            return JSONResponse({"detail": f"no rule {payload.rule_id!r}"}, status_code=404)
+        if item.discrimination.status != "graded":
+            return JSONResponse(
+                {"detail": f"{item.id} is {item.discrimination.status} and gives no verdict"},
+                status_code=409,
+            )
+        if payload.phrase >= len(item.phrases):
+            return JSONResponse(
+                {"detail": f"{item.id} has no phrase {payload.phrase}"}, status_code=404
+            )
+
+        try:
+            pcm = base64.b64decode(payload.audio, validate=True)
+        except ValueError:
+            return JSONResponse({"detail": "the audio is not base64"}, status_code=422)
+        if len(pcm) % 2:
+            return JSONResponse({"detail": "the audio is not 16-bit PCM"}, status_code=422)
+
+        import numpy as np  # the voice extra: the recognizer cannot be on without it
+
+        signal = diagnose_signal(samples_from_pcm(pcm, np), np)
+        headers = {"Cache-Control": "no-store"}
+        try:
+            if not signal.usable:
+                judgement = evaluator.evaluate(
+                    item.id, (), frozenset(), signal_usable=False, signal_advice=signal.advice
+                )
+                return JSONResponse(judgement.as_dict(), headers=headers)
+            heard = await phonemes.recognize(
+                Speech(pcm=pcm, sample_rate=STT_SAMPLE_RATE, elapsed_ms=0.0)
+            )
+            judgement = evaluator.evaluate(
+                item.id, heard.phonemes, await phonemes.vocabulary(), phrase=payload.phrase
+            )
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+        except PronunciationUnavailable as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+        return JSONResponse(judgement.as_dict(), headers=headers)
+
     @app.post("/api/syntax")
     async def syntax_breakdown(payload: SyntaxRequest) -> JSONResponse:
         """How one message is built, for the Structure button under it.
@@ -1642,6 +1781,21 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 },
             }
 
+        # Pronunciation counts for the status only when asked for, like the
+        # voice: asked for and not loaded is degraded, with the reason.
+        phonemes_engine: PhonemeRecognizer | None = app.state.phonemes
+        if phonemes_engine is None:
+            pronunciation_info: dict[str, Any] = {"ok": True, "enabled": False}
+        else:
+            evaluator_state: Evaluator | None = app.state.pronunciation
+            pronunciation_info = {
+                "ok": phonemes_engine.ready and evaluator_state is not None,
+                "enabled": True,
+                "model": phonemes_engine.model,
+                "ready": phonemes_engine.ready,
+                "detail": phonemes_engine.last_error or app.state.pronunciation_error,
+            }
+
         # O IPA não conta para o status, e isso é escolha: a aula funciona
         # inteira sem a linha de pronúncia, enquanto sem banco, modelo ou base
         # ela não funciona. Mas aparece com o motivo — o aquecimento engole o
@@ -1719,7 +1873,13 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # modelo e base contrastiva. Separar os três evita um health verde
             # enganoso.
             "status": "ok"
-            if (db_info["ok"] and model.ok and contrastive_info["ok"] and voice_info["ok"])
+            if (
+                db_info["ok"]
+                and model.ok
+                and contrastive_info["ok"]
+                and voice_info["ok"]
+                and pronunciation_info["ok"]
+            )
             else "degraded",
             "version": __version__,
             # The running code's version (semver.py): equal to the release on
@@ -1738,6 +1898,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             },
             "provider": type(app.state.provider).__name__,
             "voice": voice_info,
+            "pronunciation": pronunciation_info,
             "phonetics": phonetics_info,
             "syntax": syntax_info,
             "dictionary": dictionary_info,

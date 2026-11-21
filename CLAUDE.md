@@ -45,6 +45,13 @@ uv sync --extra dev --extra syntax
 TC_SYNTAX_ENABLED=true uv run teacher-charles    # or scripts/run.sh --syntax
 ```
 
+Pronunciation (E11) is off by default too. It needs the `voice` extra and
+fetches a 318 MB recognizer into the Hugging Face cache on the first warm-up:
+
+```bash
+TC_PRONUNCIATION_ENABLED=true uv run teacher-charles
+```
+
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
 uv run pytest -m "not integration"       # ~1070 tests, ~40s, no model at all
@@ -103,7 +110,8 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `stress_shift.py` | The one G2P fix both espeak readers share: in *record by record* espeak reads the first word as a verb after "then", and the IPA line and Kokoro both swap in the noun reading. Top-level and stdlib-only because `voice/` does not import `teaching/`, and the screen and the voice must say the same stress. |
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
-| `teaching/pronunciation.py` | The pronunciation base (E10): the curated rules of `data/contrastive/pronunciation.yaml`, each with its phrase, the signature of alignment operations that count as the error, the equivalences correct English also allows, and the human takes that admitted it, by md5 prefix. Nothing here judges audio yet; the evaluator joins it in E11. **It never meets the text base** — see the invariant below. |
+| `teaching/pronunciation.py` | The pronunciation base (E10): the curated rules of `data/contrastive/pronunciation.yaml`, each with its phrase, the signature of alignment operations that count as the error, the equivalences correct English also allows, and the human takes that admitted it, by md5 prefix. Its `Evaluator` (E11) is gates 2 and 3 of `docs/metodo-fonetico.md` §3: heard phonemes and a phrase in, a `Judgement` out — a correction citing the rule, `no-error`, or silence — with no PER and no transcription in the payload. Symbols, never audio. **It never meets the text base** — see the invariant below. |
+| `voice/phonemes.py`, `voice/signal.py` | E11's ear: the E8 wav2vec2 phoneme recognizer behind `base.PhonemeRecognizer`, and gate 1 (is this audio an utterance?), ported from the measurement script with the same thresholds and English capture advice. `POST /api/pronunciation` runs gate 1 here, then the evaluator; it records nothing. |
 | `teaching/dictionary.py` | The word card under the pointer on a lesson's full text: a word in, its senses out, each with an English definition, an example and the Portuguese for it. Read with stdlib `sqlite3` from a file `scripts/fetch_dictionary.py` builds out of Open English WordNet 2024 and OpenWN-PT, joined by interlingual sense. No `wn` at runtime, nothing loaded until a hover, and it records nothing. |
 | `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. A machine that holds its own copy in `corpus/lessons/<slug>.txt` gets it shown whole on the page — read per request, never in `/api/lessons`. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. The text may also be the student's own (`OwnText`: no URL, and `extra="forbid"` refuses one), and any copy can be **rehearsed** aloud: the YAML's `rehearsal` gives each paragraph a title and a target, the cue words stay beside the copy in `<slug>.cues.txt`, and times and recordings never reach the server — `docs/adr/0001-own-text-and-rehearsal-mode.md`. The one exception is **Follow me**, which lights the word the student is saying: it sends the microphone's last seconds to `POST /api/follow`, where the timing Whisper hears them and `voice/follow.py` places them in the text; the route records nothing and returns an index, never what was heard (the ADR's amendment). |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
@@ -202,6 +210,17 @@ admits the category, and `teaching/pronunciation.py` loads the file alone.
 `tests/test_pronunciation.py` holds each of the three in place. The ids keep the
 `pron.` prefix because the E9 reports on disk and `--rescore` already name
 their rules that way.
+
+**Gate 2 is a floor on what was heard where expected, not a PER ceiling.**
+`PHRASE_HIT_MIN` in `teaching/pronunciation.py`, measured over every take on
+disk against every unrelated phrase: a wrong sentence read in the phrase's
+place scored PER 0.875 against `pron.th-voiced` and its alignment booked a
+curated /ð/→/d/, while the share heard unchanged never passed 0.50 for an
+unrelated pairing. It silences two clean takes the recognizer heard as noise —
+the ones that admitted `h-dropping` and `ing-alveolar` — and
+`test_the_floor_costs_two_takes_that_were_mostly_noise` holds that cost where
+it can be seen. Turning it back into a PER ceiling turns
+`test_another_sentence_read_in_its_place_is_silence` red.
 
 **A correction the verifier barred is kept, not just counted.** `_Verifier`
 discards every finding that cites no curated rule — that is E4's guard against

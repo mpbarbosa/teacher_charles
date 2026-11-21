@@ -14,7 +14,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .base import Speech, SpeechToText, TextToSpeech, TimedWord, Transcript, VoiceError
+from .base import (
+    HeardPhonemes,
+    PhonemeRecognizer,
+    Speech,
+    SpeechToText,
+    TextToSpeech,
+    TimedWord,
+    Transcript,
+    VoiceError,
+)
 
 # Taxa do Kokoro. O falso usa a mesma para o código de borda que monta WAV ver
 # o mesmo número que veria em produção.
@@ -161,3 +170,45 @@ class FakeTTS(TextToSpeech):
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+# The English part of the real recognizer's inventory (its `vocab.json` has 392
+# symbols across the languages it was trained on). Enough to tokenize the
+# expected text of every curated phrase the way the real engine would: the
+# two-character symbols are what matter, because a split `aɪ` is two errors.
+ENGLISH_PHONEMES: frozenset[str] = frozenset(
+    "aɪ aɪə aɪɚ aʊ b d dʒ eɪ f h i iə iː j k l m n oʊ oːɹ p s t tʃ v w z "
+    "æ ð ŋ ɐ ɑː ɑːɹ ɔ ɔɪ ɔː ɔːɹ ə əl ɚ ɛ ɛɹ ɜː ɡ ɪ ɪɹ ɹ ʃ ʊ ʊɹ ʌ ʒ θ "
+    "a o e ɾ uː u x ʔ".split()
+)
+
+
+class FakePhonemes(PhonemeRecognizer):
+    """Scripted phonemes, and a record of every take it was handed.
+
+    With several ``heard`` sequences each call takes the next; the last one
+    repeats, as in ``FakeSTT``.
+    """
+
+    def __init__(
+        self,
+        heard: list[tuple[str, ...]] | tuple[str, ...] = (),
+        vocabulary: frozenset[str] = ENGLISH_PHONEMES,
+        error: Exception | None = None,
+        model: str = "fake-phonemes",
+    ) -> None:
+        self.model = model
+        self._heard = list(heard) if isinstance(heard, list) else [heard]
+        self._vocabulary = vocabulary
+        self._error = error
+        self.calls: list[Speech] = []
+
+    async def recognize(self, speech: Speech) -> HeardPhonemes:
+        self.calls.append(speech)
+        if self._error is not None:
+            raise self._error
+        heard = self._heard.pop(0) if len(self._heard) > 1 else self._heard[0]
+        return HeardPhonemes(phonemes=tuple(heard), duration_s=speech.duration_s, elapsed_ms=1.0)
+
+    async def vocabulary(self) -> frozenset[str]:
+        return self._vocabulary

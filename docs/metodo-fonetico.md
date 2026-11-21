@@ -204,6 +204,13 @@ phrase* from *not the phrase*: the deliberate take at PER 2.500
 is not a pronunciation worth scoring, and nothing subtle is needed to see that.
 Gate 2 is the floor under the method, and it is also what makes §6 possible.
 
+**The aggregate is not the PER**, and E11 found that out by measuring: a
+different sentence read in the phrase's place can score PER 0.875, inside a
+ceiling that keeps a real deliberate take, and its alignment then books a
+curated operation nobody produced. Gate 2 is a floor on the share of the
+phrase heard unchanged (0.55), which no unrelated pairing on disk reached.
+Plan §5 has the numbers, and the two clean takes the floor silences.
+
 **Gate 3 is per operation, never per PER.** The alignment is intersected with
 the item's signature; only an operation carrying a `rule_id` reaches the
 student. §3.2 of the plan, with the number that justifies it.

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from ..config import Settings
 from .base import (
     STT_SAMPLE_RATE,
+    HeardPhonemes,
+    PhonemeRecognizer,
     Speech,
     SpeechToText,
     TextToSpeech,
@@ -30,13 +32,17 @@ from .base import (
     VoiceModelNotFound,
     VoiceUnavailable,
 )
-from .fake import FakeSTT, FakeTTS
+from .fake import ENGLISH_PHONEMES, FakePhonemes, FakeSTT, FakeTTS
 from .segment import MIN_SENTENCE_CHARS, SentenceAssembler, for_speech, split_sentences
 
 __all__ = [
+    "ENGLISH_PHONEMES",
     "MIN_SENTENCE_CHARS",
     "STT_SAMPLE_RATE",
+    "FakePhonemes",
     "FakeSTT",
+    "HeardPhonemes",
+    "PhonemeRecognizer",
     "FakeTTS",
     "SentenceAssembler",
     "Speech",
@@ -48,6 +54,7 @@ __all__ = [
     "VoiceError",
     "VoiceModelNotFound",
     "VoiceUnavailable",
+    "build_phonemes",
     "build_voice",
     "for_speech",
     "split_sentences",
@@ -139,3 +146,22 @@ def build_voice(settings: Settings) -> Voice | None:
             cpu_threads=settings.tts_cpu_threads,
         ),
     )
+
+
+def build_phonemes(settings: Settings) -> PhonemeRecognizer | None:
+    """The phoneme recognizer of E11, or ``None`` with pronunciation off (the default).
+
+    Separate from ``build_voice`` because it is a separate ear with a
+    separate weight: a student can talk to Charles without the 318 MB, and the
+    read-aloud drill needs only this and a microphone. It needs the ``voice``
+    extra installed all the same, for ``onnxruntime`` and ``huggingface_hub``;
+    no wheel is added for it (plan §2.0), so there is no extra of its own.
+    """
+    if not settings.pronunciation_enabled:
+        return None
+    if settings.provider == "fake":
+        return FakePhonemes()
+
+    from .phonemes import Wav2Vec2Phonemes
+
+    return Wav2Vec2Phonemes(threads=settings.pronunciation_threads)
