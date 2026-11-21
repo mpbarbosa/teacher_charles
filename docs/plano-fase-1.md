@@ -1112,12 +1112,84 @@ mesma família, a mesma classe de tamanho e o mesmo download — e conserta as
 duas coisas que estavam quebradas. Mas ela fica de pé pela decisão 1.3, não
 por esta tabela: pelos números daqui, o 3B é o modelo mais rápido e igualmente
 certeiro. **Dívida aberta:** medir a qualidade da resposta do professor nos
-dois. Se empatar, o default certo é o 3B.
+dois. Se empatar, o default certo é o 3B. *(Measured below: it ties.)*
 
 Uma primeira passada do `qwen3:4b` foi descartada inteira: outra carga na
 máquina levou o load a ~35 e os tempos deixaram de valer. Fica dela só o que
 não depende de relógio: num dos turnos o modelo gerou 3251 tokens antes de
 terminar, o triplo do pior turno da passada válida.
+
+#### The teacher's prose, measured at last — and it ties
+
+The debt above, paid on 2026-11-21 with `scripts/measure_prose.py`: 19
+student turns (clean English at A2–C1, errors the base matches, errors it does
+not, Portuguese input, a grammar question, a sound question, the microphone
+question, a bad day, the praise case after a correction, correction mode and
+drill), three runs each, through the product's own prompt — persona, app
+capabilities with the IPA line on, level, mode, drill data and the curated
+hint inside the student's message. Ollama 0.35, both models on CPU, defaults
+for sampling, as the student gets them.
+
+The half a counter can read, with no judge:
+
+| | `qwen2.5:3b-instruct` | `qwen3:4b-instruct` |
+|---|---|---|
+| Words per reply, median · max | 30 · 86 | 52 · 160 |
+| More than four sentences (spec: two or three) | 16/57 | 38/57 |
+| Right form shown, probes with a known error | 13/24 | **21/24** |
+| Answered the Portuguese turn in Portuguese | **3/3** | 0/3 |
+| Ends on a question, conversation mode | 38/51 | 29/51 |
+| `>` block in the reply (copied from the persona) | 10/57 | 0/57 |
+| IPA typed into the prose | 2/57 | 8/57 |
+| Emoji | 0/57 | 27/57 |
+| Turn, median | 11.7s | 37.1s |
+
+The other half needs reading, so it was read blind: each pair of replies to
+the same turn went out under shuffled labels A/B, in shuffled order, to two
+judges who saw the persona's rules and never the key (a Claude Opus and a
+Claude Sonnet, separately). Per pair they marked faults on each reply and
+picked a winner on accuracy, pedagogy, conversation and overall.
+
+| Overall, 57 pairs | 3B | 4B | tie |
+|---|---|---|---|
+| Judge 1 | 22 | 29 | 6 |
+| Judge 2 | 24 | 23 | 10 |
+| Both judges named the same winner | 19 | 20 | — |
+
+The judges agreed on 42 of 57 overall verdicts, and both counted the same
+share of faulty replies in each model: 35/57 against 34/57 for one judge, and
+35/57 against 37/57 for the other. **By this plan's own rule it is a tie, and on
+a tie the default is the 3B** — at a third of the time per turn.
+
+The tie is two opposite profiles, not two equal ones, and that is what to read
+before acting on it:
+
+- **The 4B delivers the correction; the 3B lets it slip.** On turns the base
+  matches, the 4B won 13–1 and 9–2, and it put the right form on screen in 21 of
+  24 against 13. It never answered in Portuguese; the 3B did on all three
+  Portuguese turns. That breaks decision 1.1, and the prompt does not stop it.
+- **The 4B invents grammar in clean English; the 3B leaves it alone.** On
+  correct sentences the 3B won 8–3 and 9–2. The 4B "corrected" *The water was
+  cold* to *It was cold*, *I've been thinking about* to *I'm considering*, and
+  *in a terrible state* as "too strong", each with a made-up reason. It made up
+  a rule that *go* is "for places, not actions", and it misquoted a student who
+  wrote *lost the bus* as having said *missed*. False facts: 18 and 23 for the
+  4B, 7 and 6 for the 3B. This is the failure E4 built the verifier against,
+  and here it reaches the student through the prose, where nothing verifies.
+- **Both say *think* and *this* begin with the same sound, six times out of
+  six**, despite the persona's sound clause. The 4B also types IPA into the
+  prose eight times, under a partial that tells it the IPA line does that job.
+  One line spells *35 years* as "ˈθɜːrti ˈfeɪvər zɪərs".
+
+What this does not settle. Two model judges are a proxy, not a Brazilian
+learner or a teacher, and the same session wrote the probes, the rubric and
+the script. Nineteen turns at three runs each is the house's usual small
+sample. And "tie" is the sum of two different failure profiles, so which one
+is worse is a product call, not a number: the 4B's invented corrections teach
+something false, while the 3B's missed ones and its Portuguese only fail to
+teach. The raw runs and both verdicts are not versioned, because they are
+model output and can be regenerated. The script rewrites the sheet and the key
+on every run.
 
 ### Rodar em dev
 
