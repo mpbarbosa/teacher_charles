@@ -1222,7 +1222,9 @@ primeira coisa que uma segunda voz pode derrubar é justamente a escada — tant
   esperado, devolve erros **com `rule_id`**. É pedagogia, logo mora em
   `teaching/`.
 - `data/contrastive/pronunciation.yaml`, na categoria que o schema já tem.
-- `POST /api/pronunciation`, e o retorno na UI **depois** do turno.
+- `POST /api/pronunciation`, used first by the read-aloud drill (E12) and
+  only later after the conversation turn (E14), and there always **after** the
+  turn.
 - `pronunciation_signal` no SQLite, e agregação por fonema no `/progress`.
 - `teaching/schedule.py`: repetição espaçada sobre `correction` +
   `pronunciation_signal`; o drill escolhe a regra por agendamento.
@@ -1258,7 +1260,8 @@ entregas numeradas.
 | **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com a operação curada nomeada em **8 de 8** regras e em **3 de 8** por tomada limpa (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada, exige nomeação em tomada **limpa**, e nasce com três regras enquanto as outras cinco esperam gravação, não pilha |
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado por voz humana em tomada que o diagnóstico não avisou** (§3.7). O número de itens sai da medição, não do alvo — e `pron.ing-alveolar` entra pela passada correta, com a razão registrada, porque ali o ponto cego era da síntese (§3.5) |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** |
-| **E12** | **Pronúncia no produto** — retorno na UI depois do turno, `pronunciation_signal` persistido, `/progress` agregando por fonema | O aluno fala, conversa normalmente, e o retorno de pronúncia aparece sem atrasar a fala do professor (§3.1) |
+| **E12** | **Pronunciation in the product, read aloud** — the drill of `docs/metodo-fonetico.md` §2 as the first surface: the contrast pair, three takes of the curated phrase, and a card over the session. `pronunciation_signal` persisted, `/progress` aggregating by rule | The student picks a rule, or the schedule picks one, hears the pair and reads the phrase three times. Gate 1 runs before each reading and each take ends on silence, not on a clock. The card speaks in takes ("2 of 3"), never in a score. `pronunciation_signal` stores `opportunities` and `errors` per take, and the session gives the schedule **one** review. **`teaching/turn.py` does not change a line.** See the read-aloud paragraphs below the table |
+| **E14** | **Pronunciation after the conversation turn** — the feedback under the student's own bubble, with Whisper's transcript as the expected text | Whisper's accuracy on Brazilian-accented speech is measured first (plano 1.5 §2.3), because here the transcript *is* the expected text. A turn is evaluated only when the text sent is the transcript unedited. The feedback appears after the turn without delaying the teacher's speech (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
 
 **A E9 é portão, não etapa.** É a única entrega da fase cujo resultado pode
@@ -1273,6 +1276,83 @@ existe para evitar.
 **E a E9 respondeu: 0,154, não 0,676.** A fase segue como escrita, com o
 `large`; o que ela estreitou é a base da E10, não a pilha. A decisão, com as
 condições que a reverteriam, está na §3.7.
+
+**E12 starts with reading aloud, and the feedback after a conversation turn
+becomes E14.** The table had E12 as feedback after a free turn. That surface
+carries a risk nothing in E10 or E11 removes: in a free turn, the expected text
+the alignment is measured against can only be Whisper's transcript, and
+Whisper's accuracy on a Brazilian accent is Phase 1.5's unmeasured debt (plano
+1.5 §2.3). A transcript that heard the wrong word makes the evaluator correct a
+sentence the student never said, which is the failure `POST /api/stt` was built
+to avoid, one layer down. A curated phrase has its expected text by
+construction. `docs/metodo-fonetico.md` already designs the cycle as a
+read-aloud drill (its §2) and already names the limit (its §10: read-aloud is
+not conversation). The reorder makes the product follow the method: E12 ships
+the drill, and E14, the after-turn feedback, waits for the STT measurement.
+
+**What one practice session measured (2026-11-21).** A Brazilian speaker read
+short sentences through `--record`, 18 takes over six phrases, and the analysis
+was read back take by take. It is not a corpus: there was no deliberate pass,
+the window changed between rounds, and most of the last round carried the level
+warning. So it decides nothing about any rule. What it does decide is the shape
+of the session around the rule, in four places the method does not cover yet:
+
+1. **One take is not a finding; a repeat is.** Two things that looked like
+   habits in the first takes did not come back. The vowel of *car*
+   (`/ɑːɹ/→/ʌ/`) was wrong once and then right in all seven later takes. The end
+   of *ready* was missing in 3 of 4 takes and then whole in 6 of 6, four of them
+   at the end of a sentence. What did recur was `/oʊ/` coming out as one vowel:
+   6 of 16 opportunities, at the end of a word, before a nasal and before a
+   stop, though never inside one (*slowly*). And whole takes went flat together:
+   in the second *show me the boat* both `/oʊ/` were flat, while the second *go
+   home slowly* had all three right. So the drill records **three takes** of the
+   phrase, each through the method's three gates, and the student is told about
+   the session, not the take: *"in* other*, the `<th>` came out as /d/ in 2 of 3
+   takes"*. The per-utterance verdicts of metodo §4 stand. What changes is what
+   reaches the schedule: **one review per session**, from the tally. Named in 2
+   or more clean takes is a miss. Named in none of at least two clean takes is a
+   hit, under metodo §2.4's guard. Named once is shown as "once in three" and
+   reviews nothing. That threshold is reasoning over 18 takes of operations no
+   rule cites; E10's clean takes are where it gets measured on operations that
+   one does.
+2. **A phrase tests a word; two phrases test a hypothesis.** Asking whether
+   *ready* failed as a word or as the last word took a second phrase with it in
+   the middle. Asking about `/oʊ/` took three phrases with the vowel in
+   different positions: end of word, before a nasal, before a stop, inside a
+   word. So an E10 item may carry more than one phrase, each loading the
+   contrast in a different place, and the drill can tell "this word" from "this
+   position". It extends metodo §7's "the phrase loads the contrast at least
+   twice" to "at least twice, and in more than one place".
+3. **The capture window is part of the take.** A fixed window failed both ways
+   in one evening. Five seconds cut the sentence off after *car*. Nine seconds
+   diluted a one-second sentence until the contrast question refused it, which
+   is the statistic §3.5 now records as changed. The drill ends a take on the
+   silence after the speech, not on a clock, and gate 1 runs on a second of room
+   before the student reads, as metodo §7 already asks.
+4. **Gate 2 catches a wrong phrase, but not an extra word.** Twice the speaker
+   read the previous phrase instead of the one asked for. Against *I'm ready to
+   go* the PER came out at 1.000, and gate 2's gross PER would refuse that on
+   its own. Against *the car is ready*, reading *the red car is ready* came out
+   at 0.200, with every target phoneme right and the extra word booked as
+   insertions: no identity threshold refuses that, and none should. But an
+   inserted word inserts vowels, and the epenthesis signatures count an
+   inserted vowel. So gate 2 owes one more check before gate 3 runs: an
+   insertion run that spells a whole word is a word, not an epenthesis.
+
+**Candidates for E10 from the same session, none of them admitted by it:**
+
+- **`pron.diphthong-ou`**: `/oʊ/` → `/o/` or `/oː/`, the strongest pattern of
+  the session. It would be worded by class, not symbol, because metodo §4 holds
+  that vowel identity is not resolved here: *"the vowel in* boat *stayed on one
+  sound; English glides it toward /ʊ/"*. Every flat take carried the level
+  warning, so it owes clean takes and a `--discriminate` pair before it is an
+  item.
+- **Two `equivalences` the expected text charged as errors**: `/iː/` → `/i/` in
+  unstressed *me* (*show me*), 2 of 2, and `/ə/` → `/uː/` in *to*, its careful
+  citation form. Both are correct English.
+- **`/k/` → `/ɡ/` at the start of *car***, once in the 8 takes that had it.
+  That is what an unaspirated Portuguese `/k/` sounds like to an English ear. It is a
+  hypothesis, not a pattern.
 
 **O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
 no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer
@@ -1460,6 +1540,8 @@ com uma fonte só.
 | **O aluno real pode cair perto do 0,676 do proxy** | ~~É o portão da E9~~ **Não caiu:** mediana 0,154 em onze elocuções limpas, e a decisão está escrita (§3.7). O risco volta inteiro para cada novo falante, e é a única condição da §3.7 que reabre o portão |
 | **Áudio sintético calibra o portão errado** | Não calibra: a §3.3 proíbe calibrar o teto em sintético, de propósito. O valor sai da E9 ou não sai |
 | **Erro real de brasileiro reportado como erro que ele não cometeu** | Duas camadas: só operação com `rule_id` chega ao aluno (§3.2), e acima do portão o avaliador cala (§3.3) |
+| **In a free turn, the expected text is Whisper's guess** (E14) | That is why E14 comes after E12 and not before: the read-aloud drill has its expected text by construction. E14 waits for the STT accent measurement, and it evaluates only a turn whose sent text is the transcript unedited, because an edit means the audio and the text no longer say the same thing |
+| **A single take reads as a habit** (E12) | Three takes per drill session, and one review per session from the tally (§5, read-aloud paragraphs). The threshold of 2 of 3 is reasoning, not measurement, until E10's clean takes measure it on curated operations |
 | **Precisão inventada no retorno** | O retorno fala em classe de erro, não em símbolo de vogal (§3.4) |
 | **`pron.ing-alveolar` não é o único ponto cego** | Todo item passa pelo `--discriminate` antes de entrar na base (§3.2), e o que não passa fica documentado como ponto cego em vez de virar falso negativo silencioso. E o ponto cego pode ser da **síntese**: este item é nomeado em fala humana e não no par do Kokoro (§3.5), então a fonte humana desempata a sintética |
 | **Três modelos nativos no mesmo processo** | O lock por motor da Fase 1.5 continua, e a §3.6 explica por que a CPU agora caberia: o LLM saiu dela |
