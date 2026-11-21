@@ -135,6 +135,9 @@ Consequences:
 
 - Like the rest of the voice, this needs the `voice` extra; without it the
   button is not drawn.
-- Synthetic speech is clean, so these numbers are a ceiling. A Brazilian
-  accent read live through a real microphone has not been measured — the same
-  open debt as `/api/stt` (Phase 1.5 plan §2.3).
+- Synthetic speech is clean, so these numbers are a ceiling. On 2026-11-21
+  the student read the pitch aloud through a real microphone, with Follow me
+  on, and the light followed them. That was seen, not measured: no window was
+  counted against the word being said, so how far off the light runs on a
+  Brazilian accent read live is still unknown — the same open debt as
+  `/api/stt` (Phase 1.5 plan §2.3).
