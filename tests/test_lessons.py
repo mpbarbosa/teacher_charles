@@ -1214,6 +1214,18 @@ def test_the_rehearsal_needs_no_voice_and_hears_with_one(rehearsal_client):
     assert 'class="read-block" data-s="1.0"' in voiced
 
 
+def test_follow_me_is_there_only_with_a_voice(rehearsal_client):
+    # /api/follow is the timing Whisper: without a voice it would only 503.
+    with rehearsal_client() as c:
+        quiet = c.get("/lessons/sample").text
+    with rehearsal_client(voice_enabled=True) as c:
+        voiced = c.get("/lessons/sample").text
+    assert 'class="follow"' not in quiet and "/static/follow.js" not in quiet
+    assert 'class="follow"' in voiced and "/static/follow.js" in voiced
+    # And the page says where the voice goes when it does go somewhere.
+    assert "keeps nothing" in voiced and "keeps nothing" not in quiet
+
+
 def test_the_page_says_the_recording_is_never_sent(rehearsal_client):
     with rehearsal_client() as c:
         page = c.get("/lessons/sample").text

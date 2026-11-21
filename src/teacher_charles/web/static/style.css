@@ -1035,6 +1035,17 @@ main.lesson .rehearsal-bar {
   font-size: 0.88rem;
 }
 main.lesson .rehearsal-bar .pace input { width: 7rem; vertical-align: middle; }
+/* Follow me (follow.js): the word the student is saying. Green, the
+   curated colour, and not the reader's accent: this light is the student's
+   voice, that one is Charles's, and the two can be on screen together. */
+main.lesson .rehearsal-bar button.follow[aria-pressed="true"] { border-color: var(--curated); color: var(--curated); }
+main.lesson .rehearsal-bar .follow-state { color: var(--muted); }
+main.lesson .full-text .reading .w.heard-word {
+  background: color-mix(in srgb, var(--curated) 40%, transparent);
+  border-radius: 0.2rem;
+  box-shadow: 0 0 0 0.1rem color-mix(in srgb, var(--curated) 40%, transparent);
+  transition: background-color 0.15s;
+}
 main .speech-speed {
   display: flex;
   flex-wrap: wrap;

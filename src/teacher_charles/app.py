@@ -9,6 +9,7 @@ encarar uma tela parada por dez.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import signal
@@ -80,6 +81,8 @@ from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice, split_sentences
 from .voice.align import word_starts
+from .voice.base import STT_SAMPLE_RATE, Speech
+from .voice.follow import last_heard
 from .voice.kokoro import MAX_SPEED as KOKORO_MAX_SPEED
 from .voice.kokoro import MIN_SPEED as KOKORO_MIN_SPEED
 
@@ -219,6 +222,29 @@ class SpeakRequest(BaseModel):
 # sentences ahead, so a handful is the working set; the cap is what keeps a
 # page that never asks from growing the server. ~8 s of 24 kHz PCM is ~380 KB.
 TIMED_SPEECH_KEPT = 16
+
+
+# The longest stretch of the microphone ``/api/follow`` takes, in seconds. The
+# page sends the last ~3.5 s; the ceiling is what keeps one request from
+# holding the CPU, and it is in base64 because the audio rides in JSON beside
+# the words.
+FOLLOW_MAX_SECONDS = 8
+FOLLOW_MAX_AUDIO_CHARS = (FOLLOW_MAX_SECONDS * STT_SAMPLE_RATE * 2 * 4) // 3 + 4
+
+
+class FollowRequest(BaseModel):
+    """The last seconds of a student reading aloud, and the words around them.
+
+    ``audio`` is 16 kHz mono PCM, 16-bit little-endian, in base64: the page
+    captures and downsamples it itself, because a ``MediaRecorder`` slice past
+    the first has no container header and nothing can decode it alone.
+    ``words`` are the text's words the page wants placed, as it shows them:
+    a window around the light, or the whole text while the light is lost.
+    The text is the page's, not looked up here, so the route needs no lesson.
+    """
+
+    audio: str = Field(min_length=1, max_length=FOLLOW_MAX_AUDIO_CHARS)
+    words: list[str] = Field(min_length=1, max_length=2000)
 
 
 class SyntaxRequest(BaseModel):
@@ -1249,6 +1275,39 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             log.warning("no word timings for the reader: %s", exc)
             return []
         return word_starts(text.split(), heard, speech.duration_s)
+
+    @app.post("/api/follow")
+    async def follow_reading(payload: FollowRequest) -> JSONResponse:
+        """Which of ``words`` the student said last in ``audio``, for "Follow me".
+
+        ``at`` is an index into ``words``, or ``None`` when nothing heard is
+        surely in them (``voice/follow.py``). The timing Whisper does the
+        hearing, the small one: the light is a second behind the voice at
+        best, and the bigger model would double that.
+
+        **It records nothing and returns no transcript.** The audio is heard
+        and dropped in this request, and what Whisper heard never leaves it:
+        the rehearsal is not a check of what the student said (ADR 0001), and
+        a transcript on the page would read as one. Only where the student is.
+        """
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+        try:
+            pcm = base64.b64decode(payload.audio, validate=True)
+        except ValueError:
+            return JSONResponse({"detail": "the audio is not base64"}, status_code=422)
+        if len(pcm) % 2:
+            return JSONResponse({"detail": "the audio is not 16-bit PCM"}, status_code=422)
+        speech = Speech(pcm=pcm, sample_rate=STT_SAMPLE_RATE, elapsed_ms=0.0)
+        try:
+            heard = await voice.word_timer.word_times(speech)
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+        return JSONResponse(
+            {"at": last_heard(payload.words, [w.word for w in heard]), "heard": len(heard)},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/api/syntax")
     async def syntax_breakdown(payload: SyntaxRequest) -> JSONResponse:

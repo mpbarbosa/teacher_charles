@@ -87,3 +87,54 @@ when a run-through or a recording starts.
 - The microphone's behaviour was exercised in the app with a synthetic audio
   stream standing in for a microphone; no human recording has been made
   through it yet.
+
+## Amendment — Follow me (2026-11-20)
+
+- Code: `voice/follow.py`, `app.py` (`POST /api/follow`),
+  `web/static/follow.js`
+- Tests: `tests/test_voice_follow.py`; `tests/test_lessons.py`,
+  `test_follow_me_is_there_only_with_a_voice`
+
+The student asked for the word they are saying to be lit while they read the
+text aloud, as the reader lights the word Charles is saying. Nothing in the
+browser can tell which word is being said, so this is the one part of the
+rehearsal that sends the student's voice to the server — which the decision
+above says nothing of a rehearsal does. Three ways were weighed: the local
+Whisper; Chrome's `SpeechRecognition`, faster but sending the audio to Google
+unless an on-device model is present, for a script that names real people;
+and a cursor moving at the chosen pace, private but showing where the student
+*should* be, not what they said. The student chose the local Whisper.
+
+**The voice goes to this app's server and dies in the request.** While
+"Follow me" is on, the page keeps the last 3.5 s of the microphone as raw
+samples and, after each answer, sends them as 16 kHz PCM to `/api/follow`
+with the words around the light. The timing Whisper (`tiny.en`) hears them
+and `voice/follow.py` finds the last heard word that is surely in the text.
+The route records nothing and **returns only that index** — not what Whisper
+heard — so this decision's reason for keeping recordings off `/api/stt` still
+holds: nothing on the page can read as a transcript, let alone as a check. A
+stretch whose last second is quiet is not sent at all. "Record yourself" is
+unchanged: its take never leaves the page.
+
+**The match is anchored, not greedy.** Letter by letter, as the reader's
+timings are, but from the longest run the two sides share (ten letters at
+least, two or three words), followed forward only while each next run starts
+close to the last. Over a long text a few letters in common are chance, and
+the furthest match would drag the light paragraphs ahead.
+
+Measured by standing Kokoro's reading of the pitch in for the microphone, a
+window every second: 55 of 55 windows placed on the first paragraph, a median
+of 0 words from the word being said and 4 at worst (Whisper writes "two
+hundred thousand" as digits, which share no letters with the text, so the
+light waits there); with the whole 482-word text searched every time, as
+while the light is lost, 84 of 84 placed and 2 words off at worst. A pass is
+~430 ms on this CPU, so the light moves about once a second, roughly a word
+behind the voice.
+
+Consequences:
+
+- Like the rest of the voice, this needs the `voice` extra; without it the
+  button is not drawn.
+- Synthetic speech is clean, so these numbers are a ceiling. A Brazilian
+  accent read live through a real microphone has not been measured — the same
+  open debt as `/api/stt` (Phase 1.5 plan §2.3).
