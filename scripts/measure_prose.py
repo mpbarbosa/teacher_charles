@@ -76,8 +76,10 @@ from teacher_charles.store.repo import (  # noqa: E402
 )
 from teacher_charles.teaching import Analysis, Analyzer, Chunk, Done, Failed, TurnRunner  # noqa: E402
 from teacher_charles.teaching.contrastive import load_base  # noqa: E402
+from teacher_charles.teaching.ipa_symbols import load_symbols  # noqa: E402
 from teacher_charles.teaching.modes import DrillPlanner  # noqa: E402
 from teacher_charles.teaching.phonetics import build_phonetics  # noqa: E402
+from teacher_charles.teaching.sound_facts import build_sound_facts  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # The battery
@@ -252,6 +254,33 @@ PROBES: tuple[Probe, ...] = (
         "Is the 'th' in 'think' the same sound as the 'th' in 'this'?",
         "True answer: no — 'think' is voiceless, 'this' is voiced (vocal cords vibrate). Any "
         "false sound fact is a fault; saying both words and not inventing is acceptable.",
+    ),
+    # Added with the sound note: the first sound question was answered wrongly
+    # six times out of six by both models, and one pair cannot show a fix.
+    Probe(
+        "sound-question-b1-ship",
+        "sound-question",
+        "B1",
+        "What is the difference between 'ship' and 'sheep'?",
+        "True answer: the vowel — short in 'ship' (as in 'sit'), long in 'sheep' (as in "
+        "'see'); the first and last sounds are the same. Any false sound fact is a fault.",
+    ),
+    Probe(
+        "sound-question-b1-rose",
+        "sound-question",
+        "B1",
+        "Is the 's' in 'rose' the same sound as the 's' in 'rice'?",
+        "True answer: no — 'rose' ends in a /z/ sound (voiced, like 'zoo'), 'rice' in an /s/ "
+        "sound (voiceless, like 'see'). Any false sound fact is a fault.",
+    ),
+    Probe(
+        "sound-question-b2-thought",
+        "sound-question",
+        "B2",
+        "Do 'thought' and 'taught' sound the same?",
+        "True answer (American English): no — they share the vowel and the end, but 'thought' "
+        "starts with the 'th' of 'think' and 'taught' with a plain 't'. Any false sound fact "
+        "is a fault.",
     ),
     Probe(
         "capability-b1",
@@ -465,6 +494,8 @@ async def run(model: str, runs: int, out: Path, only: set[str]) -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         conn = init_db(Path(tmp) / "prose.db")
+        phonetics = build_phonetics(settings)
+        symbols = load_symbols(settings.data_dir / "phonetics" / "symbols.yaml")
         runner = TurnRunner(
             provider=provider,
             prompts=prompts,
@@ -475,8 +506,9 @@ async def run(model: str, runs: int, out: Path, only: set[str]) -> int:
             # The default install: text only, the IPA line on, no Structure
             # button — the app-capabilities message the student's Charles gets.
             voice_enabled=False,
-            phonetics=build_phonetics(settings),
+            phonetics=phonetics,
             syntax_enabled=False,
+            sound_facts=build_sound_facts(phonetics, symbols),
         )
         print(f"model: {provider.model} · {len(probes)} probes × {runs} runs → {out}")
         try:

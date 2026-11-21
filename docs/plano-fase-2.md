@@ -1261,7 +1261,7 @@ entregas numeradas.
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado por voz humana em tomada que o diagnóstico não avisou** (§3.7). O número de itens sai da medição, não do alvo — e `pron.ing-alveolar` entra pela passada correta, com a razão registrada, porque ali o ponto cego era da síntese (§3.5). **Started:** the three rules §3.7 admitted (`pron.th-voiced`, `pron.h-dropping`, `pron.ing-alveolar`) are in `data/contrastive/pronunciation.yaml`, each with its deciding takes by md5 prefix, loaded by `teaching/pronunciation.py` and kept out of the text base, so a sound can never be cited against a typed sentence. The other five wait for a clean take |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** **Feito.** `voice/phonemes.py` (the E8 wav2vec2, behind `base.PhonemeRecognizer`), gate 1 in `voice/signal.py`, gates 2 and 3 in `teaching/pronunciation.py::Evaluator`, and `POST /api/pronunciation`, which records nothing. `TC_PRONUNCIATION_ENABLED=false` by default; no extra of its own, because it adds no wheel to `voice`. Gate 2 changed shape on measurement — see the paragraph below the table |
 | **E12** | **Pronunciation in the product, read aloud** — the drill of `docs/metodo-fonetico.md` §2 as the first surface: the contrast pair, three takes of the curated phrase, and a card over the session. `pronunciation_signal` persisted, `/progress` aggregating by rule | The student picks a rule, or the schedule picks one, hears the pair and reads the phrase three times. Gate 1 runs before each reading and each take ends on silence, not on a clock. The card speaks in takes ("2 of 3"), never in a score. `pronunciation_signal` stores `opportunities` and `errors` per take, and the session gives the schedule **one** review. **`teaching/turn.py` does not change a line.** See the read-aloud paragraphs below the table. **Feito.** `/read-aloud`, `teaching/read_aloud.py` and `/api/read-aloud/{start,take,finish,pair}`; migration `006_read_aloud.sql` adds `pronunciation_session` and `pronunciation_signal` and rebuilds `rule_review` so a review can point at a session instead of a turn. The deliberate take of metodo §2.4 is in it, once per rule. What it did not settle is in the paragraph below the table |
-| **E14** | **Pronunciation after the conversation turn** — the feedback under the student's own bubble, with Whisper's transcript as the expected text | Whisper's accuracy on Brazilian-accented speech is measured first (plano 1.5 §2.3), because here the transcript *is* the expected text. A turn is evaluated only when the text sent is the transcript unedited. The feedback appears after the turn without delaying the teacher's speech (§3.1) |
+| **E14** | **Pronunciation after the conversation turn** — the feedback under the student's own bubble, with Whisper's transcript as the expected text | Whisper's accuracy on Brazilian-accented speech is measured first (plano 1.5 §2.3), because here the transcript *is* the expected text. A turn is evaluated only when the text sent is the transcript unedited. The feedback appears after the turn without delaying the teacher's speech (§3.1). **Done.** Measured first, on the 34 usable takes on disk (`scripts/measure_stt_accent.py`): `base.en` heard 23 of 26 correct readings word for word, and over the transcript the evaluator made **no false correction** with either `base.en` or `small.en`. `POST /api/pronunciation/turn`, `Evaluator.evaluate_text` and `teaching/after_turn.py`; it records nothing, and **`teaching/turn.py` does not change a line**. See the E14 paragraphs below the table |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
 
 **A E9 é portão, não etapa.** É a única entrega da fase cujo resultado pode
@@ -1411,6 +1411,92 @@ not have to rediscover:
 
 The threshold of 2 of 3 remains reasoning (§6); `MISS_AT` and `HIT_MIN_TAKES`
 in `teaching/read_aloud.py` are where it moves.
+
+**What E14 measured before it was built (2026-11-21).** The condition was
+plano 1.5 §2.3's debt, and the takes to pay it were already on disk: every
+`--record` take whose report matches its WAV by md5 says, in `dito`, what was
+read, so the reference is a reference by construction. Of 37, three were left
+out as **mislabelled** — the report's own phoneme reading, which owes nothing
+to Whisper, heard other words than the label (`MISLABELLED` in the script
+names them by md5 prefix and says why). That leaves 34: 26 read as well as the
+speaker could and 8 deliberate. One Brazilian voice, a laptop microphone,
+read speech; each take through the app's own `WhisperSTT` and `Settings`.
+
+| model | correct, exact | correct, WER | deliberate, exact | deliberate, WER |
+|---|---|---|---|---|
+| `tiny.en` | 19 of 26 | 6.5% | 2 of 8 | 34.1% |
+| **`base.en`** (the default) | **23 of 26** | **3.2%** | 1 of 8 | 34.1% |
+| `small.en` | 26 of 26 | 0.0% | 2 of 8 | 27.3% |
+
+`base.en`'s misses on correct speech were *it was* → *towards*, a dropped
+*the*, and *boat* → *bolt* once in two. `small.en` heard every word, and
+plano 1.5 §2.2's 2.4 s against 0.9 s still keeps it off the default.
+
+The deliberate column is the finding the WER hides. Whisper does not write a
+mispronounced word down as the right word mispronounced; it writes **another
+word**: *other* → *Buddha*, *house* → *Ozzie*, *red* → *head*, *ready* →
+*heading*, *sport* → *the spot*, *club* → *glue-bit*. The expected text then
+follows the error, and the error goes with it. Only *think* and *speaking*,
+whose mispronounced forms are no English word, came back as written.
+
+So the WER was the wrong number to decide on, and `--evaluate` measures the
+right one: each take through gate 1, the E11 recognizer and
+`Evaluator.evaluate_text`, once against the phrase read and once against each
+transcript, every rule judged in either compared.
+
+| model, gate 1 on | agree | false correction | partial | miss | no correction either way |
+|---|---|---|---|---|---|
+| `tiny.en` | 28 | 0 | 0 | 1 | 5 |
+| **`base.en`** | **28** | **0** | 1 | 0 | 4 |
+| `small.en` | 29 | 0 | 0 | 1 | 3 |
+
+The partial and the misses are all the deliberate *th* take, the one take
+where the phrase itself draws a curated correction (in *other* and
+*brother*): `base.en`'s *Buddha brother* keeps the one in *brother*,
+`small.en`'s *wood brooder* keeps neither, and `tiny.en` falls to gate 2.
+**The only false correction measured is `tiny.en`'s with gate 1 off**: *for
+stress* heard as *for his dress*, and h-dropping booked the /h/ of a word
+nobody said. The take carried a level warning, so in the product gate 1 makes
+it silence — which is why the route runs gate 1 although the transcript
+already exists, and `test_the_one_false_correction_measured_is_the_one_gate_one_stands_between`
+holds both halves.
+
+**The decision: E14 ships on `base.en`, and its measured failure is silence.**
+A transcript that heard wrong either fails gate 2, which over free speech is a
+check on Whisper as well as on the take, or carries the error away with the
+word. Neither reaches the student as a correction. Five things a reader should
+not have to rediscover:
+
+1. **The edit check reads the turn table, not the page.** `/api/stt` holds the
+   take in memory (`HEARD_TAKES_KEPT`, four) and returns a `take_id`; after
+   the turn the page sends only the id, and the route compares the transcript
+   it holds with the last student turn `TurnRunner` recorded. An edit, a
+   second take appended, or another turn typed since: 409, and the recognizer
+   is never asked. The page checks too, but only to save the request.
+2. **It records nothing.** What a free-turn take is worth to the schedule is
+   not decided here. A correction would be the unmonitored cell of metodo
+   §2.4, which the drill cannot reach — but its expected text is Whisper's
+   guess, and the *brother* partial shows the guess changes which words are
+   named. That is a decision for when there are free-turn takes to read back,
+   and there are none yet.
+3. **Only a correction reaches the student.** `no-error` and silence show
+   nothing: a clean free turn is not a pass (§6's asymmetry), and a gate-2
+   silence after a turn has no sentence to read again, so it gives no advice.
+4. **A rule is judged only where the transcript gives it an opportunity**,
+   which today is three sounds. In the 34 takes the phrase itself drew a
+   curated correction once with gate 1 on: most free turns will say nothing,
+   and that is the base's size, not the evaluator's silence.
+5. **It runs after the turn's text, beside the speech** (§3.1): the page asks
+   once the stream ends and does not wait for the answer. The phoneme ear and
+   Kokoro share the CPU there; nobody has measured whether that delays a late
+   sentence of the teacher's voice.
+
+**What it does not authorize.** One voice and read speech. Metodo §10 says
+read-aloud is not conversation, and that cuts here twice: spontaneous speech
+is harder for Whisper than a sentence on screen, and a student talking does not
+monitor their sounds. A false correction on a turn said right — in a second
+voice or in conversation — reverses the decision, and `--evaluate` over the
+new takes is how it would be seen.
 
 **O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
 no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer
@@ -1564,8 +1650,8 @@ miss. The page therefore transcribes Charles's audio of the word too (once per
 word per page), and where Whisper misses it the line says *only your ears can
 compare* instead of suggesting the student got it wrong. It is §6's asymmetry
 from the other side: here the **presence** of a complaint is not a fail. The
-student's own accent through the same line is the plano 1.5 §2.3 debt, still
-unmeasured.
+student's own accent through the same line is the plano 1.5 §2.3 debt —
+measured since, on read speech, for E14 above.
 
 **A lesson can be about the student's own text, and any copy can be
 rehearsed.** It came from a student preparing a five-minute recorded pitch,
@@ -1598,7 +1684,7 @@ com uma fonte só.
 | **O aluno real pode cair perto do 0,676 do proxy** | ~~É o portão da E9~~ **Não caiu:** mediana 0,154 em onze elocuções limpas, e a decisão está escrita (§3.7). O risco volta inteiro para cada novo falante, e é a única condição da §3.7 que reabre o portão |
 | **Áudio sintético calibra o portão errado** | Não calibra: a §3.3 proíbe calibrar o teto em sintético, de propósito. O valor sai da E9 ou não sai |
 | **Erro real de brasileiro reportado como erro que ele não cometeu** | Duas camadas: só operação com `rule_id` chega ao aluno (§3.2), e acima do portão o avaliador cala (§3.3) |
-| **In a free turn, the expected text is Whisper's guess** (E14) | That is why E14 comes after E12 and not before: the read-aloud drill has its expected text by construction. E14 waits for the STT accent measurement, and it evaluates only a turn whose sent text is the transcript unedited, because an edit means the audio and the text no longer say the same thing |
+| **In a free turn, the expected text is Whisper's guess** (E14) | That is why E14 comes after E12 and not before: the read-aloud drill has its expected text by construction. E14 waited for the STT accent measurement, and it evaluates only a turn whose sent text is the transcript unedited, because an edit means the audio and the text no longer say the same thing. **Measured (§5):** no false correction over 26 correct readings with the default `base.en`; on a mispronounced word Whisper writes another word, so the error is lost, not invented. One voice, read speech |
 | **A single take reads as a habit** (E12) | Three takes per drill session, and one review per session from the tally (§5, read-aloud paragraphs). The threshold of 2 of 3 is reasoning, not measurement, until E10's clean takes measure it on curated operations |
 | **Precisão inventada no retorno** | O retorno fala em classe de erro, não em símbolo de vogal (§3.4) |
 | **`pron.ing-alveolar` não é o único ponto cego** | Todo item passa pelo `--discriminate` antes de entrar na base (§3.2), e o que não passa fica documentado como ponto cego em vez de virar falso negativo silencioso. E o ponto cego pode ser da **síntese**: este item é nomeado em fala humana e não no par do Kokoro (§3.5), então a fonte humana desempata a sintética |

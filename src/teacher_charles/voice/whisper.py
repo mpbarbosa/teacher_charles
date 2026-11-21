@@ -182,6 +182,38 @@ class WhisperSTT(SpeechToText):
             engine = await self._engine_ready()
             return await asyncio.to_thread(self._transcribe, engine, audio)
 
+    # --- decoding --------------------------------------------------------- #
+
+    def _decode(self, audio: bytes) -> Speech:
+        """The container decoded and resampled by faster-whisper's own PyAV path."""
+        try:
+            from faster_whisper.audio import decode_audio
+        except ImportError as exc:  # pragma: no cover - depends on the extra
+            raise VoiceUnavailable(
+                "faster-whisper não está instalado. Rode `uv sync --extra voice`."
+            ) from exc
+        started = time.monotonic()
+        try:
+            samples = decode_audio(io.BytesIO(audio), sampling_rate=STT_SAMPLE_RATE)
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise VoiceBadAudio(f"o áudio não pôde ser decodificado: {exc}") from exc
+        import numpy as np  # comes with faster-whisper
+
+        pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes()
+        return Speech(
+            pcm=pcm,
+            sample_rate=STT_SAMPLE_RATE,
+            elapsed_ms=(time.monotonic() - started) * 1000,
+        )
+
+    async def decode(self, audio: bytes) -> Speech:
+        if len(audio) > MAX_AUDIO_BYTES:
+            raise VoiceBadAudio(
+                f"áudio grande demais: {len(audio)} bytes, teto de {MAX_AUDIO_BYTES}"
+            )
+        # No lock: this is PyAV, not ctranslate2, and it costs milliseconds.
+        return await asyncio.to_thread(self._decode, audio)
+
     # --- word times ------------------------------------------------------- #
 
     def _word_times(self, engine: Any, speech: Speech) -> list[TimedWord]:

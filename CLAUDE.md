@@ -54,6 +54,15 @@ TC_PRONUNCIATION_ENABLED=true uv run teacher-charles
 
 With it on, `/read-aloud` is the drill (E12): the contrast pair needs the
 voice too (`TC_VOICE_ENABLED=true`), and the takes need only the recognizer.
+With the voice on as well, a turn sent from the microphone unedited gets its
+pronunciation after the turn (E14), under the student's bubble.
+
+To re-measure Whisper on the Brazilian takes `--record` left on disk, and what
+the evaluator does with each transcript as the expected text:
+
+```bash
+uv run python scripts/measure_stt_accent.py --dir gravacoes --evaluate
+```
 
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
@@ -114,6 +123,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `teaching/pronunciation.py` | The pronunciation base (E10): the curated rules of `data/contrastive/pronunciation.yaml`, each with its phrase, the signature of alignment operations that count as the error, the equivalences correct English also allows, and the human takes that admitted it, by md5 prefix. Its `Evaluator` (E11) is gates 2 and 3 of `docs/metodo-fonetico.md` §3: heard phonemes and a phrase in, a `Judgement` out — a correction citing the rule, `no-error`, or silence — with no PER and no transcription in the payload. Symbols, never audio. **It never meets the text base** — see the invariant below. |
+| `teaching/after_turn.py` | The pronunciation after a conversation turn (E14): the evaluator's judgements over the student's own words in, what the student reads out — only curated corrections, one per word. The judging is `Evaluator.evaluate_text` (the free turn's form of `evaluate`: every graded rule the text gives an opportunity for, gates run once per take), and the guard that matters is in `POST /api/pronunciation/turn`, not here — see the invariant below. Records nothing. |
 | `teaching/read_aloud.py` | The read-aloud drill (E12): what a **session** of three judged takes is worth. The tally (named in 2+ takes is a miss, once reviews nothing, none is a hit only under metodo §2.4's guard), the card in the student's words, the wrong side of the contrast pair, and the graded rules in the schedule's order. No database and no audio: the routes in `app.py` read `pronunciation_signal` through `ReadAloudRepo` and hand the takes here. |
 | `voice/phonemes.py`, `voice/signal.py` | E11's ear: the E8 wav2vec2 phoneme recognizer behind `base.PhonemeRecognizer`, and gate 1 (is this audio an utterance?), ported from the measurement script with the same thresholds and English capture advice. `POST /api/pronunciation` runs gate 1 here, then the evaluator; it records nothing. |
 | `teaching/dictionary.py` | The word card under the pointer on a lesson's full text: a word in, its senses out, each with an English definition, an example and the Portuguese for it. Read with stdlib `sqlite3` from a file `scripts/fetch_dictionary.py` builds out of Open English WordNet 2024 and OpenWN-PT, joined by interlingual sense. No `wn` at runtime, nothing loaded until a hover, and it records nothing. |
@@ -419,7 +429,28 @@ student did not make — the same class of failure E3/E4 exist to avoid on the
 model's side. `POST /api/stt` returns only the text and **records no turn at
 all** (`test_nao_grava_turno_nenhum`). It is the only safeguard that does not
 depend on which STT model is loaded, and it exists because accuracy with a
-Brazilian accent is Phase 1.5's open debt (plan 1.5 §2.3).
+Brazilian accent was Phase 1.5's open debt (plan 1.5 §2.3) — measured since on
+read speech, at 3.2% WER for `base.en`, which is low enough to judge a sound
+against and not low enough to make a turn of.
+
+**After a turn, the audio is judged only against its own transcript, and
+the turn table says whether that is what was sent** (E14). `/api/stt` holds
+the take in memory (`HEARD_TAKES_KEPT`) and returns a `take_id`, only with
+pronunciation on; once the turn's text has finished, the page sends the id to
+`POST /api/pronunciation/turn`, which compares the transcript it holds with the
+last student turn `TurnRunner` recorded, and answers 409 without asking the
+recognizer if they differ. The comparison reads the database, never the
+request, because an edit is the student fixing what Whisper heard, and judging
+the audio against the fixed text would correct them for the fix. Gate 1 runs
+first even though the transcript exists: the one false correction measured
+(`tiny.en`'s *his dress* for *stress*, then h-dropping on *his*) was a warned
+take. And gate 2 there checks Whisper as well as the take — heard phonemes
+that are not the transcript are silence. Measured in plan 2 §5: over 26
+correct readings, no false correction from `base.en`; on a mispronounced word
+Whisper writes another word, so the error is lost rather than invented.
+Removing the turn comparison turns `test_an_edited_turn_is_409_and_the_ear_is_never_asked`
+red; removing gate 1 from `evaluate_text` turns
+`test_the_one_false_correction_measured_is_the_one_gate_one_stands_between` red.
 
 **The audio does not travel over the SSE.** The `sentence` frames from
 `/api/chat` carry an index and text; the page asks `/api/tts` for each sentence
@@ -602,6 +633,24 @@ something false. The note fixes the language of the reply and nothing else.
 The 3B's English answers to those turns are often generic. Once it claimed
 English says *saudade* too, and once it gave no gloss at all.
 
+**The sounds of named words come from espeak too, not only the IPA line.**
+`teaching/sound_facts.py` is the grammar's curated hint, one layer down. When
+the student asks how words sound, it reads them with the same `Phonetics` as
+the IPA line and cuts the reading into the curated symbols of
+`data/phonetics/symbols.yaml`. It aligns the two words and hands the teacher a
+note saying where they match and where they differ. The only facts it adds are
+curated: voicing pairs (`VOICING_PAIRS`) and the two vowel pairs Portuguese
+merges (`VOWEL_PAIRS`). Two things keep it quiet. A quoted spelling (*'th'*,
+*'s'*) is not a word, because espeak would read the letter names. And *the
+difference between X and Y* with no sound word in it counts as a sound question
+only when X and Y are a minimal pair; otherwise *make/do* would get a note about
+vowels. The app loads the symbol table **before** the runner, because the
+runner is built with it. Measured on the 3B, the note took sound answers from
+4 of 20 correct to 11. On *think/this*, every answer now says the sounds
+differ.
+It did not stop the 3B embroidering: 9 of 20 answers still add a false detail
+around the right contrast.
+
 **If the 4B comes back, the suffix is load-bearing.** Bare
 `qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
 with an unconditional `<think>` and never reads the request's `think` field. It
@@ -697,12 +746,14 @@ order and the definition of done for each deliverable are in
 `docs/plano-fase-1.md` §5; `docs/analise-inicial.md` has the feasibility
 analysis that gave rise to the project.
 
-**E9, E11 and E12 are delivered, and E10 is started**: the human measurement,
+**E9, E11, E12 and E14 are delivered, and E10 is started**: the human measurement,
 the evaluator, and the read-aloud drill on `/read-aloud`, over a pronunciation
 base that holds the three rules the human test admitted while five wait for a
-clean take. E14, the feedback after a conversation turn, waits on the STT
-accent measurement (plan 1.5 §2.3), because there Whisper's transcript would be
-the expected text.
+clean take. **E14 is delivered too**: the feedback after a conversation
+turn, judged against Whisper's transcript once plan 1.5 §2.3's accent debt was
+measured on the takes already on disk (`scripts/measure_stt_accent.py`, plan 2
+§5). It records nothing; what a free-turn take is worth to the schedule is
+left open there on purpose.
 
 **E13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
 Phase 2 plan says it does not depend on E9's gate, and it was the path taken
@@ -757,6 +808,8 @@ Phase 1.5 left two debts, both measured in `docs/plano-fase-1-5.md`:
 slice is the LLM, not the audio — the lever is the idle iGPU from §1.3), and the
 **accuracy of the STT with a Brazilian accent, which was not measured** — the
 audio in the tables is synthetic, and the 0% WER is a floor, not an expectation.
+E14 measured the second on one Brazilian voice reading known phrases: 3.2% WER
+for `base.en` (plan 2 §5). Spontaneous speech is still unmeasured.
 
 **Phase 2 is open** — `docs/plano-fase-2.md`: pronunciation by phonemes and
 spaced repetition. It opened with measurement, as 1.5 did, and the measurement

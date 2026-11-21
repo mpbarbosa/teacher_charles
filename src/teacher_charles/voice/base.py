@@ -159,6 +159,18 @@ class SpeechToText(Loadable, abc.ABC):
         (webm/opus, ogg, wav): quem decodifica é o motor, não quem chama.
         """
 
+    async def decode(self, audio: bytes) -> Speech:
+        """``audio`` as 16 kHz mono PCM: the same samples ``transcribe`` heard.
+
+        It exists for the pronunciation after a turn (E14), which hands the
+        take ``/api/stt`` transcribed to the phoneme ear, and that ear takes
+        PCM, not the browser's webm. Asking the engine that already decodes
+        the container means the phonemes and the words come from one reading
+        of the audio. Default refuses: an engine with no decoder has nothing
+        to give, and the route says so instead of guessing a format.
+        """
+        raise VoiceUnavailable(f"{self.model} cannot decode audio for the phoneme ear")
+
     async def word_times(self, speech: Speech) -> list[TimedWord]:
         """When each word is said in ``speech``, as this engine hears it.
 
