@@ -213,22 +213,13 @@ class TestAnteparos:
     async def test_the_speed_asked_for_reaches_kokoro_and_absent_keeps_the_default(self):
         np = pytest.importorskip("numpy")
         tts = KokoroTTS(model_path=Path("/x.onnx"), voices_path=Path("/x.bin"), speed=1.1)
-
-        class Engine:
-            def __init__(self) -> None:
-                self.speeds: list[float] = []
-
-            def create(self, text, voice, speed, lang):
-                self.speeds.append(speed)
-                return np.zeros(240, dtype="float32"), 24000
-
-        engine = Engine()
+        engine = _CapturingEngine()
         # Loaded already, so no weights are read: what is under test is only
         # which speed `create` is handed.
         tts._engine, tts._np = engine, np
         await tts.speak("Good morning.", speed=0.75)
         await tts.speak("Good morning.")
-        assert engine.speeds == [0.75, 1.1]
+        assert [kwargs["speed"] for _, kwargs in engine.created] == [0.75, 1.1]
 
     async def test_aquecimento_nao_propaga_erro_e_guarda_o_motivo(self, tts):
         # Derrubar a subida por causa de um peso ausente seria pior que um
@@ -259,3 +250,56 @@ def test_the_same_model_twice_is_one_engine():
 def test_no_timing_model_times_with_the_stt():
     voice = build_voice(make_settings(voice_enabled=True, stt_timing_model=""))
     assert voice.word_timer is voice.stt
+
+
+# --- the voice says what the IPA line shows ---------------------------------- #
+
+
+class _CapturingEngine:
+    """Kokoro's real tokenizer — espeak, no weights — and a ``create`` that records."""
+
+    def __init__(self) -> None:
+        tokenizer = pytest.importorskip("kokoro_onnx.tokenizer")
+        self.tokenizer = tokenizer.Tokenizer()
+        self.created: list[tuple[str, dict]] = []
+
+    def create(self, text, **kwargs):
+        import numpy as np
+
+        self.created.append((text, kwargs))
+        return np.zeros(8, dtype=np.float32), 24000
+
+
+def _speak_through(engine: _CapturingEngine, text: str) -> tuple[str, dict]:
+    import numpy as np
+
+    tts = KokoroTTS(model_path=Path("/nao/existe.onnx"), voices_path=Path("/nao/existe.bin"))
+    tts._np = np
+    tts._speak(engine, text, tts.voice)
+    return engine.created[-1]
+
+
+def test_the_voice_says_record_by_record_as_two_nouns():
+    """Kokoro read "then record by record" as reˈcord by ˈrecord, like espeak did.
+
+    The IPA line was settled first, and the voice under it went on saying the
+    verb — the screen teaching against the loudspeaker. Both go through
+    ``stress_shift`` now, each with its own espeak call.
+    """
+    from teacher_charles.teaching.phonetics import Phonetics
+
+    text = "First the totals, then record by record."
+    phonemes, kwargs = _speak_through(_CapturingEngine(), text)
+
+    assert kwargs["is_phonemes"] is True
+    assert "ɹˈɛkɚd baɪ ɹˈɛkɚd" in phonemes
+    assert "ɹᵻkˈɔːɹd" not in phonemes
+    assert "ɹˈɛkɚd baɪ ɹˈɛkɚd" in Phonetics().transcribe(text)
+
+
+def test_the_voice_speaks_kokoros_own_reading_everywhere_else():
+    """Taking the phonemize call out of Kokoro must not change any other sentence."""
+    engine = _CapturingEngine()
+    text = "Then record the result, and we'll talk about it."
+    phonemes, _ = _speak_through(engine, text)
+    assert phonemes == engine.tokenizer.phonemize(text, "en-us")

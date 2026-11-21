@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..stress_shift import read_nouns_as_nouns
 from .base import Speech, TextToSpeech, VoiceError, VoiceModelNotFound, VoiceUnavailable
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,10 @@ MAX_SPEECH_CHARS = 600
 # them with a ValueError. 1.0 is the voice's natural pace.
 MIN_SPEED = 0.5
 MAX_SPEED = 2.0
+
+# The accent Kokoro speaks in, and the one the IPA line transcribes by default
+# (``teaching/phonetics.DEFAULT_LANGUAGE``).
+LANGUAGE = "en-us"
 
 
 class KokoroTTS(TextToSpeech):
@@ -151,11 +156,24 @@ class KokoroTTS(TextToSpeech):
     def _speak(self, engine: Any, text: str, voice: str, speed: float | None = None) -> Speech:
         started = time.monotonic()
         try:
-            samples, sample_rate = engine.create(
+            # Kokoro would phonemize the text itself, with this same call; it
+            # is done here so "then record by record" can be settled first,
+            # the way the IPA line settles it — otherwise the line under the
+            # sentence says ˈrecord and the voice says reˈcord
+            # (``stress_shift``). The phonemes then go in as they are, which
+            # is the path Kokoro takes after its own call anyway.
+            tokenizer = engine.tokenizer
+            phonemes = read_nouns_as_nouns(
                 text,
+                tokenizer.phonemize(text, LANGUAGE),
+                lambda t: tokenizer.phonemize(t, LANGUAGE),
+            )
+            samples, sample_rate = engine.create(
+                phonemes,
                 voice=voice,
                 speed=self._speed if speed is None else speed,
-                lang="en-us",
+                lang=LANGUAGE,
+                is_phonemes=True,
             )
         except Exception as exc:  # noqa: BLE001 - phonemizer e onnx levantam de tudo
             raise VoiceError(f"a síntese falhou para {text[:40]!r}: {exc}") from exc
