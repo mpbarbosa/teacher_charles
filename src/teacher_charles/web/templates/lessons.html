@@ -392,6 +392,11 @@
     <p class="lead empty">No lessons on the shelf yet.</p>
   {% endif %}
   </main>
+
+  <footer>
+    <span></span>
+    {% include "_build_stamp.html" %}
+  </footer>
   {% if lesson and voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
   {# Before lesson.js: deferred scripts run in order, and lesson.js reads window.TCSpeechSpeed. #}
   {% if lesson and voice and voice.enabled %}<script src="/static/speech-speed.js" defer></script>{% endif %}

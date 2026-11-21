@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from . import __version__
+from .build_stamp import read_build_stamp
 from .config import PACKAGE_ROOT, Settings, get_settings
 from .health import probe_model
 from .llm import ChatProvider, build_provider, default_options
@@ -467,6 +468,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
 
     app.mount("/static", _RevalidatedStatic(directory=WEB_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=WEB_DIR / "templates")
+    # Every page's last line names the commit (build_stamp.py). Read here, once:
+    # the footer names the code this process loaded, not whatever HEAD is now.
+    templates.env.globals["build"] = read_build_stamp(PACKAGE_ROOT)
 
     # --- helpers ---------------------------------------------------------- #
 
