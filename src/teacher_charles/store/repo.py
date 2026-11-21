@@ -13,11 +13,15 @@ from .models import (
     CEFR_LEVELS,
     LEVEL_SOURCES,
     MODES,
+    PASSES,
     REVIEW_SOURCES,
     Correction,
     GapCount,
     LevelChange,
     LevelSignal,
+    PronunciationSession,
+    PronunciationSignal,
+    ReadAloudCount,
     RuleCount,
     RuleReview,
     RuleSchedule,
@@ -607,28 +611,36 @@ class ScheduleRepo:
         self,
         student_id: int,
         rule_id: str,
-        turn_id: int,
+        turn_id: int | None,
         *,
         hit: bool,
         source: str,
         box_before: int,
         box_after: int,
         interval_days: float,
+        pronunciation_session_id: int | None = None,
     ) -> int:
-        """Registra a revisão. Primeira das duas escritas, e a que importa mais."""
+        """Registra a revisão. Primeira das duas escritas, e a que importa mais.
+
+        A review points at its evidence: a turn, or (E12) a read-aloud session.
+        Exactly one of the two, which the schema also holds.
+        """
         if source not in REVIEW_SOURCES:
             raise ValueError(f"origem de revisão inválida: {source!r} (use um de {REVIEW_SOURCES})")
+        if (turn_id is None) == (pronunciation_session_id is None):
+            raise ValueError("a review points at a turn or at a read-aloud session, not both")
         cur = self._conn.execute(
             """
             INSERT INTO rule_review (
-                student_id, rule_id, turn_id, hit, source,
+                student_id, rule_id, turn_id, pronunciation_session_id, hit, source,
                 box_before, box_after, interval_days
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 student_id,
                 rule_id,
                 turn_id,
+                pronunciation_session_id,
                 1 if hit else 0,
                 source,
                 box_before,
@@ -700,6 +712,201 @@ class ScheduleRepo:
 
     def count(self) -> int:
         return self._conn.execute("SELECT count(*) AS n FROM rule_review").fetchone()["n"]
+
+
+class ReadAloudRepo:
+    """The read-aloud drill's sessions and judged takes (E12).
+
+    Every method is one statement, for the shared connection's reason. The one
+    that matters is ``end``: it closes the session and claims its review in a
+    single ``UPDATE ... WHERE ended_at IS NULL``, so two finishes racing on the
+    same session cannot both review it — the loser sees ``False``. The unique
+    index on ``rule_review.pronunciation_session_id`` holds the same thing one
+    layer down.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def start(self, student_id: int, rule_id: str, phrase: int, picked_by: str) -> int:
+        cur = self._conn.execute(
+            """
+            INSERT INTO pronunciation_session (student_id, rule_id, phrase, picked_by)
+            VALUES (?, ?, ?, ?)
+            """,
+            (student_id, rule_id, phrase, picked_by),
+        )
+        return int(cur.lastrowid)
+
+    def get(self, session_id: int) -> PronunciationSession | None:
+        row = self._conn.execute(
+            "SELECT * FROM pronunciation_session WHERE id = ?", (session_id,)
+        ).fetchone()
+        return PronunciationSession.from_row(row) if row is not None else None
+
+    def end(self, session_id: int, outcome: str) -> bool:
+        """Close the session once. ``False`` means somebody already had."""
+        cur = self._conn.execute(
+            """
+            UPDATE pronunciation_session
+               SET ended_at = datetime('now'), outcome = ?
+             WHERE id = ? AND ended_at IS NULL
+            """,
+            (outcome, session_id),
+        )
+        return cur.rowcount == 1
+
+    def sessions_for(self, student_id: int, rule_id: str) -> int:
+        """How many sessions this student has opened on this rule — the phrase rota."""
+        return self._conn.execute(
+            "SELECT count(*) AS n FROM pronunciation_session WHERE student_id = ? AND rule_id = ?",
+            (student_id, rule_id),
+        ).fetchone()["n"]
+
+    def recent_rules(self, student_id: int, limit: int = 3) -> list[str]:
+        """The rules of the last sessions, newest first: E6's rotation, for read-aloud."""
+        rows = self._conn.execute(
+            """
+            SELECT rule_id FROM pronunciation_session
+             WHERE student_id = ?
+             ORDER BY id DESC LIMIT ?
+            """,
+            (student_id, limit),
+        ).fetchall()
+        return [row["rule_id"] for row in rows]
+
+    def add(
+        self,
+        session: PronunciationSession,
+        *,
+        pass_: str,
+        verdict: str,
+        opportunities: int,
+        errors: int,
+        findings: str,
+        model: str,
+        duration_s: float,
+        speech_from_s: float | None,
+        speech_to_s: float | None,
+    ) -> int:
+        if pass_ not in PASSES:
+            raise ValueError(f"no such pass: {pass_!r} (use one of {PASSES})")
+        cur = self._conn.execute(
+            """
+            INSERT INTO pronunciation_signal (
+                session_id, student_id, rule_id, phrase, pass, verdict,
+                opportunities, errors, findings, model,
+                duration_s, speech_from_s, speech_to_s
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session.id,
+                session.student_id,
+                session.rule_id,
+                session.phrase,
+                pass_,
+                verdict,
+                opportunities,
+                errors,
+                findings,
+                model,
+                duration_s,
+                speech_from_s,
+                speech_to_s,
+            ),
+        )
+        return int(cur.lastrowid)
+
+    def takes(self, session_id: int) -> list[PronunciationSignal]:
+        rows = self._conn.execute(
+            "SELECT * FROM pronunciation_signal WHERE session_id = ? ORDER BY id",
+            (session_id,),
+        ).fetchall()
+        return [PronunciationSignal.from_row(row) for row in rows]
+
+    def ever_named(self, student_id: int, rule_id: str) -> bool:
+        """Has any take, of either pass, ever named this rule for this student?
+
+        Metodo §2.4's guard: a rule whose operation has never once been named
+        in this voice cannot be graduated by silence, because the silence may
+        be the evaluator not resolving the rule here at all.
+        """
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM pronunciation_signal
+             WHERE student_id = ? AND rule_id = ? AND errors > 0
+             LIMIT 1
+            """,
+            (student_id, rule_id),
+        ).fetchone()
+        return row is not None
+
+    def has_deliberate(self, student_id: int, rule_id: str) -> bool:
+        """The deliberate take is recorded once per rule, never scheduled twice."""
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM pronunciation_signal
+             WHERE student_id = ? AND rule_id = ? AND pass = 'deliberate'
+             LIMIT 1
+            """,
+            (student_id, rule_id),
+        ).fetchone()
+        return row is not None
+
+    def errors_by_rule(self, student_id: int) -> dict[str, int]:
+        """Named takes per rule — the frequency tiebreak of ``Scheduler.queue``."""
+        rows = self._conn.execute(
+            """
+            SELECT rule_id, count(*) AS n FROM pronunciation_signal
+             WHERE student_id = ? AND pass = 'unmonitored' AND errors > 0
+             GROUP BY rule_id
+            """,
+            (student_id,),
+        ).fetchall()
+        return {row["rule_id"]: row["n"] for row in rows}
+
+    def by_rule(self, student_id: int) -> list[ReadAloudCount]:
+        """The read-aloud history per rule, for ``/progress``, most recent first.
+
+        Only unmonitored takes count: the deliberate one is calibration, and
+        a take said wrong on purpose is not a mistake to show the student. A
+        session with no judged take — opened by the schedule and walked away
+        from, or with every take silenced — is not a session of practice, so
+        it is not counted, and a rule with only those does not appear.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT s.rule_id,
+                   count(DISTINCT g.session_id)                        AS sessions,
+                   count(g.id)                                         AS takes,
+                   coalesce(sum(CASE WHEN g.errors > 0 THEN 1 END), 0) AS named,
+                   (SELECT outcome FROM pronunciation_session last
+                     WHERE last.student_id = s.student_id
+                       AND last.rule_id = s.rule_id
+                       AND last.ended_at IS NOT NULL
+                     ORDER BY last.id DESC LIMIT 1)                    AS last_outcome,
+                   max(s.created_at)                                   AS last_at
+              FROM pronunciation_session s
+              LEFT JOIN pronunciation_signal g
+                ON g.session_id = s.id AND g.pass = 'unmonitored'
+             WHERE s.student_id = ?
+             GROUP BY s.rule_id
+            HAVING count(g.id) > 0
+             ORDER BY max(s.id) DESC
+            """,
+            (student_id,),
+        ).fetchall()
+        return [
+            ReadAloudCount(
+                rule_id=row["rule_id"],
+                sessions=row["sessions"],
+                takes=row["takes"],
+                named=row["named"],
+                last_outcome=row["last_outcome"],
+                last_at=row["last_at"],
+            )
+            for row in rows
+        ]
 
 
 class UnverifiedFindingRepo:

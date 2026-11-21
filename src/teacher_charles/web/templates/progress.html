@@ -11,6 +11,7 @@
     <h1>What you get wrong</h1>
     <div class="meta">
       <span class="model" title="Nível em vigor">{{ progress.level }}</span>
+      <a class="button" href="/read-aloud">Read aloud</a>
       <a class="button" href="/">Back to the conversation</a>
     </div>
   </header>
@@ -73,6 +74,42 @@
       Nothing here yet. Talk to Charles for a while: every mistake he corrects
       with a curated rule shows up on this page, with your own words.
     </p>
+    {% endif %}
+
+    {#
+      Read aloud (E12), by rule. In takes and sessions, never as a rate: the
+      card speaks in takes ("2 of 3"), and a percentage here would be the
+      score plan §4 rules out. The deliberate take is calibration, not a
+      mistake, so it is not counted.
+    #}
+    {% if progress.read_aloud %}
+    <section class="read-aloud-progress">
+      <h2>Read aloud</h2>
+      <ol class="rules">
+        {% for rule in progress.read_aloud %}
+        <li class="rule-card">
+          <div class="headline">
+            <span class="times">{{ rule.named }}/{{ rule.takes }}</span>
+            <span class="explanation">
+              {% if rule.retired %}This rule is no longer in the pronunciation base.{% else %}
+              Takes with {{ rule.looks_for }}, out of the takes judged, over
+              {{ rule.sessions }} session{{ '' if rule.sessions == 1 else 's' }}.{% endif %}
+            </span>
+          </div>
+          {% if rule.right %}<div class="right">Say: <strong>{{ rule.right }}</strong></div>{% endif %}
+          <div class="footnote">
+            <span class="rule">{{ rule.rule_id }}</span>
+            {% if rule.last_outcome %}<span class="when">last session: {{ {'miss': 'slipped in 2 or more takes', 'hit': 'clean', 'once': 'slipped once', 'none': 'not counted'}[rule.last_outcome] }}</span>{% endif %}
+            {% if rule.graduated %}
+            <span class="learned">learned — next review {{ rule.due_at[:10] }}</span>
+            {% elif rule.streak %}
+            <span class="streak">{{ rule.streak }} clean session{{ '' if rule.streak == 1 else 's' }} in a row</span>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
     {% endif %}
 
     {% if progress.level_history %}

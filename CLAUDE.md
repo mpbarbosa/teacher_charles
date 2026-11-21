@@ -52,6 +52,9 @@ fetches a 318 MB recognizer into the Hugging Face cache on the first warm-up:
 TC_PRONUNCIATION_ENABLED=true uv run teacher-charles
 ```
 
+With it on, `/read-aloud` is the drill (E12): the contrast pair needs the
+voice too (`TC_VOICE_ENABLED=true`), and the takes need only the recognizer.
+
 ```bash
 uv run pytest                            # everything (integration included, hits the real Ollama)
 uv run pytest -m "not integration"       # ~1070 tests, ~40s, no model at all
@@ -111,6 +114,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
 | `teaching/pronunciation.py` | The pronunciation base (E10): the curated rules of `data/contrastive/pronunciation.yaml`, each with its phrase, the signature of alignment operations that count as the error, the equivalences correct English also allows, and the human takes that admitted it, by md5 prefix. Its `Evaluator` (E11) is gates 2 and 3 of `docs/metodo-fonetico.md` §3: heard phonemes and a phrase in, a `Judgement` out — a correction citing the rule, `no-error`, or silence — with no PER and no transcription in the payload. Symbols, never audio. **It never meets the text base** — see the invariant below. |
+| `teaching/read_aloud.py` | The read-aloud drill (E12): what a **session** of three judged takes is worth. The tally (named in 2+ takes is a miss, once reviews nothing, none is a hit only under metodo §2.4's guard), the card in the student's words, the wrong side of the contrast pair, and the graded rules in the schedule's order. No database and no audio: the routes in `app.py` read `pronunciation_signal` through `ReadAloudRepo` and hand the takes here. |
 | `voice/phonemes.py`, `voice/signal.py` | E11's ear: the E8 wav2vec2 phoneme recognizer behind `base.PhonemeRecognizer`, and gate 1 (is this audio an utterance?), ported from the measurement script with the same thresholds and English capture advice. `POST /api/pronunciation` runs gate 1 here, then the evaluator; it records nothing. |
 | `teaching/dictionary.py` | The word card under the pointer on a lesson's full text: a word in, its senses out, each with an English definition, an example and the Portuguese for it. Read with stdlib `sqlite3` from a file `scripts/fetch_dictionary.py` builds out of Open English WordNet 2024 and OpenWN-PT, joined by interlingual sense. No `wn` at runtime, nothing loaded until a hover, and it records nothing. |
 | `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. A machine that holds its own copy in `corpus/lessons/<slug>.txt` gets it shown whole on the page — read per request, never in `/api/lessons`. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. The text may also be the student's own (`OwnText`: no URL, and `extra="forbid"` refuses one), and any copy can be **rehearsed** aloud: the YAML's `rehearsal` gives each paragraph a title and a target, the cue words stay beside the copy in `<slug>.cues.txt`, and times and recordings never reach the server — `docs/adr/0001-own-text-and-rehearsal-mode.md`. The one exception is **Follow me**, which lights the word the student is saying: it sends the microphone's last seconds to `POST /api/follow`, where the timing Whisper hears them and `voice/follow.py` places them in the text; the route records nothing and returns an index, never what was heard (the ADR's amendment). |
@@ -222,6 +226,27 @@ the ones that admitted `h-dropping` and `ing-alveolar` — and
 it can be seen. Turning it back into a PER ceiling turns
 `test_another_sentence_read_in_its_place_is_silence` red.
 
+**A read-aloud session reviews the schedule once, from its tally, and never
+from a take.** One take is not a finding (plan §5's practice session: two
+"habits" in the first takes never came back), so `/api/read-aloud/take`
+records a `pronunciation_signal` and reviews nothing, and
+`/api/read-aloud/finish` gives **one** review with `source='pronunciation'`.
+That review has no turn, which is why `006_read_aloud.sql` rebuilt
+`rule_review`: `turn_id` may be NULL, `pronunciation_session_id` names the
+session instead, the schema holds that exactly one of the two is set, and a
+unique index holds one review per session. The finish claims the session with
+one `UPDATE ... WHERE ended_at IS NULL` before reviewing, so a double click
+loses on the shared connection instead of reviewing twice.
+
+**Clean takes graduate nothing until the rule has been named in this voice.**
+`ReadAloudRepo.ever_named` is metodo §2.4's guard, and it is E13's "an analysis
+that did not run graduates nobody" one layer down: the evaluator may not
+resolve a rule in a given voice at all, and then three clean takes are the
+same silence as a broken ear. The deliberate take (said wrong on purpose,
+once per rule, before the drill takes) is what normally opens the guard, and
+it is never tallied. A silenced take (gate 1 or 2) records nothing and is not
+one of the three — the schema refuses `verdict='silence'` outright.
+
 **A correction the verifier barred is kept, not just counted.** `_Verifier`
 discards every finding that cites no curated rule — that is E4's guard against
 the small model inventing grammar, and it has not changed. What changed is that
@@ -271,9 +296,10 @@ that very sentence. `TurnRunner` takes a `bool`, not the `Voice` object:
 persona's "do not invent grammar rules" had been missing. Asked for the IPA, he
 offered *pat* against *bat* as a vowel contrast — the vowel is the same in both,
 and the contrast is the initial consonant he had himself proposed a turn
-earlier. Phase 2's phoneme evaluator does not exist (E9 is an unpassed gate),
-and what reaches him is the transcript and never the sound, so **neither voice
-state lets him claim to hear or score pronunciation.**
+earlier. The phoneme evaluator exists since E11, but it judges read-aloud takes
+on its own page and never reaches the turn: what reaches him is the transcript
+and never the sound, so **neither voice state lets him claim to hear or score
+pronunciation.**
 
 **The IPA on screen comes from espeak, never from the model** — same rule as
 grammar, one layer down. `teaching/phonetics.py` runs the `phonemizer` that
@@ -645,6 +671,13 @@ level), E6 (the three modes) and E7 (progress screen, README and latency). The
 order and the definition of done for each deliverable are in
 `docs/plano-fase-1.md` §5; `docs/analise-inicial.md` has the feasibility
 analysis that gave rise to the project.
+
+**E9, E11 and E12 are delivered, and E10 is started**: the human measurement,
+the evaluator, and the read-aloud drill on `/read-aloud`, over a pronunciation
+base that holds the three rules the human test admitted while five wait for a
+clean take. E14, the feedback after a conversation turn, waits on the STT
+accent measurement (plan 1.5 §2.3), because there Whisper's transcript would be
+the expected text.
 
 **E13 (spaced repetition) is delivered**, out of order and on purpose: §5 of the
 Phase 2 plan says it does not depend on E9's gate, and it was the path taken

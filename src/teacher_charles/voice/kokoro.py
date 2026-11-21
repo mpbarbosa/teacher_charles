@@ -207,6 +207,55 @@ class KokoroTTS(TextToSpeech):
             engine = await self._engine_ready()
             return await asyncio.to_thread(self._speak, engine, trimmed, voice or self.voice, speed)
 
+    async def phonemize(self, text: str) -> str:
+        """Kokoro's own G2P (espeak, through its tokenizer), the noun fix applied."""
+        trimmed = text.strip()
+        if not trimmed:
+            raise VoiceError("não há texto para falar")
+        async with self._lock:
+            engine = await self._engine_ready()
+
+            def run() -> str:
+                tokenizer = engine.tokenizer
+                return read_nouns_as_nouns(
+                    trimmed,
+                    tokenizer.phonemize(trimmed, LANGUAGE),
+                    lambda t: tokenizer.phonemize(t, LANGUAGE),
+                )
+
+            try:
+                return await asyncio.to_thread(run)
+            except Exception as exc:  # noqa: BLE001 - phonemizer levanta de tudo
+                raise VoiceError(f"phonemization failed for {trimmed[:40]!r}: {exc}") from exc
+
+    async def speak_phonemes(self, phonemes: str) -> Speech:
+        """Synthesize ``phonemes`` as given: the path ``--discriminate`` measured."""
+        if not phonemes.strip():
+            raise VoiceError("não há fonema para falar")
+        async with self._lock:
+            engine = await self._engine_ready()
+
+            def run() -> Speech:
+                started = time.monotonic()
+                try:
+                    samples, sample_rate = engine.create(
+                        phonemes,
+                        voice=self.voice,
+                        speed=self._speed,
+                        lang=LANGUAGE,
+                        is_phonemes=True,
+                    )
+                except Exception as exc:  # noqa: BLE001 - onnx levanta de tudo
+                    raise VoiceError(f"synthesis failed for /{phonemes[:40]}/: {exc}") from exc
+                pcm = (self._np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes()
+                return Speech(
+                    pcm=pcm,
+                    sample_rate=int(sample_rate),
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                )
+
+            return await asyncio.to_thread(run)
+
     def voices(self) -> tuple[str, ...]:
         """As vozes do arquivo carregado, ou vazio se ele ainda não carregou.
 
