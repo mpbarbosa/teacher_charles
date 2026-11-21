@@ -30,7 +30,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 487
+  words: 488
 
 rehearsal:
   - title: Who you are
@@ -410,7 +410,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (487 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (488 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
