@@ -129,6 +129,43 @@ def test_the_word_estimate_loads_before_the_scripts_that_use_it(tmp_path):
     assert lesson.index("/static/word-starts.js") < lesson.index("/static/lesson.js")
 
 
+def test_with_a_voice_the_page_has_the_lessons_speed_bar(tmp_path):
+    """One bar, one script and one remembered setting for both pages."""
+    settings = settings_for(tmp_path, voice_enabled=True, tts_speed=0.85)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        phonetics = c.get("/phonetics").text
+        slug = c.get("/api/lessons").json()["lessons"][0]["slug"]
+        lesson = c.get(f"/lessons/{slug}").text
+        # What the bar sends, the route the Listen button calls takes.
+        spoken = c.post("/api/tts", json={"text": "I thought it through.", "speed": 0.7})
+        assert c.app.state.voice.tts.last_call.speed == 0.7
+    assert spoken.status_code == 200
+    bar = 'class="speech-speed" data-default-speed="0.85"'
+    assert bar in phonetics
+    assert bar in lesson
+
+
+def test_the_speed_bar_loads_before_the_scripts_that_read_it(tmp_path):
+    """phonetics.js and lesson.js read ``window.TCSpeechSpeed``.
+
+    lesson.js reads it once, at load: after it, the lesson's speakers would
+    keep the server's speed and 1x whatever the bar said.
+    """
+    settings = settings_for(tmp_path, voice_enabled=True)
+    with TestClient(create_app(settings, provider=FakeProvider())) as c:
+        phonetics = c.get("/phonetics").text
+        slug = c.get("/api/lessons").json()["lessons"][0]["slug"]
+        lesson = c.get(f"/lessons/{slug}").text
+    assert phonetics.index("/static/speech-speed.js") < phonetics.index("/static/phonetics.js")
+    assert lesson.index("/static/speech-speed.js") < lesson.index("/static/lesson.js")
+
+
+def test_without_a_voice_there_is_no_speed_bar(client):
+    page = client.get("/phonetics").text
+    assert 'class="speech-speed"' not in page
+    assert "speech-speed.js" not in page
+
+
 def test_without_a_voice_the_word_estimate_is_not_loaded(client):
     assert "word-starts.js" not in client.get("/phonetics").text
 

@@ -23,6 +23,11 @@
 // word-starts.js's estimate from the words' letters, and the measured starts
 // take over mid-word if need be. Words espeak joined into one pair light the
 // pair while either is said.
+//
+// How fast it all goes is the speed bar's (speech-speed.js), the same bar and
+// the same remembered setting as on a lesson. The next sentence is fetched
+// while this one plays, so a new voice speed is heard from the sentence after
+// next; a new playback rate at once.
 
 (() => {
   const form = document.getElementById("phonetics-form");
@@ -117,10 +122,12 @@
    * asked for at all when there are no word cells to light (`timed` false).
    */
   async function speak(text, timed) {
+    // The speed bar's voice speed (speech-speed.js); absent, the server's.
+    const speed = window.TCSpeechSpeed?.voiceSpeed();
     const response = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(timed ? { text, timings: true } : { text }),
+      body: JSON.stringify(timed ? { text, speed, timings: true } : { text, speed }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -243,6 +250,7 @@
         parts[i].block.classList.add("now-reading");
         try {
           audio = new Audio(url);
+          window.TCSpeechSpeed?.applyRate(audio);
           if (cells) unfollow = follow(audio, cells, starts, parts[i].text);
           await new Promise((resolve, reject) => {
             wake = resolve;

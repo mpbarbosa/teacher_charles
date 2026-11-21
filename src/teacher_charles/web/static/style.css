@@ -1035,7 +1035,7 @@ main.lesson .rehearsal-bar {
   font-size: 0.88rem;
 }
 main.lesson .rehearsal-bar .pace input { width: 7rem; vertical-align: middle; }
-main.lesson .speech-speed {
+main .speech-speed {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1043,8 +1043,8 @@ main.lesson .speech-speed {
   margin: 0 0 1rem;
   font-size: 0.88rem;
 }
-main.lesson .speech-speed input { width: 7rem; vertical-align: middle; }
-main.lesson .speech-speed output {
+main .speech-speed input { width: 7rem; vertical-align: middle; }
+main .speech-speed output {
   display: inline-block;
   min-width: 3.2em;
   font-variant-numeric: tabular-nums;

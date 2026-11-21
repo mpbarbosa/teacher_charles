@@ -30,6 +30,8 @@
       International Phonetic Alphabet. Each word shows its own IPA under it.
     </p>
 
+    {% if phonetics.enabled and voice and voice.enabled %}{% include "_speech_speed.html" %}{% endif %}
+
     {% if phonetics.enabled %}
     <form id="phonetics-form" class="phonetics-form" autocomplete="off">
       <label for="phonetics-text" class="visually-hidden">Sentence</label>
@@ -55,6 +57,8 @@
       are pronounced — it is not a check of how you say them.
     </p>
     {% if voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
+    {# Before phonetics.js, which reads window.TCSpeechSpeed when it speaks. #}
+    {% if voice and voice.enabled %}<script src="/static/speech-speed.js" defer></script>{% endif %}
     <script src="/static/phonetics.js" defer></script>
     {# The word card on the typed words (word-card.js): it reads them from the
        caret, so phonetics.js and the aria-live result never know it is there. #}

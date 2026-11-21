@@ -54,28 +54,9 @@
     #}
     <p class="lead">{{ lesson.summary }}</p>
 
-    {#
-      How fast every sound on the page goes: the word speakers, the symbol
-      chart and the reader (lesson.js). Two knobs, because they are two
-      different things. "Voice" is Kokoro's own speaking rate, sent with each
-      /api/tts request: the voice really says the words slower, so it sounds
-      natural even slow, but only sentences synthesised after the change hear
-      it. "Playback" is the browser's playbackRate on the finished sound: it
-      takes effect at once, on what is already playing too, at the cost of a
-      stretched sound at the slow end. They multiply. The word highlighting
-      follows the audio's own clock, so it stays in step under both.
-    #}
-    {% if voice and voice.enabled %}
-    <div class="speech-speed" data-default-speed="{{ voice.speed }}">
-      <label title="How fast the voice speaks. Natural at any speed; applies to sentences spoken after the change">Voice speed
-        <input type="range" class="voice-speed" min="0.5" max="1.5" step="0.05" value="{{ voice.speed }}" aria-label="Voice speaking rate">
-        <output class="voice-speed-value">{{ "%.2f"|format(voice.speed) }}×</output></label>
-      <label title="How fast the browser plays the sound. Applies at once, even mid-sentence; sounds stretched at the slow end">Playback
-        <input type="range" class="playback-rate" min="0.5" max="2" step="0.05" value="1" aria-label="Playback rate">
-        <output class="playback-rate-value">1.00×</output></label>
-      <button type="button" class="speed-reset" title="Back to the normal speeds">Reset</button>
-    </div>
-    {% endif %}
+    {# How fast every sound on the page goes: the word speakers, the symbol
+       chart and the reader. The bar is shared with the phonetics page. #}
+    {% if voice and voice.enabled %}{% include "_speech_speed.html" %}{% endif %}
 
     {#
       An own text (OwnText) was never published, so there is no link to give:
@@ -412,6 +393,8 @@
   {% endif %}
   </main>
   {% if lesson and voice and voice.enabled %}<script src="/static/word-starts.js" defer></script>{% endif %}
+  {# Before lesson.js: deferred scripts run in order, and lesson.js reads window.TCSpeechSpeed. #}
+  {% if lesson and voice and voice.enabled %}<script src="/static/speech-speed.js" defer></script>{% endif %}
   {% if lesson and voice and voice.enabled %}<script src="/static/lesson.js" defer></script>{% endif %}
   {% if lesson and has_ipa %}<script src="/static/full-text.js" defer></script>{% endif %}
   {# The rehearsal needs no voice and no IPA: only the copy, and the browser's own clock and microphone. #}

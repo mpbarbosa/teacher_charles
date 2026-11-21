@@ -66,86 +66,14 @@
 
   // --- speed --------------------------------------------------------------- //
   //
-  // Two knobs over every sound on the page (the template says why two).
-  // `voiceSpeed` goes to /api/tts and Kokoro says the words at that rate, so
-  // it is part of what a cached sound is: the caches below key on it, and a
-  // word heard at 0.8 is not replayed at 1.0. `playbackRate` is the browser's
-  // and touches no request -- it is set on each Audio as it plays, and on the
-  // one playing when the slider moves. Both are remembered in this browser.
+  // The speed bar is speech-speed.js's, shared with the phonetics page. The
+  // voice speed is part of what a cached sound is: the caches below key on
+  // it, and a word heard at 0.8 is not replayed at 1.0. Without that script
+  // (it loads with this one) the voice keeps the server's speed and 1x.
 
-  const SPEED_KEY = "charles.voiceSpeed";
-  const RATE_KEY = "charles.playbackRate";
-  const speedBar = document.querySelector(".speech-speed");
-  const speedInput = speedBar?.querySelector("input.voice-speed");
-  const rateInput = speedBar?.querySelector("input.playback-rate");
-  const defaultSpeed = Number(speedBar?.dataset.defaultSpeed) || 1;
-
-  function stored(key) {
-    try {
-      const value = Number(localStorage.getItem(key));
-      return Number.isFinite(value) && value > 0 ? value : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function remember(key, value) {
-    try {
-      localStorage.setItem(key, String(value));
-    } catch {
-      /* no storage: the knob still works, for this page */
-    }
-  }
-
-  /** Kokoro's rate for the next request. Two decimals, so it keys a cache. */
-  function voiceSpeed() {
-    return speedInput ? Number(Number(speedInput.value).toFixed(2)) : defaultSpeed;
-  }
-
-  function playbackRate() {
-    return rateInput ? Number(rateInput.value) : 1;
-  }
-
-  /** The browser's rate on `audio`, keeping the pitch where the voice put it. */
-  function applyRate(audio) {
-    const rate = playbackRate();
-    audio.defaultPlaybackRate = rate;
-    audio.playbackRate = rate;
-    audio.preservesPitch = true;
-  }
-
-  function showSpeeds() {
-    if (!speedBar) return;
-    speedBar.querySelector(".voice-speed-value").textContent = `${voiceSpeed().toFixed(2)}×`;
-    speedBar.querySelector(".playback-rate-value").textContent = `${playbackRate().toFixed(2)}×`;
-  }
-
-  if (speedBar) {
-    // A stored value outside the slider is clamped by the browser itself.
-    const speed = stored(SPEED_KEY);
-    if (speed !== null) speedInput.value = String(speed);
-    const rate = stored(RATE_KEY);
-    if (rate !== null) rateInput.value = String(rate);
-    showSpeeds();
-
-    speedInput.addEventListener("input", () => {
-      remember(SPEED_KEY, voiceSpeed());
-      showSpeeds();
-    });
-    rateInput.addEventListener("input", () => {
-      remember(RATE_KEY, playbackRate());
-      showSpeeds();
-      if (current) applyRate(current.audio);
-    });
-    speedBar.querySelector(".speed-reset").addEventListener("click", () => {
-      speedInput.value = String(defaultSpeed);
-      rateInput.value = "1";
-      remember(SPEED_KEY, voiceSpeed());
-      remember(RATE_KEY, playbackRate());
-      showSpeeds();
-      if (current) applyRate(current.audio);
-    });
-  }
+  const speedBar = window.TCSpeechSpeed;
+  const voiceSpeed = () => speedBar?.voiceSpeed();
+  const applyRate = (audio) => speedBar?.applyRate(audio);
 
   // --- playback ------------------------------------------------------------ //
 
