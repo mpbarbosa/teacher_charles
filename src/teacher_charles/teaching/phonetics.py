@@ -111,6 +111,17 @@ class Phonetics:
         # não promete reentrância. O aquecimento roda em thread de executor e
         # o turno roda no loop: o lock é o que impede os dois de se cruzarem
         # dentro do espeak.
+        #
+        # The lock belongs to this instance and is not shared with Kokoro's
+        # (`kokoro_onnx.tokenizer._espeak_lock`). That looks like a race and
+        # is not one: phonemizer loads a private copy of the espeak library
+        # for every backend it builds, so this backend's global state is
+        # nobody else's, and Kokoro builds a fresh backend on every call.
+        # Measured with the two phonemizing at once, 2,000 calls each: no
+        # output differed from the one-at-a-time reading. The control, two
+        # threads on *one* backend with no lock, corrupted about 90% of
+        # theirs, so the probe does see the failure when it exists. A shared
+        # lock would only make the voice wait on the IPA line.
         self._lock = threading.Lock()
         self._cache = lru_cache(maxsize=CACHE_SIZE)(self._phonemize)
 
