@@ -332,13 +332,13 @@ six. `partials/app/syntax.md` names the button and nothing else, and a test
 keeps the priming words out of it.
 
 Both 4B builds were measured afterwards, same question, and both agree with
-what ships. With the note and the short partial, the default
-`qwen3:4b-instruct` pointed at the button in all eight answers it gave and
+what ships. With the note and the short partial, `qwen3:4b-instruct` (the
+default at the time) pointed at the button in all eight answers it gave and
 analysed in none (a ninth run timed out with no answer); bare `qwen3:4b` — the
 default when the button shipped, the thinking build — did it nine times out of
 nine.
 
-**On the default the note is not a refinement, it is the feature.** With no
+**On the 4B the note is not a refinement, it is the feature.** With no
 syntax text at all, `qwen3:4b-instruct` typed its own word-by-word analysis
 three times out of three, which neither the 3B nor the thinking build did. The
 descriptive partial did not stop it — two of three still analysed — and the
@@ -465,16 +465,17 @@ setting under which the server hides the reasoning. The word boundary in that
 check is not pedantry — `.Thinking` and `.IsThinkSet` are in every thinking
 template, the leaking one included, and neither is the flag. Unknown (lookup
 failed, or a template that is not a Go template at all) lands on the side that
-cannot leak — which is where the default sits: `qwen3:4b-instruct` shows a
-Jinja template with no `.Think` in it, so the field is never sent to it, and
-measured it gives the same two-token answer either way.
+cannot leak. The default `qwen2.5:3b-instruct-q4_K_M` has a Go template with
+no `.Think` in it, so the field is never sent to it, and it does not reason;
+`qwen3:4b-instruct` shows a Jinja template, lands on the same side, and
+measured gives the same two-token answer either way.
 
 **The warning reads the template, not the capability list.** It says reasoning
 cannot be turned off, and the only thing `/api/show` offers that proves it is a
 template that follows the assistant header with `<think>` by itself.
 `qwen3:4b-instruct` lists `thinking` among its capabilities and does not reason;
-keyed on that list, the warning was false at every startup of the default
-model.
+keyed on that list, the warning was false at every startup while it was the
+default.
 
 Two things follow that are easy to undo. The analyzer and the warm-up still
 pass `think=False` on every call, and that is right: it is a request, and the
@@ -524,7 +525,7 @@ nobody has to download 2.5 GB to get the suite green.
 
 The minimum target is CPU/iGPU without CUDA, and official Ollama does not use
 the Intel iGPU. Measured on this machine: **9.3 tok/s on a 3B Q4 and 4.0 on a
-7B** — which is why the default is 4B-class and not 14B. This is a project
+7B** — which is why the default is a 3B and not a 14B. This is a project
 premise, not a configuration detail:
 
 - Streaming is not an ornament: it is what makes 7–8 tok/s tolerable. Do not
@@ -534,9 +535,9 @@ premise, not a configuration detail:
 - Reasoning models (Qwen3 among them) think before answering, and
   `TC_LLM_THINK=false` turns that off **only on a model whose chat template
   reads the flag**. Bare `qwen3:4b` is not one of them — see "`think: false`
-  is not sent on trust" above — and the default `qwen3:4b-instruct` does not
-  reason, so there the flag has nothing to turn off. `None` lets the server's
-  default stand.
+  is not sent on trust" above — and neither the default 3B nor
+  `qwen3:4b-instruct` reasons, so there the flag has nothing to turn off.
+  `None` lets the server's default stand.
 - Python is pinned to `>=3.12,<3.13` on purpose: the `ctranslate2` and
   `onnxruntime` wheels, which Phase 1.5's voice will need, lag behind the new
   versions. Do not change the interpreter.
@@ -547,11 +548,21 @@ side by side on the same day (`docs/plano-fase-1.md` §5.5), `qwen3:4b-instruct`
 generates at **~55% of the 3B's rate**. Every "7–8 tok/s" above and in the plans
 is that estimate, not a measurement. The same table says the 3B ties the 4B on
 structured correction (27 vs 28 of 31, no false positive in either) and beats it
-on every latency line — so the 4B default rests on decision 1.3's bet about the
-teacher's prose, which no script here measures. That is an open debt, and if
-the prose ties, the 3B is the better default.
+on every latency line — so the 4B default rested on decision 1.3's bet about
+the teacher's prose. `scripts/measure_prose.py` measured that bet blind, and
+it ties: two judges split 22–29 and 24–23, and agreed on 19 against 20. So
+**the default is the 3B, `qwen2.5:3b-instruct-q4_K_M`**, by the plan's own rule.
 
-**The default is `qwen3:4b-instruct`, and the suffix is load-bearing.** Bare
+The tie is two opposite profiles, and the 3B's is the one now shipping. The 4B
+delivers the curated correction more often (21 vs 13 of 24) and never answered
+in Portuguese, but it invents corrections and rules in clean English. The 3B
+leaves clean English alone, but it misses errors, copies the persona's `>`
+into the reply, and **answered all three Portuguese turns in Portuguese**,
+which breaks decision 1.1 while the persona forbids it. Both claim *think* and
+*this* share a sound, six times out of six. A fix to the 3B's failures belongs
+in code, the way `syntax.request_note` did it, and not in the persona.
+
+**If the 4B comes back, the suffix is load-bearing.** Bare
 `qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
 with an unconditional `<think>` and never reads the request's `think` field. It
 was the default from E0 while every number in the plans came from a 3B or a
