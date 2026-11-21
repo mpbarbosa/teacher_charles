@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     # não a emite.
     phonetics_stress: bool = True
 
+    # --- Pronunciation (E11) ------------------------------------------------
+    # The phoneme recognizer and `POST /api/pronunciation`: a verdict on one
+    # read-aloud take of a curated phrase. **Off** by default, for the voice's
+    # reason and more: it needs the `voice` extra installed and a 318 MB weight
+    # fetched into the Hugging Face cache on the first warm-up.
+    pronunciation_enabled: bool = False
+
+    # onnxruntime's intra-op threads for the recognizer; 0 lets it choose.
+    pronunciation_threads: int = 0
+
     # --- Syntax ----------------------------------------------------------
     # The Structure button under each message: the sentence split into its
     # parts by a parser (teaching/syntax.py), never by the model.
