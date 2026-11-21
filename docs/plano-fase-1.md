@@ -109,7 +109,8 @@ Consequências, e nenhuma delas derruba as decisões 1.1–1.3:
   Fase 1 — e é exatamente o tipo de troca que a abstração `ChatProvider` da E1 torna
   barata (o `openai_compat` já serve um llama.cpp local).
 
-**Modelo default: um 4B-class quantizado (Qwen3 4B como primeira escolha).** A seção 5
+**Modelo default: um 4B-class quantizado (Qwen3 4B como primeira escolha).** *(Superseded
+by measurement in §5.5: the default is now `qwen2.5:3b-instruct-q4_K_M`.)* A seção 5
 da análise apoia isso: sendo tudo em inglês, "um modelo de 4B a 8B explica gramática em
 inglês com boa confiabilidade". O 8B deixa de ser "opção para quem tem folga" nesta
 máquina e passa a ser opção só para quem tem GPU.
@@ -1112,7 +1113,8 @@ mesma família, a mesma classe de tamanho e o mesmo download — e conserta as
 duas coisas que estavam quebradas. Mas ela fica de pé pela decisão 1.3, não
 por esta tabela: pelos números daqui, o 3B é o modelo mais rápido e igualmente
 certeiro. **Dívida aberta:** medir a qualidade da resposta do professor nos
-dois. Se empatar, o default certo é o 3B. *(Measured below: it ties.)*
+dois. Se empatar, o default certo é o 3B. *(Measured below: it ties, and the
+default is now the 3B.)*
 
 Uma primeira passada do `qwen3:4b` foi descartada inteira: outra carga na
 máquina levou o load a ~35 e os tempos deixaram de valer. Fica dela só o que
@@ -1159,7 +1161,8 @@ picked a winner on accuracy, pedagogy, conversation and overall.
 The judges agreed on 42 of 57 overall verdicts, and both counted the same
 share of faulty replies in each model: 35/57 against 34/57 for one judge, and
 35/57 against 37/57 for the other. **By this plan's own rule it is a tie, and on
-a tie the default is the 3B** — at a third of the time per turn.
+a tie the default is the 3B** — at a third of the time per turn. It has been
+the default since this measurement.
 
 The tie is two opposite profiles, not two equal ones, and that is what to read
 before acting on it:
@@ -1196,7 +1199,7 @@ on every run.
 ```bash
 uv sync
 uv run python scripts/check_env.py      # confere RAM, Ollama, modelo
-ollama pull qwen3:4b-instruct           # modelo default
+ollama pull qwen2.5:3b-instruct-q4_K_M  # modelo default
 uv run teacher-charles --reload         # http://localhost:8000
 ```
 

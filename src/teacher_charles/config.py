@@ -52,17 +52,24 @@ class Settings(BaseSettings):
     # --- Modelo ----------------------------------------------------------
     provider: str = "ollama"
 
-    # Default da Fase 1. Nesta classe de hardware o gargalo é banda de
-    # memória, e o Ollama oficial roda em CPU pura (não usa a iGPU Intel).
-    # Medido: 9,3 tok/s num 3B Q4 e 4,0 num 7B (docs/plano-fase-1.md §1.3). O
-    # 4B foi medido depois, lado a lado com o 3B (§5.5): gera a ~55% da vazão
-    # dele, e não aos ~80% que a extrapolação por tamanho prometia.
+    # The 3B, by measurement, and only after the 4B lost the one bet it was
+    # the default for. On this class of hardware the bottleneck is memory
+    # bandwidth: 9.3 tok/s on a 3B Q4 and 4.0 on a 7B (docs/plano-fase-1.md
+    # §1.3), and `qwen3:4b-instruct` measured at ~55% of the 3B's rate (§5.5).
+    # The two tie on structured correction (27 vs 28 of 31), and the 4B was
+    # kept for decision 1.3's bet on the teacher's prose. Measured blind
+    # (§5.5, `scripts/measure_prose.py`), the prose ties too — at a third of
+    # the time per turn — so the plan's own rule picks the 3B.
     #
-    # `-instruct`, e não `qwen3:4b`: a tag sem sufixo é o build Thinking-2507,
-    # cujo template abre `<think>` em todo turno, peça o cliente ou não. Com
-    # ele a primeira palavra espera centenas de tokens de raciocínio e a
-    # análise gasta o orçamento inteiro sem devolver JSON (§5.5).
-    llm_model: str = "qwen3:4b-instruct"
+    # The tie is two opposite profiles, and this one has its own known
+    # failure: it answered all three Portuguese turns in Portuguese, which the
+    # 4B never did. The 4B's failure was inventing corrections in clean
+    # English, which reaches the student through the prose, where no verifier
+    # stands.
+    #
+    # If the 4B comes back, keep `-instruct`: bare `qwen3:4b` is the
+    # Thinking-2507 build, whose template opens `<think>` on every turn (§5.5).
+    llm_model: str = "qwen2.5:3b-instruct-q4_K_M"
 
     ollama_url: str = "http://localhost:11434"
     request_timeout_s: float = 120.0
@@ -79,7 +86,8 @@ class Settings(BaseSettings):
     # thinking-only build, and there ``False`` changes nothing -- the reasoning
     # still runs, hidden, before the first word (see
     # ``OllamaProvider._think_off_is_obeyed``). The default
-    # ``qwen3:4b-instruct`` does not reason, so there is nothing to switch.
+    # ``qwen2.5:3b-instruct-q4_K_M`` does not reason, so there is nothing to
+    # switch.
     llm_think: bool | None = None
 
     # --- Ensino ----------------------------------------------------------

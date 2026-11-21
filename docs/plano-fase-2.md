@@ -1454,7 +1454,7 @@ nenhuma. É o que a E4 e a E6 já tinham medido — instrução longe do ponto d
 geração se dilui —, com um agravante: aqui ela não se diluiu, ela *induziu*.
 
 **Os dois builds de 4B foram medidos depois**, com a mesma pergunta: o
-`qwen3:4b-instruct`, que é o default de hoje, e o `qwen3:4b` puro, que era o
+`qwen3:4b-instruct`, que era o default então (hoje é o 3B, §5.5 da Fase 1), e o `qwen3:4b` puro, que era o
 default quando o botão entrou e é o build *Thinking* de que o default saiu. Os
 dois concordam com o que foi entregue. Em cada célula, quantas respostas
 apontaram para o botão e quantas digitaram uma análise:

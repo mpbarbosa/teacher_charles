@@ -23,8 +23,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Decisão 1.3 do plano da Fase 1: o alvo mínimo é CPU/iGPU sem CUDA, e o
-# gargalo é banda de memória. Daí o default 4B-class.
-MODEL_DEFAULT = "qwen3:4b-instruct"
+# gargalo é banda de memória. Daí um default pequeno: o 3B, que empatou com o 4B
+# na correção e na prosa a um terço do tempo (§5.5).
+MODEL_DEFAULT = "qwen2.5:3b-instruct-q4_K_M"
 OLLAMA_URL_DEFAULT = "http://localhost:11434"
 
 # Um 4B Q4 ocupa ~2,5 GB e o processo em volta pede folga.
