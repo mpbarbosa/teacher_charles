@@ -374,11 +374,11 @@ def test_index_renders_the_shutdown_button(client_and_provider):
 
 
 def test_the_header_menu_folds_every_control_and_starts_closed(client_and_provider):
-    """On a phone the controls fold behind Menu (style.css, app.js).
+    """Up to a tablet's width the controls fold behind Menu (style.css, app.js).
 
     The CSS hides ``.meta`` inside ``header.folding`` until ``.open``, so the
     controls must sit inside the element the button names, or they are the
-    ones a phone could never reach.
+    ones a phone or tablet could never reach.
     """
     client, _ = client_and_provider
     page = client.get("/").text

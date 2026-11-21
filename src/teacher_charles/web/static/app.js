@@ -629,8 +629,8 @@ shutdownButton.addEventListener("click", async () => {
   }
 });
 
-// The header's Menu, shown only on a phone (style.css). It folds and unfolds
-// the controls and nothing else: on a wide screen `.open` changes nothing.
+// The header's Menu, shown only up to a tablet's width (style.css). It folds
+// and unfolds the controls and nothing else: wider, `.open` changes nothing.
 function setMenuOpen(open) {
   header.classList.toggle("open", open);
   menuToggle.setAttribute("aria-expanded", String(open));
