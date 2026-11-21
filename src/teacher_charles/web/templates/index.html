@@ -7,9 +7,14 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
+  {# On a phone the controls below fold behind Menu (app.js, style.css): laid
+     out in full they wrapped to five rows, 240px of an 812px screen above
+     the conversation. Wider screens never show the button. #}
+  <header class="folding">
     <h1>Teacher Charles</h1>
-    <div class="meta">
+    <button id="menu-toggle" class="menu-toggle" type="button"
+            aria-expanded="false" aria-controls="header-controls">Menu</button>
+    <div class="meta" id="header-controls">
       <label class="field" title="Quem está estudando — trocar o nome troca de perfil">
         <span class="label">Student</span>
         <input id="student-name" type="text" value="{{ profile.name }}"

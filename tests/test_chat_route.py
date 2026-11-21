@@ -373,6 +373,25 @@ def test_index_renders_the_shutdown_button(client_and_provider):
     assert "Shut down" in page
 
 
+def test_the_header_menu_folds_every_control_and_starts_closed(client_and_provider):
+    """On a phone the controls fold behind Menu (style.css, app.js).
+
+    The CSS hides ``.meta`` inside ``header.folding`` until ``.open``, so the
+    controls must sit inside the element the button names, or they are the
+    ones a phone could never reach.
+    """
+    client, _ = client_and_provider
+    page = client.get("/").text
+
+    header = page[page.index("<header") : page.index("</header>")]
+    assert '<header class="folding">' in header
+    assert 'aria-controls="header-controls"' in header
+    assert 'aria-expanded="false"' in header
+    controls = header[header.index('id="header-controls"') :]
+    for control in ('id="student-name"', 'id="level"', 'id="reset"', 'id="shutdown"'):
+        assert control in controls
+
+
 # --- A página -------------------------------------------------------------- #
 
 

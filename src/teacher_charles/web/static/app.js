@@ -18,6 +18,8 @@ const levelSelect = document.getElementById("level");
 const levelNote = document.getElementById("level-note");
 const nameInput = document.getElementById("student-name");
 const modeButtons = document.querySelectorAll("button.mode");
+const menuToggle = document.getElementById("menu-toggle");
+const header = menuToggle.closest("header");
 // Pode nao existir: a fonetica e desligavel, e sem ela o cabecalho nao
 // desenha o interruptor.
 const ipaToggle = document.getElementById("show-ipa");
@@ -625,6 +627,30 @@ shutdownButton.addEventListener("click", async () => {
     setBusy(false);
     setStatus(`Could not stop Charles: ${error.message}`, true);
   }
+});
+
+// The header's Menu, shown only on a phone (style.css). It folds and unfolds
+// the controls and nothing else: on a wide screen `.open` changes nothing.
+function setMenuOpen(open) {
+  header.classList.toggle("open", open);
+  menuToggle.setAttribute("aria-expanded", String(open));
+}
+
+menuToggle.addEventListener("click", () => {
+  setMenuOpen(menuToggle.getAttribute("aria-expanded") !== "true");
+});
+
+// A button in the menu is an action, done once: fold the menu after it so the
+// conversation gets its room back. The checkboxes and the name and level
+// fields are settings, often changed together, so they leave it open.
+header.querySelector(".meta").addEventListener("click", (event) => {
+  if (event.target.closest("button")) setMenuOpen(false);
+});
+
+header.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !header.classList.contains("open")) return;
+  setMenuOpen(false);
+  menuToggle.focus();
 });
 
 // A lesson's "Write it to Charles" arrives as ?draft=: the starter goes into
