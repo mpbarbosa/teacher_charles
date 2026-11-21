@@ -1769,6 +1769,9 @@ acrescentando um valor a `rule_review.source` e nada mais.
 
 ## 8. O que vem depois
 
+> Detailed as phases 3 to 6, with deliverables E15–E28, in
+> [plano-fases-3-a-6.md](plano-fases-3-a-6.md).
+
 - **Turn-taking sem botão**, com o Silero que já está no processo (§6 do plano
   1.5, inalterado).
 - **Prosódia e ritmo** — o que o alinhamento de fonema não vê.
