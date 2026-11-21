@@ -30,7 +30,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 482
+  words: 491
 
 rehearsal:
   - title: Who you are
@@ -265,11 +265,11 @@ words:
   - word: land
     gloss: For a change to code, to be accepted and take effect.
     note: 'Informal developer English: "the change lands on main".'
-  - word: approach
-    gloss: To decide how to deal with a problem.
+  - word: ask for
+    gloss: To say that you want something; to request it.
     note: >-
-      The verb takes no preposition: "approach this case". The noun takes
-      "to": "my approach to this case".
+      "Pedir" is "ask for"; "ask" alone is "perguntar". What clients ask for
+      is what they request, which is not always what they need.
   - word: own
     gloss: At work, to be the person responsible for something and decide about it.
     note: '"Who owns the data?" asks who is responsible for it, not who bought it.'
@@ -330,8 +330,6 @@ sounds:
     trap: Stressed on the second syllable, and it ends in "z", not "s".
   - word: production
     trap: Stressed on the second syllable; the first vowel is weak.
-  - word: approach
-    trap: Stressed on the second syllable, and it ends in the "ch" of "church".
   - word: customer
     trap: Stressed on the first syllable, and no vowel added after the final "r".
   - word: businesses
@@ -411,7 +409,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (482 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (491 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
