@@ -1260,7 +1260,7 @@ entregas numeradas.
 | **E9** ✅ | **A dívida da §2.3 paga** — gravações de falante brasileiro B1+ lendo as frases curadas (`--record`), PER medido, portão da §3.3 decidido | Há ≥10 elocuções humanas **que passam pelo diagnóstico de sinal da §3.5**; o PER delas e a fração de gabaritos nomeados estão registrados aqui; **e a decisão de seguir ou parar está escrita com o número na mão**. Não há teto de PER a calibrar: §3.5 mede as duas faixas se sobrepondo em fala humana, e o portão é por operação de alinhamento. **Feito.** Onze elocuções limpas, mediana 0,154; passada `--errado` com a operação curada nomeada em **8 de 8** regras e em **3 de 8** por tomada limpa (§3.5). A decisão está na §3.7: **segue, com a base admitida pelo teste humano** — a E10 muda de critério de entrada, exige nomeação em tomada **limpa**, e nasce com três regras enquanto as outras cinco esperam gravação, não pilha |
 | **E10** | **`pronunciation.yaml`** — a base de fala que a E3 adiou; os itens que o teste humano admitir, cada um com assinatura de operações aceitáveis (§3.4) | Os itens carregam e validam pelo schema; cada um tem teste; **nenhum item entra sem passar no `--discriminate` (§3.2) e sem ser nomeado por voz humana em tomada que o diagnóstico não avisou** (§3.7). O número de itens sai da medição, não do alvo — e `pron.ing-alveolar` entra pela passada correta, com a razão registrada, porque ali o ponto cego era da síntese (§3.5). **Started:** the three rules §3.7 admitted (`pron.th-voiced`, `pron.h-dropping`, `pron.ing-alveolar`) are in `data/contrastive/pronunciation.yaml`, each with its deciding takes by md5 prefix, loaded by `teaching/pronunciation.py` and kept out of the text base, so a sound can never be cited against a typed sentence. The other five wait for a clean take |
 | **E11** | **O reconhecedor e o avaliador** — `voice/phonemes.py` atrás de contrato como o `whisper.py`, `teaching/pronunciation.py` casando alinhamento com regra | `POST /api/pronunciation` devolve só erros com `rule_id`, cala acima do portão, e **`teaching/turn.py` não muda uma linha** **Feito.** `voice/phonemes.py` (the E8 wav2vec2, behind `base.PhonemeRecognizer`), gate 1 in `voice/signal.py`, gates 2 and 3 in `teaching/pronunciation.py::Evaluator`, and `POST /api/pronunciation`, which records nothing. `TC_PRONUNCIATION_ENABLED=false` by default; no extra of its own, because it adds no wheel to `voice`. Gate 2 changed shape on measurement — see the paragraph below the table |
-| **E12** | **Pronunciation in the product, read aloud** — the drill of `docs/metodo-fonetico.md` §2 as the first surface: the contrast pair, three takes of the curated phrase, and a card over the session. `pronunciation_signal` persisted, `/progress` aggregating by rule | The student picks a rule, or the schedule picks one, hears the pair and reads the phrase three times. Gate 1 runs before each reading and each take ends on silence, not on a clock. The card speaks in takes ("2 of 3"), never in a score. `pronunciation_signal` stores `opportunities` and `errors` per take, and the session gives the schedule **one** review. **`teaching/turn.py` does not change a line.** See the read-aloud paragraphs below the table |
+| **E12** | **Pronunciation in the product, read aloud** — the drill of `docs/metodo-fonetico.md` §2 as the first surface: the contrast pair, three takes of the curated phrase, and a card over the session. `pronunciation_signal` persisted, `/progress` aggregating by rule | The student picks a rule, or the schedule picks one, hears the pair and reads the phrase three times. Gate 1 runs before each reading and each take ends on silence, not on a clock. The card speaks in takes ("2 of 3"), never in a score. `pronunciation_signal` stores `opportunities` and `errors` per take, and the session gives the schedule **one** review. **`teaching/turn.py` does not change a line.** See the read-aloud paragraphs below the table. **Feito.** `/read-aloud`, `teaching/read_aloud.py` and `/api/read-aloud/{start,take,finish,pair}`; migration `006_read_aloud.sql` adds `pronunciation_session` and `pronunciation_signal` and rebuilds `rule_review` so a review can point at a session instead of a turn. The deliberate take of metodo §2.4 is in it, once per rule. What it did not settle is in the paragraph below the table |
 | **E14** | **Pronunciation after the conversation turn** — the feedback under the student's own bubble, with Whisper's transcript as the expected text | Whisper's accuracy on Brazilian-accented speech is measured first (plano 1.5 §2.3), because here the transcript *is* the expected text. A turn is evaluated only when the text sent is the transcript unedited. The feedback appears after the turn without delaying the teacher's speech (§3.1) |
 | **E13** ✅ | **Repetição espaçada** — `teaching/schedule.py`, e o drill escolhendo a regra por agendamento | **Feito.** A fila é ordenada pela agenda (`Scheduler.queue`), três acertos seguidos graduam a regra e a tiram da fila por sete dias, e `test_a_escada_mede_os_intervalos_em_dias` mede o intervalo que o aluno recebe. Ver §7 |
 
@@ -1375,6 +1375,42 @@ says the two rules' evidence is thinner than their status: each was admitted
 by a take the product itself would not judge. A second identity witness,
 Whisper's words against the phrase's, is the obvious way to give those takes
 back, and it is measurement, not code, that has to come first.
+
+**What E12 decided, and what it left open.** The drill follows the four
+points above and metodo §2 in order: the pair, the deliberate take once per
+rule, three judged takes, one card, one review. Five things a reader should
+not have to rediscover:
+
+1. **Clean takes graduate nothing until the rule has been named in this
+   voice.** The tally's hit needs metodo §2.4's guard, read from every judged
+   take of either pass (`ReadAloudRepo.ever_named`). The deliberate take is
+   what normally opens it, and it is never tallied. A student whose deliberate
+   take was not named gets the fourth row of §2.4's table: clean sessions say
+   so and review nothing, until some take names the operation.
+2. **A silenced take is not one of the three.** It records nothing, as metodo
+   §3 says, and the student reads it again. So "3 takes" always means three
+   takes that reached gate 3, and the card's "2 of 3" never counts a room.
+3. **"Gate 1 runs before each reading" became a second of room inside each
+   take**, not a separate request. Gate 1 run on a second of room alone would
+   refuse it every time (there is no voice to stand out), so the page records
+   the room first, says "Read now", and sends both; gate 1's contrast question
+   then measures the voice against that floor. The take ends on 0.8 s of quiet
+   after speech, with a 9.5 s ceiling. Those page thresholds are choices, not
+   measurements; whatever they cut wrongly, gate 1's head-cut and truncated
+   warnings catch.
+4. **The browser is a new operating point.** The page turns off echo
+   cancellation, noise suppression and gain control and downsamples to 16 kHz
+   itself, but it is not `--record`, and no take captured through it has been
+   measured yet. The first real sessions are the measurement, and
+   `pronunciation_signal` keeps the model and the speech span of every take
+   (metodo §8) so they can be read back.
+5. **Point 4 above is still open.** An extra word read into the phrase is
+   booked as insertions, and gate 2 does not refuse it. None of the three
+   admitted rules has an insertion signature, so today it cannot become a
+   false correction. It must be closed before an epenthesis rule is admitted.
+
+The threshold of 2 of 3 remains reasoning (§6); `MISS_AT` and `HIT_MIN_TAKES`
+in `teaching/read_aloud.py` are where it moves.
 
 **O IPA na tela entrou fora da tabela**, sem número de entrega: ele não estava
 no plano, e numerá-lo aqui tomaria um rótulo que o autor da fase pode querer

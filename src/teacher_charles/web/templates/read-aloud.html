@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teacher Charles — read aloud</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {#
+    The read-aloud drill (E12), docs/metodo-fonetico.md §2 as a page: hear
+    the contrast pair, say it wrong on purpose once per rule, read the phrase
+    three times, and get one card over the session. The card speaks in takes,
+    never in a score (plan §4); what each take heard is never shown, only the
+    curated operations, in the word they happened in.
+  #}
+  <header>
+    <h1>Read aloud</h1>
+    <div class="meta">
+      <span class="model" title="Your level">{{ level }}</span>
+      <a class="button" href="/progress">Your mistakes</a>
+      <a class="button" href="/">Back to the conversation</a>
+    </div>
+  </header>
+
+  <main class="read-aloud">
+    {% if read_aloud.enabled %}
+    <script type="application/json" id="read-aloud-state">{{ read_aloud|tojson }}</script>
+
+    <section id="ra-pick">
+      <p class="lead">
+        Pick a sound to practise, or let your schedule pick the one that is due.
+        You will hear the sentence said right and wrong, then read it {{ read_aloud.takes }}
+        times. You hear about the {{ read_aloud.takes }} takes together, not one by one:
+        one slip is not a habit.
+      </p>
+      <p><button type="button" id="ra-schedule">Let the schedule pick</button></p>
+      <ul class="ra-rules">
+        {% for rule in read_aloud.rules %}
+        <li class="rule-card">
+          <div class="headline">
+            <span class="explanation">
+              <strong>{{ rule.right }}</strong> — not <s>{{ rule.wrong }}</s>
+            </span>
+            <button type="button" class="ra-practise" data-rule="{{ rule.rule_id }}">Practise</button>
+          </div>
+          <div class="footnote">
+            <span class="rule">{{ rule.rule_id }}</span>
+            <span>listens for {{ rule.looks_for }}</span>
+            {% if rule.graduated %}
+            <span class="learned">learned — next review {{ rule.due_at[:10] }}</span>
+            {% elif rule.streak %}
+            <span class="streak">{{ rule.streak }} clean session{{ '' if rule.streak == 1 else 's' }} in a row</span>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section id="ra-drill" hidden>
+      <p class="ra-phrase" id="ra-text"></p>
+      <p class="ra-ipa" id="ra-ipa"></p>
+
+      <div class="ra-step" id="ra-step-pair" hidden>
+        <h2>1. Hear the difference</h2>
+        <p class="hint">The same voice says it twice. Only one sound changes.</p>
+        <button type="button" data-side="right">▶ Right: <span class="ra-right"></span></button>
+        <button type="button" data-side="wrong">▶ Wrong: <span class="ra-wrong"></span></button>
+      </div>
+
+      <div class="ra-step" id="ra-step-deliberate" hidden>
+        <h2>2. Say it wrong, on purpose</h2>
+        <p class="hint">
+          Once, and only for this sound: read the sentence the wrong way, like
+          <s class="ra-wrong"></s>. It shows that your microphone and this
+          checker can hear the difference in your voice. It never counts against you.
+        </p>
+        <button type="button" id="ra-deliberate">● Record the wrong way</button>
+      </div>
+
+      <div class="ra-step" id="ra-step-takes" hidden>
+        <h2><span class="ra-n">3</span>. Read it the right way</h2>
+        <p class="hint">
+          Press the button, stay quiet for a second, then read when it says so.
+          It stops by itself when you finish.
+        </p>
+        <button type="button" id="ra-take">● Read take 1</button>
+        <span class="ra-dots" id="ra-dots" aria-label="takes judged"></span>
+        <button type="button" id="ra-finish" class="ra-finish">Finish now</button>
+      </div>
+
+      <p class="ra-status" id="ra-status" aria-live="polite"></p>
+    </section>
+
+    <section id="ra-card" class="rule-card" hidden>
+      <h2>This session</h2>
+      <div id="ra-lines"></div>
+      <p><button type="button" id="ra-again">Practise another</button></p>
+    </section>
+
+    <p class="footnote">
+      This listens for the few sounds in the curated base, one at a time. It
+      does not grade your accent, and it never gives a score. A take it cannot
+      hear clearly is not counted, and it will tell you what to change about
+      the room or the microphone.
+    </p>
+    <script src="/static/read-aloud.js" defer></script>
+    {% else %}
+    <p class="lead empty">
+      Read aloud is off on this server. Start Charles with
+      <code>TC_PRONUNCIATION_ENABLED=true</code> (after
+      <code>uv sync --extra voice</code>) to use this page.
+      {% if read_aloud.why %}The pronunciation base did not load: {{ read_aloud.why }}{% endif %}
+    </p>
+    {% endif %}
+  </main>
+
+  <footer>
+    <span></span>
+    {% include "_build_stamp.html" %}
+  </footer>
+</body>
+</html>

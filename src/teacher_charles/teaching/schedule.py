@@ -277,17 +277,22 @@ class Scheduler:
         self,
         student_id: int,
         rule_id: str,
-        turn_id: int,
+        turn_id: int | None,
         *,
         hit: bool,
         source: str = "drill",
         at: datetime | None = None,
+        pronunciation_session_id: int | None = None,
     ) -> Review:
         """Registra uma revisão e move a regra na agenda.
 
         Duas escritas e nenhuma transação, pela regra da conexão compartilhada;
         o evento vai primeiro porque é dele que o estado se reconstrói (ver
         ``ScheduleRepo``).
+
+        A read-aloud review (E12) has no turn: ``turn_id`` is ``None`` and
+        ``pronunciation_session_id`` names the session. The ladder does not
+        know the difference, which is plan §7.4's reconciliation.
         """
         outcome = grade(
             rule_id,
@@ -305,6 +310,7 @@ class Scheduler:
             box_before=outcome.box_before,
             box_after=outcome.box_after,
             interval_days=outcome.interval_days,
+            pronunciation_session_id=pronunciation_session_id,
         )
         self._schedules.save(
             student_id,
@@ -324,8 +330,13 @@ class Scheduler:
         student_id: int,
         candidates: list[RuleCount],
         at: datetime | None = None,
+        recent: list[str] | None = None,
     ) -> list[Queued]:
         """As candidatas em ordem de urgência, a mais urgente primeiro.
+
+        ``recent`` replaces the text drill's rotation with a caller's own: the
+        read-aloud drill (E12) rotates over its own sessions, and a grammar
+        rule drilled yesterday says nothing about which sound is due today.
 
         A chave de ordenação, e cada termo paga por si:
 
@@ -350,7 +361,9 @@ class Scheduler:
         """
         moment = stamp(at or now())
         schedules = self._schedules.for_student(student_id)
-        recent = set(self._sessions.drilled_rules(student_id, limit=self._rotation))
+        if recent is None:
+            recent = self._sessions.drilled_rules(student_id, limit=self._rotation)
+        recent_set = set(recent[: self._rotation])
 
         queued = [
             Queued(
@@ -358,7 +371,7 @@ class Scheduler:
                 times=count.times,
                 schedule=schedules.get(count.rule_id),
                 due=self._is_due(schedules.get(count.rule_id), moment),
-                recently_drilled=count.rule_id in recent,
+                recently_drilled=count.rule_id in recent_set,
             )
             for count in candidates
         ]

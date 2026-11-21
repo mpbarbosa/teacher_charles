@@ -165,6 +165,16 @@ class FakeTTS(TextToSpeech):
     def voices(self) -> tuple[str, ...]:
         return self._available
 
+    async def phonemize(self, text: str) -> str:
+        """The text itself, lower-cased: enough for a test to see a swap applied."""
+        if self.error is not None:
+            raise self.error
+        return text.strip().lower()
+
+    async def speak_phonemes(self, phonemes: str) -> Speech:
+        """Recorded as a call with the phonemes as its text, so tests can read the pair."""
+        return await self.speak(phonemes)
+
     async def warm_up(self) -> None:
         self.warmed = True
 

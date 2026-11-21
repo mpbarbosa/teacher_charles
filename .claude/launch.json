@@ -38,6 +38,15 @@
         "TC_VOICE_ENABLED=true uv run teacher-charles --port 8001"
       ],
       "port": 8001
+    },
+    {
+      "name": "teacher-charles-read-aloud",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "TC_VOICE_ENABLED=true TC_PRONUNCIATION_ENABLED=true TC_LLM_WARMUP=false TC_DB_PATH=${TMPDIR:-/tmp}/teacher-charles-read-aloud.db uv run --extra dev --extra voice teacher-charles --port 8030"
+      ],
+      "port": 8030
     }
   ]
 }

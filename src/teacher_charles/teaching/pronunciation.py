@@ -551,6 +551,10 @@ class Evaluator:
         self._base = base
         self._g2p = g2p
 
+    @property
+    def base(self) -> PronunciationBase:
+        return self._base
+
     def item(self, rule_id: str) -> PronunciationItem:
         return self._base.get(rule_id)
 

@@ -252,6 +252,20 @@ class TextToSpeech(Loadable, abc.ABC):
     def voices(self) -> tuple[str, ...]:
         """As vozes que este motor tem. Tupla vazia se ele não sabe dizer."""
 
+    async def phonemize(self, text: str) -> str:
+        """The phoneme string this engine would speak ``text`` from.
+
+        With ``speak_phonemes``, it is what builds the contrast pair of
+        metodo §2.2: the caller edits the string (``teaching/read_aloud.py``
+        applies the swap — this layer knows no rule), and both sides come out
+        in the same voice and prosody. An engine that cannot do it says so.
+        """
+        raise VoiceUnavailable(f"{self.model} cannot speak from phonemes")
+
+    async def speak_phonemes(self, phonemes: str) -> Speech:
+        """Synthesize a phoneme string as it is, with no G2P of its own."""
+        raise VoiceUnavailable(f"{self.model} cannot speak from phonemes")
+
     async def warm_up(self) -> None:
         """Mesma regra do STT: carrega cedo, nunca propaga erro."""
         return None

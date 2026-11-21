@@ -40,6 +40,7 @@ from .store.models import CEFR_LEVELS, MODES, Student
 from .store.repo import (
     CorrectionRepo,
     LevelRepo,
+    ReadAloudRepo,
     ScheduleRepo,
     SessionRepo,
     StudentRepo,
@@ -54,6 +55,7 @@ from .teaching import (
     Leveled,
     Phonemized,
     TurnRunner,
+    read_aloud,
 )
 from .teaching.contrastive import ContrastiveError, load_base
 from .teaching.dictionary import MAX_WORD_CHARS, Dictionary, DictionaryUnavailable, build_dictionary
@@ -76,9 +78,15 @@ from .teaching.level import partial_name as level_partial_name
 from .teaching.modes import DEFAULT_MODE, DrillPlanner
 from .teaching.modes import partial_name as mode_partial_name
 from .teaching.phonetics import Phonetics, build_phonetics, ipa_owners, ipa_pairs
-from .teaching.pronunciation import Evaluator, PronunciationError, PronunciationUnavailable
+from .teaching.pronunciation import (
+    Evaluator,
+    Judgement,
+    PronunciationError,
+    PronunciationItem,
+    PronunciationUnavailable,
+)
 from .teaching.pronunciation import load_base as load_pronunciation
-from .teaching.schedule import is_graduated
+from .teaching.schedule import Scheduler, is_graduated
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
@@ -96,8 +104,8 @@ from .voice.base import STT_SAMPLE_RATE, Speech
 from .voice.follow import last_heard
 from .voice.kokoro import MAX_SPEED as KOKORO_MAX_SPEED
 from .voice.kokoro import MIN_SPEED as KOKORO_MIN_SPEED
+from .voice.signal import SignalVerdict, samples_from_pcm
 from .voice.signal import diagnose as diagnose_signal
-from .voice.signal import samples_from_pcm
 
 log = logging.getLogger(__name__)
 
@@ -263,6 +271,25 @@ class PronunciationRequest(BaseModel):
     rule_id: str = Field(min_length=1, max_length=80)
     phrase: int = Field(default=0, ge=0)
     audio: str = Field(min_length=1, max_length=PRONUNCIATION_MAX_AUDIO_CHARS)
+
+
+class ReadAloudStart(BaseModel):
+    """Open a read-aloud session (E12). No ``rule_id`` lets the schedule pick."""
+
+    rule_id: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class ReadAloudTake(BaseModel):
+    """One take of the session's phrase. The phrase is the session's, not the page's."""
+
+    session_id: int = Field(ge=1)
+    # Metodo §2.4's take said wrong on purpose: once per rule, before the drill.
+    deliberate: bool = False
+    audio: str = Field(min_length=1, max_length=PRONUNCIATION_MAX_AUDIO_CHARS)
+
+
+class ReadAloudFinish(BaseModel):
+    session_id: int = Field(ge=1)
 
 
 class FollowRequest(BaseModel):
@@ -653,6 +680,36 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
 
         totals = corrections.progress(student.id)
         levels = LevelRepo(conn).changes(student.id, limit=10)
+
+        # Read aloud (E12), by rule: in takes and sessions, never as a rate.
+        # Its own list and not merged into `rules`: those are the student's
+        # written sentences, and a pronunciation rule is never in the text
+        # base (the E10 invariant), so the two never share a row.
+        evaluator: Evaluator | None = app.state.pronunciation
+        read_aloud_rules = []
+        for count in ReadAloudRepo(conn).by_rule(student.id):
+            item = (
+                evaluator.base.get(count.rule_id)
+                if evaluator is not None and count.rule_id in evaluator.base
+                else None
+            )
+            schedule = schedules.get(count.rule_id)
+            read_aloud_rules.append(
+                {
+                    "rule_id": count.rule_id,
+                    "looks_for": read_aloud.looked_for(item) if item is not None else "",
+                    "right": item.right if item is not None else "",
+                    "sessions": count.sessions,
+                    "takes": count.takes,
+                    "named": count.named,
+                    "last_outcome": count.last_outcome,
+                    "last_at": count.last_at,
+                    "retired": item is None,
+                    "streak": schedule.streak if schedule is not None else 0,
+                    "graduated": is_graduated(schedule),
+                    "due_at": schedule.due_at if schedule is not None else "",
+                }
+            )
         return {
             "student": student.name,
             "level": student.cefr_level,
@@ -660,6 +717,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             "self_declared_level": student.self_declared_level,
             "totals": totals,
             "rules": rules,
+            "read_aloud": read_aloud_rules,
             "level_history": [
                 {
                     "from": change.from_level,
@@ -997,6 +1055,20 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 "version": __version__,
                 "model": settings.llm_model,
                 "progress": progress_payload(app.state.db),
+            },
+        )
+
+    @app.get("/read-aloud", response_class=HTMLResponse)
+    async def read_aloud_page(request: Request) -> HTMLResponse:
+        """The read-aloud drill (E12): hear the pair, read the phrase three times."""
+        conn: sqlite3.Connection = app.state.db
+        return templates.TemplateResponse(
+            request=request,
+            name="read-aloud.html",
+            context={
+                "version": __version__,
+                "level": active_student(conn).cefr_level,
+                "read_aloud": read_aloud_payload(conn),
             },
         )
 
@@ -1377,20 +1449,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.post("/api/pronunciation")
-    async def pronunciation_verdict(payload: PronunciationRequest) -> JSONResponse:
-        """The verdict on one read-aloud take of a curated phrase (E11).
+    # --- pronunciation (E11, E12) ----------------------------------------- #
 
-        Three gates in order, ``docs/metodo-fonetico.md`` §3: the signal
-        (``voice/signal.py``), whether the take is the phrase, and whether the
-        alignment holds an operation of the rule's signature. Only that last
-        one ever names an error, and only with the rule's ``rule_id``; the
-        payload carries no PER and no transcription (``Judgement.as_dict``).
-
-        **It records nothing.** No turn, no signal row, no review: E12 is what
-        persists a take, because what a take is worth to the schedule depends
-        on the student's history, which this request does not read.
-        """
+    def pronunciation_or_503() -> tuple[PhonemeRecognizer, Evaluator] | JSONResponse:
+        """The recognizer and the evaluator, or the response saying why not."""
         phonemes: PhonemeRecognizer | None = app.state.phonemes
         evaluator: Evaluator | None = app.state.pronunciation
         if phonemes is None:
@@ -1410,48 +1472,357 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
                 },
                 status_code=503,
             )
+        return phonemes, evaluator
+
+    def graded_item(
+        evaluator: Evaluator, rule_id: str, phrase: int = 0
+    ) -> PronunciationItem | JSONResponse:
+        """The rule, if it exists, gives verdicts, and has that phrase."""
         try:
-            item = evaluator.item(payload.rule_id)
+            item = evaluator.item(rule_id)
         except LookupError:
-            return JSONResponse({"detail": f"no rule {payload.rule_id!r}"}, status_code=404)
+            return JSONResponse({"detail": f"no rule {rule_id!r}"}, status_code=404)
         if item.discrimination.status != "graded":
             return JSONResponse(
                 {"detail": f"{item.id} is {item.discrimination.status} and gives no verdict"},
                 status_code=409,
             )
-        if payload.phrase >= len(item.phrases):
-            return JSONResponse(
-                {"detail": f"{item.id} has no phrase {payload.phrase}"}, status_code=404
-            )
+        if phrase >= len(item.phrases):
+            return JSONResponse({"detail": f"{item.id} has no phrase {phrase}"}, status_code=404)
+        return item
 
+    def decode_pcm(audio: str) -> bytes | JSONResponse:
         try:
-            pcm = base64.b64decode(payload.audio, validate=True)
+            pcm = base64.b64decode(audio, validate=True)
         except ValueError:
             return JSONResponse({"detail": "the audio is not base64"}, status_code=422)
         if len(pcm) % 2:
             return JSONResponse({"detail": "the audio is not 16-bit PCM"}, status_code=422)
+        return pcm
 
+    async def judge_take(
+        phonemes: PhonemeRecognizer, evaluator: Evaluator, item_id: str, phrase: int, pcm: bytes
+    ) -> tuple[Judgement, SignalVerdict, float]:
+        """Metodo §3's three gates over one take, in order.
+
+        Gate 1 runs on the audio **before** the recognizer is asked, so a room
+        is never handed to it and cannot become a verdict. Raises
+        ``VoiceError`` and ``PronunciationUnavailable`` for the caller to map.
+        """
         import numpy as np  # the voice extra: the recognizer cannot be on without it
 
-        signal = diagnose_signal(samples_from_pcm(pcm, np), np)
-        headers = {"Cache-Control": "no-store"}
-        try:
-            if not signal.usable:
-                judgement = evaluator.evaluate(
-                    item.id, (), frozenset(), signal_usable=False, signal_advice=signal.advice
-                )
-                return JSONResponse(judgement.as_dict(), headers=headers)
-            heard = await phonemes.recognize(
-                Speech(pcm=pcm, sample_rate=STT_SAMPLE_RATE, elapsed_ms=0.0)
-            )
+        samples = samples_from_pcm(pcm, np)
+        capture = diagnose_signal(samples, np)
+        duration_s = len(samples) / STT_SAMPLE_RATE
+        if not capture.usable:
             judgement = evaluator.evaluate(
-                item.id, heard.phonemes, await phonemes.vocabulary(), phrase=payload.phrase
+                item_id, (), frozenset(), signal_usable=False, signal_advice=capture.advice
+            )
+            return judgement, capture, duration_s
+        heard = await phonemes.recognize(
+            Speech(pcm=pcm, sample_rate=STT_SAMPLE_RATE, elapsed_ms=0.0)
+        )
+        judgement = evaluator.evaluate(
+            item_id, heard.phonemes, await phonemes.vocabulary(), phrase=phrase
+        )
+        return judgement, capture, duration_s
+
+    @app.post("/api/pronunciation")
+    async def pronunciation_verdict(payload: PronunciationRequest) -> JSONResponse:
+        """The verdict on one read-aloud take of a curated phrase (E11).
+
+        Three gates in order, ``docs/metodo-fonetico.md`` §3: the signal
+        (``voice/signal.py``), whether the take is the phrase, and whether the
+        alignment holds an operation of the rule's signature. Only that last
+        one ever names an error, and only with the rule's ``rule_id``; the
+        payload carries no PER and no transcription (``Judgement.as_dict``).
+
+        **It records nothing.** No turn, no signal row, no review. The drill
+        that persists takes is ``/api/read-aloud/*`` (E12), because what a take
+        is worth to the schedule depends on the student's history and on the
+        takes around it, which this request does not read.
+        """
+        ready = pronunciation_or_503()
+        if isinstance(ready, JSONResponse):
+            return ready
+        phonemes, evaluator = ready
+        item = graded_item(evaluator, payload.rule_id, payload.phrase)
+        if isinstance(item, JSONResponse):
+            return item
+        pcm = decode_pcm(payload.audio)
+        if isinstance(pcm, JSONResponse):
+            return pcm
+        try:
+            judgement, _, _ = await judge_take(phonemes, evaluator, item.id, payload.phrase, pcm)
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=422)
+        except PronunciationUnavailable as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+        return JSONResponse(judgement.as_dict(), headers={"Cache-Control": "no-store"})
+
+    def read_aloud_rule(item: PronunciationItem, student_id: int, conn: sqlite3.Connection):
+        """What the page shows about one graded rule before a session."""
+        schedule = ScheduleRepo(conn).get(student_id, item.id)
+        return {
+            "rule_id": item.id,
+            "target": item.target,
+            "right": item.right,
+            "wrong": item.wrong,
+            "looks_for": read_aloud.looked_for(item),
+            "streak": schedule.streak if schedule is not None else 0,
+            "graduated": is_graduated(schedule),
+            "due_at": schedule.due_at if schedule is not None else "",
+        }
+
+    def read_aloud_payload(conn: sqlite3.Connection) -> dict[str, Any]:
+        """The page's state: on or off, and the graded rules in schedule order."""
+        evaluator: Evaluator | None = app.state.pronunciation
+        if app.state.phonemes is None or evaluator is None:
+            return {
+                "enabled": False,
+                "why": app.state.pronunciation_error,
+                "rules": [],
+            }
+        student = active_student(conn)
+        repo = ReadAloudRepo(conn)
+        order = read_aloud.queue(
+            evaluator.base,
+            Scheduler(conn),
+            student.id,
+            errors=repo.errors_by_rule(student.id),
+            recent=repo.recent_rules(student.id),
+        )
+        return {
+            "enabled": True,
+            "pair": app.state.voice is not None,
+            "takes": read_aloud.TAKES,
+            "rules": [read_aloud_rule(evaluator.item(r), student.id, conn) for r in order],
+        }
+
+    def open_session(
+        payload_session: int, conn: sqlite3.Connection
+    ) -> tuple[Any, Student] | JSONResponse:
+        """The session, if it is this student's and still open."""
+        student = active_student(conn)
+        session = ReadAloudRepo(conn).get(payload_session)
+        if session is None or session.student_id != student.id:
+            return JSONResponse({"detail": "no such read-aloud session"}, status_code=404)
+        if session.ended_at is not None:
+            return JSONResponse({"detail": "this session has ended"}, status_code=409)
+        return session, student
+
+    @app.post("/api/read-aloud/start")
+    async def read_aloud_start(payload: ReadAloudStart) -> JSONResponse:
+        """Open a session over one graded rule (E12).
+
+        The student names the rule, or the schedule picks the most urgent:
+        E13's ``Scheduler.queue`` over the graded rules, with the takes that
+        named each one as the frequency tiebreak. The phrase rotates over the
+        rule's phrases, one per session, so that "2 of 3" is always about the
+        same sentence. Whether the deliberate take is still owed is in the
+        answer: it is owed once per rule, and never again (metodo §2.4).
+        """
+        ready = pronunciation_or_503()
+        if isinstance(ready, JSONResponse):
+            return ready
+        _, evaluator = ready
+        conn: sqlite3.Connection = app.state.db
+        student = active_student(conn)
+        repo = ReadAloudRepo(conn)
+        if payload.rule_id is None:
+            order = read_aloud.queue(
+                evaluator.base,
+                Scheduler(conn),
+                student.id,
+                errors=repo.errors_by_rule(student.id),
+                recent=repo.recent_rules(student.id),
+            )
+            if not order:
+                return JSONResponse({"detail": "no graded rule to practise"}, status_code=404)
+            rule_id, picked_by = order[0], "schedule"
+        else:
+            rule_id, picked_by = payload.rule_id, "student"
+        item = graded_item(evaluator, rule_id)
+        if isinstance(item, JSONResponse):
+            return item
+
+        phrase = repo.sessions_for(student.id, item.id) % len(item.phrases)
+        session_id = repo.start(student.id, item.id, phrase, picked_by)
+        text = item.phrases[phrase].text
+        return JSONResponse(
+            {
+                "session_id": session_id,
+                "picked_by": picked_by,
+                "phrase": phrase,
+                "text": text,
+                "ipa": spell(text),
+                "deliberate": not repo.has_deliberate(student.id, item.id),
+                "takes": read_aloud.TAKES,
+                "pair": app.state.voice is not None,
+                **read_aloud_rule(item, student.id, conn),
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/read-aloud/pair/{rule_id}/{side}")
+    async def read_aloud_pair(rule_id: str, side: str, phrase: int = 0) -> Response:
+        """One side of the contrast pair, in WAV (metodo §2.2).
+
+        Both sides come from the same phoneme string, the wrong one with the
+        curated swap applied, so they differ in the contrast and nothing else.
+        It plays audio and judges none, which is why it needs the voice and
+        not the recognizer: a rule can be *heard* whatever E9's gate says.
+        """
+        if side not in ("right", "wrong"):
+            return JSONResponse({"detail": "side is right or wrong"}, status_code=404)
+        evaluator: Evaluator | None = app.state.pronunciation
+        if evaluator is None:
+            return JSONResponse({"detail": "pronunciation is off on this server"}, status_code=503)
+        item = graded_item(evaluator, rule_id, phrase)
+        if isinstance(item, JSONResponse):
+            return item
+        voice = voice_or_503()
+        if isinstance(voice, JSONResponse):
+            return voice
+        try:
+            phonemes = await voice.tts.phonemize(item.phrases[phrase].text)
+            if side == "wrong":
+                swapped = read_aloud.wrong_side(phonemes, item)
+                if swapped is None:
+                    return JSONResponse(
+                        {"detail": f"{item.id} has no wrong side to synthesize"}, status_code=409
+                    )
+                phonemes = swapped
+            speech = await voice.tts.speak_phonemes(phonemes)
+        except VoiceError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+        return Response(
+            content=speech.as_wav(),
+            media_type="audio/wav",
+            # The same two files for everybody: what the pair says is a
+            # function of the curated phrase, not of the student.
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
+    @app.post("/api/read-aloud/take")
+    async def read_aloud_take(payload: ReadAloudTake) -> JSONResponse:
+        """One take of an open session, through E11's three gates.
+
+        A take that reaches gate 3 is recorded as a ``pronunciation_signal``,
+        with its two numbers and its operating point; a silenced take records
+        **nothing** (metodo §3) and does not count towards the three — the
+        student reads it again. The answer carries the verdict, but the page
+        tells the student about the session, not the take (plan §5).
+        """
+        ready = pronunciation_or_503()
+        if isinstance(ready, JSONResponse):
+            return ready
+        phonemes, evaluator = ready
+        conn: sqlite3.Connection = app.state.db
+        found = open_session(payload.session_id, conn)
+        if isinstance(found, JSONResponse):
+            return found
+        session, student = found
+        repo = ReadAloudRepo(conn)
+        takes = repo.takes(session.id)
+        drill = [t for t in takes if t.pass_ == "unmonitored"]
+        if payload.deliberate:
+            # Once per rule, and before the drill: the session ends on the
+            # correct production (metodo §2.4).
+            if repo.has_deliberate(student.id, session.rule_id):
+                return JSONResponse(
+                    {"detail": "the deliberate take is recorded once per rule"}, status_code=409
+                )
+            if drill:
+                return JSONResponse(
+                    {"detail": "the deliberate take comes before the drill takes"},
+                    status_code=409,
+                )
+        elif len(drill) >= read_aloud.TAKES:
+            return JSONResponse(
+                {"detail": f"{read_aloud.TAKES} takes are judged; finish the session"},
+                status_code=409,
+            )
+
+        pcm = decode_pcm(payload.audio)
+        if isinstance(pcm, JSONResponse):
+            return pcm
+        try:
+            judgement, capture, duration_s = await judge_take(
+                phonemes, evaluator, session.rule_id, session.phrase, pcm
             )
         except VoiceError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=422)
         except PronunciationUnavailable as exc:
             return JSONResponse({"detail": str(exc)}, status_code=503)
-        return JSONResponse(judgement.as_dict(), headers=headers)
+
+        recorded = judgement.verdict != "silence"
+        if recorded:
+            repo.add(
+                session,
+                pass_="deliberate" if payload.deliberate else "unmonitored",
+                verdict=judgement.verdict,
+                opportunities=judgement.opportunities,
+                errors=len(judgement.findings),
+                findings=json.dumps([f.as_dict() for f in judgement.findings]),
+                model=phonemes.model,
+                duration_s=duration_s,
+                speech_from_s=capture.speech_from_s,
+                speech_to_s=capture.speech_to_s,
+            )
+        judged = len(drill) + (1 if recorded and not payload.deliberate else 0)
+        body = read_aloud.as_take_payload(judgement, recorded=recorded, judged=judged)
+        if payload.deliberate:
+            body["note"] = read_aloud.deliberate_note(evaluator.item(session.rule_id), judgement)
+        return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/read-aloud/finish")
+    async def read_aloud_finish(payload: ReadAloudFinish) -> JSONResponse:
+        """Close the session: the tally, the card, and at most **one** review.
+
+        The close is one statement that only the first finish wins, so a
+        second click cannot review twice; the review then goes in like any
+        other, event before state (E13). A session that ends 'once' or 'none'
+        reviews nothing, and that is the tally's answer, not a failure.
+        """
+        ready = pronunciation_or_503()
+        if isinstance(ready, JSONResponse):
+            return ready
+        _, evaluator = ready
+        conn: sqlite3.Connection = app.state.db
+        found = open_session(payload.session_id, conn)
+        if isinstance(found, JSONResponse):
+            return found
+        session, student = found
+        repo = ReadAloudRepo(conn)
+        item = evaluator.item(session.rule_id)
+        result = read_aloud.tally(
+            item.id, repo.takes(session.id), ever_named=repo.ever_named(student.id, item.id)
+        )
+        if not repo.end(session.id, result.outcome):
+            return JSONResponse({"detail": "this session has ended"}, status_code=409)
+
+        review = None
+        if result.review_hit is not None:
+            review = Scheduler(conn).review(
+                student.id,
+                item.id,
+                None,
+                hit=result.review_hit,
+                source="pronunciation",
+                pronunciation_session_id=session.id,
+            )
+        return JSONResponse(
+            {
+                "card": read_aloud.card(
+                    item,
+                    result,
+                    due_in_days=review.interval_days if review is not None else None,
+                ),
+                "review": review.as_dict() if review is not None else None,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/api/syntax")
     async def syntax_breakdown(payload: SyntaxRequest) -> JSONResponse:

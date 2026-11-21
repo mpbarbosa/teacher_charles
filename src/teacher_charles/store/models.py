@@ -20,8 +20,13 @@ LEVEL_SOURCES: tuple[LevelSource, ...] = ("self", "auto")
 MODES: tuple[Mode, ...] = ("conversation", "correction", "drill")
 
 # De onde veio a evidência de uma revisão (E13). Ver RuleReview.
-ReviewSource = Literal["drill", "lapse"]
-REVIEW_SOURCES: tuple[ReviewSource, ...] = ("drill", "lapse")
+# 'pronunciation' is E12's: one review per read-aloud session, from its tally.
+ReviewSource = Literal["drill", "lapse", "pronunciation"]
+REVIEW_SOURCES: tuple[ReviewSource, ...] = ("drill", "lapse", "pronunciation")
+
+# A read-aloud take (E12): said wrong on purpose, or the drill proper.
+Pass = Literal["unmonitored", "deliberate"]
+PASSES: tuple[Pass, ...] = ("unmonitored", "deliberate")
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,18 +289,24 @@ class RuleReview:
     exercício **sobre esta regra**, onde a ausência de correção é evidência de
     acerto porque o exercício construiu a oportunidade; ``'lapse'`` é erro pela
     regra em qualquer outro lugar. Não existe acerto fora do drill.
+
+    ``'pronunciation'`` (E12) is one review per read-aloud session, and it is
+    the one source with no turn: ``turn_id`` is ``None`` and
+    ``pronunciation_session_id`` names the session. The schema holds that
+    exactly one of the two is set (``006_read_aloud.sql``).
     """
 
     id: int
     student_id: int
     rule_id: str
-    turn_id: int
+    turn_id: int | None
     hit: bool
     source: str
     box_before: int
     box_after: int
     interval_days: float
     created_at: str
+    pronunciation_session_id: int | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> RuleReview:
@@ -310,7 +321,96 @@ class RuleReview:
             box_after=row["box_after"],
             interval_days=row["interval_days"],
             created_at=row["created_at"],
+            pronunciation_session_id=row["pronunciation_session_id"],
         )
+
+
+@dataclass(frozen=True, slots=True)
+class PronunciationSession:
+    """One read-aloud session over one rule (E12).
+
+    ``ended_at`` ``None`` is a session still open, or one the student walked
+    away from; ``outcome`` is what the tally decided once it ended.
+    """
+
+    id: int
+    student_id: int
+    rule_id: str
+    phrase: int
+    picked_by: str
+    ended_at: str | None
+    outcome: str | None
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> PronunciationSession:
+        return cls(
+            id=row["id"],
+            student_id=row["student_id"],
+            rule_id=row["rule_id"],
+            phrase=row["phrase"],
+            picked_by=row["picked_by"],
+            ended_at=row["ended_at"],
+            outcome=row["outcome"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PronunciationSignal:
+    """One judged take (E12). A silenced take never becomes one (metodo §3)."""
+
+    id: int
+    session_id: int
+    student_id: int
+    rule_id: str
+    phrase: int
+    pass_: str
+    verdict: str
+    opportunities: int
+    errors: int
+    findings: str
+    model: str
+    duration_s: float
+    speech_from_s: float | None
+    speech_to_s: float | None
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> PronunciationSignal:
+        return cls(
+            id=row["id"],
+            session_id=row["session_id"],
+            student_id=row["student_id"],
+            rule_id=row["rule_id"],
+            phrase=row["phrase"],
+            pass_=row["pass"],
+            verdict=row["verdict"],
+            opportunities=row["opportunities"],
+            errors=row["errors"],
+            findings=row["findings"],
+            model=row["model"],
+            duration_s=row["duration_s"],
+            speech_from_s=row["speech_from_s"],
+            speech_to_s=row["speech_to_s"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ReadAloudCount:
+    """A pronunciation rule's read-aloud history, aggregated for ``/progress``.
+
+    Counted in takes and sessions, never as a rate: the card speaks in takes
+    (plan §5), and a percentage would be the score plan §4 rules out.
+    """
+
+    rule_id: str
+    sessions: int
+    takes: int
+    named: int
+    last_outcome: str | None
+    last_at: str
 
 
 @dataclass(frozen=True, slots=True)
