@@ -65,6 +65,7 @@ from .modes import partial_name as mode_partial_name
 from .phonetics import Phonetics
 from .phonetics import partial_name as phonetics_partial_name
 from .schedule import Review, Scheduler
+from .sound_facts import SoundFacts
 from .syntax import partial_name as syntax_partial_name
 from .syntax import request_note as syntax_request_note
 
@@ -219,6 +220,7 @@ class TurnRunner:
         voice_enabled: bool = False,
         phonetics: Phonetics | None = None,
         syntax_enabled: bool = False,
+        sound_facts: SoundFacts | None = None,
     ) -> None:
         self._provider = provider
         self._prompts = prompts
@@ -259,6 +261,10 @@ class TurnRunner:
         # presses the button. All the turn needs is whether that button is on
         # screen, so the teacher can point at it instead of typing an analysis.
         self._syntax_enabled = syntax_enabled
+        # The sounds of the words the student asks about, from espeak. Same
+        # state as ``phonetics=None`` when absent: the turn goes on with the
+        # persona alone, which is what it did before the note existed.
+        self._sound_facts = sound_facts
 
     # --- prompt da resposta ---------------------------------------------- #
 
@@ -441,6 +447,12 @@ class TurnRunner:
         # to point at it. At the top of the prompt the same instruction made
         # things worse — measured, see ``syntax.REQUEST_NOTE``.
         notes.append(syntax_request_note(self._syntax_enabled, student_text))
+        # The student asked how words sound: the teacher is handed espeak's
+        # reading of them instead of recalling it. Both models said *think*
+        # and *this* share a sound, six times out of six, with the persona
+        # forbidding invented sound facts — see ``sound_facts.py``.
+        if self._sound_facts is not None:
+            notes.append(self._sound_facts.note(student_text))
         # The student wrote in Portuguese. The persona already says to answer
         # in English, and the default 3B answered in Portuguese anyway, three
         # times out of three — so the rule is repeated here, last, where the

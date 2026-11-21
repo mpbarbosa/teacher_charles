@@ -1224,6 +1224,41 @@ claimed *"we say 'saudade' too"*, and once it gave no gloss at all. A reply coun
 Portuguese when the same detector reads it as Portuguese. Every reply above was
 also read by eye.
 
+**Sounds, given to the model instead of recalled.** The same session added
+three sound questions to the battery: *ship/sheep*, *rose/rice* and
+*thought/taught*. With the first one, *think/this*, that makes four, and each
+ran five times. `teaching/sound_facts.py` takes the words the student names and
+asks espeak for their sounds — the same G2P as the IPA line and the voice. It
+cuts the reading into the curated symbols, aligns the two words, and states
+where they match and where they differ. It adds a curated fact only for the
+eight consonant pairs that differ in voicing alone and for the two vowel pairs
+Portuguese merges. The note rides inside the student's message. It fires on
+sound words (*sound*, *pronounce*, *rhyme*), and on *the difference between X
+and Y* only when X and Y are one sound apart. *Make* and *do* are a question
+about meaning.
+
+One blind judge (a Claude Opus) read the 60 replies, shuffled, against the
+true answer, and gave each one verdict: correct, false (any false sound fact)
+or evasive.
+
+| 20 replies per column | 3B, no note | 3B, note | 4B, note |
+|---|---|---|---|
+| Correct | 4 | 11 | 16 |
+| At least one false sound fact | 12 | 9 | 4 |
+| Evasive (answers the meaning, not the sound) | 4 | 0 | 0 |
+| IPA typed into the prose | 9 | 12 | 8 |
+
+The note fixes the claim it was written against: with it, all five 3B answers
+to *think/this* say the two sounds differ. Before, one of five said outright
+that they were the same, and one more that both sound like the *f* of *flat*. On *ship/sheep* the 3B went from five answers about meaning to
+four correct ones. It does not make the 3B a reliable source on sounds,
+though. Nine of its twenty answers still carry a false detail around the right
+contrast: *ð* "like *s*", the vowel of *thought* as the *ow* of *cow*, *θ* and
+*ð* "made differently in the mouth". The 4B, given the same note, gets 16 of
+20 right. And since the note itself contains symbols, the 3B typed IPA a little
+more often, not less. That is the honest size of it: the error the persona
+could not stop is gone, and the model's own embroidery around the fact is not.
+
 ### Rodar em dev
 
 ```bash
