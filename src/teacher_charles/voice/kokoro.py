@@ -37,6 +37,11 @@ log = logging.getLogger(__name__)
 # O teto corta antes de o Kokoro estourar o limite de fonemas dele (510).
 MAX_SPEECH_CHARS = 600
 
+# The speaking rates Kokoro accepts: kokoro-onnx refuses anything outside
+# them with a ValueError. 1.0 is the voice's natural pace.
+MIN_SPEED = 0.5
+MAX_SPEED = 2.0
+
 
 class KokoroTTS(TextToSpeech):
     """A boca do Charles."""
@@ -143,13 +148,13 @@ class KokoroTTS(TextToSpeech):
 
     # --- síntese ---------------------------------------------------------- #
 
-    def _speak(self, engine: Any, text: str, voice: str) -> Speech:
+    def _speak(self, engine: Any, text: str, voice: str, speed: float | None = None) -> Speech:
         started = time.monotonic()
         try:
             samples, sample_rate = engine.create(
                 text,
                 voice=voice,
-                speed=self._speed,
+                speed=self._speed if speed is None else speed,
                 lang="en-us",
             )
         except Exception as exc:  # noqa: BLE001 - phonemizer e onnx levantam de tudo
@@ -164,7 +169,9 @@ class KokoroTTS(TextToSpeech):
             elapsed_ms=(time.monotonic() - started) * 1000,
         )
 
-    async def speak(self, text: str, voice: str | None = None) -> Speech:
+    async def speak(
+        self, text: str, voice: str | None = None, speed: float | None = None
+    ) -> Speech:
         trimmed = text.strip()
         if not trimmed:
             raise VoiceError("não há texto para falar")
@@ -173,10 +180,14 @@ class KokoroTTS(TextToSpeech):
                 f"trecho longo demais para uma chamada: {len(trimmed)} caracteres, "
                 f"teto de {MAX_SPEECH_CHARS}. Divida com voice/segment.py."
             )
+        # Checked here and not left to kokoro-onnx, whose ValueError would
+        # surface as a failed synthesis instead of a refused request.
+        if speed is not None and not MIN_SPEED <= speed <= MAX_SPEED:
+            raise VoiceError(f"speed {speed} is outside {MIN_SPEED}-{MAX_SPEED}")
 
         async with self._lock:
             engine = await self._engine_ready()
-            return await asyncio.to_thread(self._speak, engine, trimmed, voice or self.voice)
+            return await asyncio.to_thread(self._speak, engine, trimmed, voice or self.voice, speed)
 
     def voices(self) -> tuple[str, ...]:
         """As vozes do arquivo carregado, ou vazio se ele ainda não carregou.

@@ -92,6 +92,8 @@ class FakeSTT(SpeechToText):
 class SpokenCall:
     text: str
     voice: str
+    # As asked for: None is "the engine's own", not 1.0.
+    speed: float | None = None
 
 
 class FakeTTS(TextToSpeech):
@@ -131,15 +133,20 @@ class FakeTTS(TextToSpeech):
         """Só os textos, na ordem — o que a maioria das asserções quer."""
         return [call.text for call in self.calls]
 
-    async def speak(self, text: str, voice: str | None = None) -> Speech:
+    async def speak(
+        self, text: str, voice: str | None = None, speed: float | None = None
+    ) -> Speech:
         trimmed = text.strip()
         if not trimmed:
             raise VoiceError("não há texto para falar")
-        self.calls.append(SpokenCall(text=trimmed, voice=voice or self.voice))
+        self.calls.append(SpokenCall(text=trimmed, voice=voice or self.voice, speed=speed))
         if self.error is not None:
             raise self.error
 
-        frames = max(int(len(trimmed) / CHARS_PER_SECOND * FAKE_SAMPLE_RATE), 1)
+        # Slower speech lasts longer, as Kokoro's does: a test can tell the
+        # speed reached the engine by the length of what came back.
+        seconds = len(trimmed) / CHARS_PER_SECOND / (speed or 1.0)
+        frames = max(int(seconds * FAKE_SAMPLE_RATE), 1)
         return Speech(
             pcm=b"\x00\x00" * frames,
             sample_rate=FAKE_SAMPLE_RATE,

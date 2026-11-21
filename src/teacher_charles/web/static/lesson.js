@@ -48,7 +48,7 @@
 // for again.
 
 (() => {
-  const cache = new Map(); // word -> Promise<Blob>, Charles's audio
+  const cache = new Map(); // `${speed}\n${word}` -> Promise<Blob>, Charles's audio
   const takes = new Map(); // word -> Blob, the student's latest take
   let current = null; // { audio, button, url, finish }
   // Bumped by every stop, so "Charles, then you" gives up on its second half
@@ -63,6 +63,89 @@
   // Opus in webm (Chromium) or ogg (Firefox), the same list voice.js uses;
   // PyAV decodes both on the server.
   const MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg"];
+
+  // --- speed --------------------------------------------------------------- //
+  //
+  // Two knobs over every sound on the page (the template says why two).
+  // `voiceSpeed` goes to /api/tts and Kokoro says the words at that rate, so
+  // it is part of what a cached sound is: the caches below key on it, and a
+  // word heard at 0.8 is not replayed at 1.0. `playbackRate` is the browser's
+  // and touches no request -- it is set on each Audio as it plays, and on the
+  // one playing when the slider moves. Both are remembered in this browser.
+
+  const SPEED_KEY = "charles.voiceSpeed";
+  const RATE_KEY = "charles.playbackRate";
+  const speedBar = document.querySelector(".speech-speed");
+  const speedInput = speedBar?.querySelector("input.voice-speed");
+  const rateInput = speedBar?.querySelector("input.playback-rate");
+  const defaultSpeed = Number(speedBar?.dataset.defaultSpeed) || 1;
+
+  function stored(key) {
+    try {
+      const value = Number(localStorage.getItem(key));
+      return Number.isFinite(value) && value > 0 ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function remember(key, value) {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch {
+      /* no storage: the knob still works, for this page */
+    }
+  }
+
+  /** Kokoro's rate for the next request. Two decimals, so it keys a cache. */
+  function voiceSpeed() {
+    return speedInput ? Number(Number(speedInput.value).toFixed(2)) : defaultSpeed;
+  }
+
+  function playbackRate() {
+    return rateInput ? Number(rateInput.value) : 1;
+  }
+
+  /** The browser's rate on `audio`, keeping the pitch where the voice put it. */
+  function applyRate(audio) {
+    const rate = playbackRate();
+    audio.defaultPlaybackRate = rate;
+    audio.playbackRate = rate;
+    audio.preservesPitch = true;
+  }
+
+  function showSpeeds() {
+    if (!speedBar) return;
+    speedBar.querySelector(".voice-speed-value").textContent = `${voiceSpeed().toFixed(2)}×`;
+    speedBar.querySelector(".playback-rate-value").textContent = `${playbackRate().toFixed(2)}×`;
+  }
+
+  if (speedBar) {
+    // A stored value outside the slider is clamped by the browser itself.
+    const speed = stored(SPEED_KEY);
+    if (speed !== null) speedInput.value = String(speed);
+    const rate = stored(RATE_KEY);
+    if (rate !== null) rateInput.value = String(rate);
+    showSpeeds();
+
+    speedInput.addEventListener("input", () => {
+      remember(SPEED_KEY, voiceSpeed());
+      showSpeeds();
+    });
+    rateInput.addEventListener("input", () => {
+      remember(RATE_KEY, playbackRate());
+      showSpeeds();
+      if (current) applyRate(current.audio);
+    });
+    speedBar.querySelector(".speed-reset").addEventListener("click", () => {
+      speedInput.value = String(defaultSpeed);
+      rateInput.value = "1";
+      remember(SPEED_KEY, voiceSpeed());
+      remember(RATE_KEY, playbackRate());
+      showSpeeds();
+      if (current) applyRate(current.audio);
+    });
+  }
 
   // --- playback ------------------------------------------------------------ //
 
@@ -90,6 +173,7 @@
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      applyRate(audio);
       current = { audio, button, url, finish: resolve };
       button.classList.add("playing");
       const ended = () => {
@@ -110,12 +194,12 @@
     });
   }
 
-  /** One sentence as audio. `voice` omitted is Charles's. */
-  function speak(text, voice) {
+  /** One sentence as audio, at `speed`. `voice` omitted is Charles's. */
+  function speak(text, voice, speed = voiceSpeed()) {
     return fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(voice ? { text, voice } : { text }),
+      body: JSON.stringify(voice ? { text, voice, speed } : { text, speed }),
     }).then((response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.blob();
@@ -129,11 +213,11 @@
    * is a Whisper pass the sound should not wait for. They resolve to [] when
    * the server could not time the sentence -- then only the sentence is lit.
    */
-  function speakTimed(text, voice) {
+  function speakTimed(text, voice, speed = voiceSpeed()) {
     return fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice, timings: true }),
+      body: JSON.stringify({ text, voice, speed, timings: true }),
     }).then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const id = response.headers.get("X-Speech-Id");
@@ -148,13 +232,15 @@
   }
 
   function fetchWord(word) {
-    if (!cache.has(word)) {
-      const pending = speak(word);
+    const speed = voiceSpeed();
+    const key = `${speed}\n${word}`;
+    if (!cache.has(key)) {
+      const pending = speak(word, undefined, speed);
       // A failure is not cached: the next click tries again.
-      pending.catch(() => cache.delete(word));
-      cache.set(word, pending);
+      pending.catch(() => cache.delete(key));
+      cache.set(key, pending);
     }
-    return cache.get(word);
+    return cache.get(key);
   }
 
   /** Charles's audio for a word, with `button` showing the wait and the failure. */
@@ -543,7 +629,9 @@
   }
 
   // The first sentence's pieces, fetched before the click and kept:
-  // `${voice}\n${text}` -> Promise<{ blob, starts }>.
+  // `${voice}\n${speed}\n${text}` -> Promise<{ blob, starts }>. The speed is
+  // in the key because a prefetch made at 1.0 is the wrong sound once the
+  // slider says 0.8.
   const opening = new Map();
 
   /** The pieces that are fetched before the click: the first sentence's. */
@@ -563,19 +651,24 @@
    * `speakTimed`, sent when the request before it has its audio. `live` is
    * asked at that moment: a reading stopped in the meantime sends nothing,
    * so a Listen after a Stop does not queue behind the old reading's tail.
+   * `speed` omitted is the slider's at that same moment, so a reading picks
+   * up a new voice speed from the first piece it has not asked for yet.
    */
-  function speakInTurn(text, voice, live = () => true) {
+  function speakInTurn(text, voice, live = () => true, speed = undefined) {
     const request = lastRequest
       .catch(() => {})
-      .then(() => (live() ? speakTimed(text, voice) : Promise.reject(new Error("stopped"))));
+      .then(() =>
+        live() ? speakTimed(text, voice, speed ?? voiceSpeed()) : Promise.reject(new Error("stopped")),
+      );
     lastRequest = request;
     return request;
   }
 
   function openingFor(text, voice, live = () => true) {
-    const key = `${voice}\n${text}`;
+    const speed = voiceSpeed();
+    const key = `${voice}\n${speed}\n${text}`;
     if (!opening.has(key)) {
-      const request = speakInTurn(text, voice, live);
+      const request = speakInTurn(text, voice, live, speed);
       // A failed prefetch is not kept: the click asks again.
       request.catch(() => {
         if (opening.get(key) === request) opening.delete(key);

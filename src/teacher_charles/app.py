@@ -80,6 +80,8 @@ from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
 from .voice import SentenceAssembler, Voice, VoiceError, build_voice, split_sentences
 from .voice.align import word_starts
+from .voice.kokoro import MAX_SPEED as KOKORO_MAX_SPEED
+from .voice.kokoro import MIN_SPEED as KOKORO_MIN_SPEED
 
 log = logging.getLogger(__name__)
 
@@ -205,6 +207,11 @@ class SpeakRequest(BaseModel):
     # ``/api/tts/{id}/words``: the lesson reader lights the word being said.
     # Off by default -- the chat's voice lights nothing, and holds nothing.
     timings: bool = False
+    # Kokoro's own speaking rate for this sentence, 1.0 its natural pace;
+    # absent is ``TC_TTS_SPEED``. The lesson page's "Voice speed" slider. The
+    # bounds are Kokoro's (``voice/kokoro.py``), held here so a bad value is a
+    # 422 before it costs a synthesis.
+    speed: float | None = Field(default=None, ge=KOKORO_MIN_SPEED, le=KOKORO_MAX_SPEED)
 
 
 # How many synthesised sentences wait for their word timings to be asked for.
@@ -590,6 +597,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # propósito (ver ``voice/kokoro.py``).
             "voices": list(voice.tts.voices()),
             "ready": voice.stt.ready and voice.tts.ready,
+            # Where the lesson page's "Voice speed" slider starts before the
+            # student moves it: the rate a request without `speed` gets.
+            "speed": settings.tts_speed,
         }
 
     def spell(text: str) -> str:
@@ -1180,7 +1190,7 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             return voice
 
         try:
-            speech = await voice.tts.speak(payload.text, payload.voice)
+            speech = await voice.tts.speak(payload.text, payload.voice, payload.speed)
         except VoiceError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=422)
 

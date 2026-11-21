@@ -159,6 +159,56 @@ class TestTTS:
         assert tts.last_call.voice == "af_heart"
 
 
+class TestTTSSpeed:
+    """The lesson page's "Voice speed": Kokoro's rate, chosen per request."""
+
+    @pytest.fixture
+    def tts(self) -> FakeTTS:
+        return FakeTTS()
+
+    @pytest.fixture
+    def handle(self, tmp_path, tts):
+        app = create_app(settings_for(tmp_path), provider=FakeProvider())
+        with TestClient(app) as c:
+            app.state.voice = Voice(stt=FakeSTT(), tts=tts)
+            yield c
+
+    def test_the_speed_reaches_the_engine(self, handle, tts):
+        handle.post("/api/tts", json={"text": "Good morning.", "speed": 0.8})
+        assert tts.last_call.speed == 0.8
+
+    def test_slower_speech_lasts_longer(self, handle):
+        def seconds(speed: float) -> float:
+            body = {"text": "Good morning, how are you?", "speed": speed}
+            return float(handle.post("/api/tts", json=body).headers["X-Audio-Seconds"])
+
+        assert seconds(0.5) > seconds(1.0) > seconds(1.5)
+
+    def test_absent_is_the_engines_own_not_one(self, handle, tts):
+        # None, so TC_TTS_SPEED is what the chat's voice (which sends no
+        # speed) keeps getting. Sending 1.0 here would override it.
+        handle.post("/api/tts", json={"text": "Good morning."})
+        assert tts.last_call.speed is None
+
+    @pytest.mark.parametrize("speed", [0.49, 2.01, 0, -1])
+    def test_outside_kokoros_range_is_refused_before_synthesis(self, handle, tts, speed):
+        response = handle.post("/api/tts", json={"text": "Good morning.", "speed": speed})
+        assert response.status_code == 422
+        assert tts.calls == []
+
+    def test_the_speed_travels_with_a_timed_sentence(self, handle, tts):
+        response = handle.post(
+            "/api/tts", json={"text": "Good morning.", "speed": 0.7, "timings": True}
+        )
+        assert response.headers["X-Speech-Id"]
+        assert tts.last_call.speed == 0.7
+
+    def test_api_voice_says_where_the_slider_starts(self, tmp_path):
+        app = create_app(settings_for(tmp_path, tts_speed=0.9), provider=FakeProvider())
+        with TestClient(app) as c:
+            assert c.get("/api/voice").json()["speed"] == 0.9
+
+
 class TestQuadrosDeSentenca:
     def test_cada_sentenca_fechada_rende_um_quadro_indexado(self, client):
         frames = frames_from(client.post("/api/chat", json={"message": "Hello Charles."}))
