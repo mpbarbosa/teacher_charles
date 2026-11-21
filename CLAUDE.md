@@ -602,6 +602,24 @@ something false. The note fixes the language of the reply and nothing else.
 The 3B's English answers to those turns are often generic. Once it claimed
 English says *saudade* too, and once it gave no gloss at all.
 
+**The sounds of named words come from espeak too, not only the IPA line.**
+`teaching/sound_facts.py` is the grammar's curated hint, one layer down. When
+the student asks how words sound, it reads them with the same `Phonetics` as
+the IPA line and cuts the reading into the curated symbols of
+`data/phonetics/symbols.yaml`. It aligns the two words and hands the teacher a
+note saying where they match and where they differ. The only facts it adds are
+curated: voicing pairs (`VOICING_PAIRS`) and the two vowel pairs Portuguese
+merges (`VOWEL_PAIRS`). Two things keep it quiet. A quoted spelling (*'th'*,
+*'s'*) is not a word, because espeak would read the letter names. And *the
+difference between X and Y* with no sound word in it counts as a sound question
+only when X and Y are a minimal pair; otherwise *make/do* would get a note about
+vowels. The app loads the symbol table **before** the runner, because the
+runner is built with it. Measured on the 3B, the note took sound answers from
+4 of 20 correct to 11. On *think/this*, every answer now says the sounds
+differ.
+It did not stop the 3B embroidering: 9 of 20 answers still add a false detail
+around the right contrast.
+
 **If the 4B comes back, the suffix is load-bearing.** Bare
 `qwen3:4b` is the `Thinking-2507` build: its chat template ends every prompt
 with an unconditional `<think>` and never reads the request's `think` field. It

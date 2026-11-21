@@ -87,6 +87,7 @@ from .teaching.pronunciation import (
 )
 from .teaching.pronunciation import load_base as load_pronunciation
 from .teaching.schedule import Scheduler, is_graduated
+from .teaching.sound_facts import build_sound_facts
 from .teaching.syntax import Syntax, SyntaxUnavailable, build_syntax
 from .teaching.syntax import on_screen as syntax_on_screen
 from .teaching.turn import DEFAULT_LEVEL
@@ -412,6 +413,18 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         # derrubar a aula.
         phonetics = build_phonetics(settings)
 
+        # The IPA symbols, each with a word to hear it in: the chart under a
+        # lesson's full text, and the units the sound note compares. Curated
+        # like the shelf, and the same policy: a broken table leaves the chart
+        # and the note out, not the lesson. Loaded here, before the runner,
+        # because the note is built from it.
+        try:
+            symbols_path = settings.data_dir / "phonetics" / "symbols.yaml"
+            symbols: SymbolTable | None = load_symbols(symbols_path)
+        except SymbolError as exc:
+            log.error("IPA symbols did not load, lessons go without the chart: %s", exc)
+            symbols = None
+
         # The phoneme ear of E11, ``None`` with pronunciation off (the
         # default). Building loads nothing; the 318 MB arrive in the warm-up.
         phonemes = build_phonemes(settings)
@@ -450,16 +463,6 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
         except LessonError as exc:
             log.error("lessons did not load, the shelf stays empty: %s", exc)
             lessons = None
-
-        # The IPA symbols, each with a word to hear it in: the chart under a
-        # lesson's full text. Curated like the shelf, and the same policy: a
-        # broken table leaves the chart out, not the lesson.
-        try:
-            symbols_path = settings.data_dir / "phonetics" / "symbols.yaml"
-            symbols: SymbolTable | None = load_symbols(symbols_path)
-        except SymbolError as exc:
-            log.error("IPA symbols did not load, lessons go without the chart: %s", exc)
-            symbols = None
 
         app.state.settings = settings
         app.state.db = conn
@@ -506,6 +509,10 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             # installed. The same function the page uses, so the teacher
             # never points at a button the page did not draw.
             syntax_enabled=syntax_on_screen(syntax),
+            # What the words the student asks about sound like, from the same
+            # espeak as the IPA line: the teacher is handed the sounds instead
+            # of recalling them. ``None`` without the G2P or the table.
+            sound_facts=build_sound_facts(phonetics, symbols),
         )
 
         # Carregar o modelo do disco custa ~15s nesta máquina, e medido na E2
