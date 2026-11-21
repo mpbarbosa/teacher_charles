@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teacher-charles.local/schema/pronunciation-item.schema.json",
+  "$defs": {
+    "Discrimination": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "graded",
+            "named-not-clean",
+            "heard-only"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "synthetic": {
+          "$ref": "#/$defs/Synthetic"
+        },
+        "human": {
+          "items": {
+            "$ref": "#/$defs/Take"
+          },
+          "minItems": 1,
+          "title": "Human",
+          "type": "array"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "synthetic",
+        "human"
+      ],
+      "title": "Discrimination",
+      "type": "object"
+    },
+    "Equivalence": {
+      "additionalProperties": false,
+      "description": "Something correct English also does in this phrase, which the expected text spells otherwise.\n\nIt is per item and per word, not a global table: the three sets metodo §1\nnames came from one speaker, and a second voice may turn one of them into a\nreal deviation (metodo §10).",
+      "properties": {
+        "word": {
+          "minLength": 1,
+          "title": "Word",
+          "type": "string"
+        },
+        "expected": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected",
+          "type": "array"
+        },
+        "heard": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Heard",
+          "type": "array"
+        },
+        "takes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Takes",
+          "type": "array"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "word",
+        "expected",
+        "heard",
+        "takes",
+        "why"
+      ],
+      "title": "Equivalence",
+      "type": "object"
+    },
+    "Phrase": {
+      "additionalProperties": false,
+      "description": "What the student reads aloud. It loads the contrast at least twice (metodo §4).",
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Phrase",
+      "type": "object"
+    },
+    "Synthetic": {
+      "additionalProperties": false,
+      "description": "The ``--discriminate`` pair of plan §2.3, for this rule.",
+      "properties": {
+        "named": {
+          "title": "Named",
+          "type": "boolean"
+        },
+        "heard": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heard"
+        }
+      },
+      "required": [
+        "named"
+      ],
+      "title": "Synthetic",
+      "type": "object"
+    },
+    "Take": {
+      "additionalProperties": false,
+      "description": "One human report of plan §3.5, named by the md5 prefix it was written under.",
+      "properties": {
+        "take": {
+          "pattern": "^[0-9a-f]{8}$",
+          "title": "Take",
+          "type": "string"
+        },
+        "pass": {
+          "enum": [
+            "unmonitored",
+            "deliberate"
+          ],
+          "title": "Pass",
+          "type": "string"
+        },
+        "clean": {
+          "title": "Clean",
+          "type": "boolean"
+        },
+        "named": {
+          "title": "Named",
+          "type": "boolean"
+        },
+        "per": {
+          "minimum": 0,
+          "title": "Per",
+          "type": "number"
+        }
+      },
+      "required": [
+        "take",
+        "pass",
+        "clean",
+        "named",
+        "per"
+      ],
+      "title": "Take",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One curated rule of ``pronunciation.yaml``.\n\n``extra=\"forbid\"`` for ``ContrastiveItem``'s reason: a misspelt field in a\nhand-curated file is a curation error, and failing at load beats ignoring a\nsignature the curator believed was in force.",
+  "properties": {
+    "id": {
+      "pattern": "^pron\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "target": {
+      "minLength": 1,
+      "title": "Target",
+      "type": "string"
+    },
+    "phrases": {
+      "items": {
+        "$ref": "#/$defs/Phrase"
+      },
+      "minItems": 1,
+      "title": "Phrases",
+      "type": "array"
+    },
+    "right": {
+      "minLength": 1,
+      "title": "Right",
+      "type": "string"
+    },
+    "wrong": {
+      "minLength": 1,
+      "title": "Wrong",
+      "type": "string"
+    },
+    "signature": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "minItems": 1,
+      "title": "Signature",
+      "type": "array"
+    },
+    "equivalences": {
+      "items": {
+        "$ref": "#/$defs/Equivalence"
+      },
+      "title": "Equivalences",
+      "type": "array"
+    },
+    "discrimination": {
+      "$ref": "#/$defs/Discrimination"
+    },
+    "explanation": {
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    },
+    "cefr": {
+      "default": "B1",
+      "enum": [
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2"
+      ],
+      "title": "Cefr",
+      "type": "string"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "id",
+    "target",
+    "phrases",
+    "right",
+    "wrong",
+    "signature",
+    "discrimination",
+    "explanation"
+  ],
+  "title": "PronunciationItem",
+  "type": "object"
+}

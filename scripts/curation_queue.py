@@ -63,7 +63,9 @@ TYPE_TO_CATEGORY = {
     "false-friend": "false-friend",
     "false_friend": "false-friend",
     "grammar": "grammar",
-    "pronunciation": "pronunciation",
+    # No "pronunciation": these rows are typed sentences, and a pronunciation
+    # rule is not a text item (`contrastive.PRONUNCIATION_FILE`). A model that
+    # calls a written error "pronunciation" leaves the prefix to the curator.
     "vocabulary": "false-friend",
     "word-choice": "false-friend",
 }

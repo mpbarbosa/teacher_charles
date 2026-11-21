@@ -1,0 +1,145 @@
+# The pronunciation base: E10 of docs/plano-fase-2.md.
+#
+# Loaded by teaching/pronunciation.py, never by the text base: these rules are
+# about what the student *said*, and contrastive.load_items skips this file so
+# a sound can never be cited against a typed sentence.
+#
+# An item enters only on evidence (plan §3.7): the --discriminate pair of plan
+# §2.3, and a human take that is both clean (no warning from the five signal
+# questions of plan §3.5) and named (an alignment operation inside the
+# signature). Every human take of the rule that was not refused is listed by the
+# md5 prefix of its report in gravacoes/, which is local and not versioned, so a
+# status can be re-checked when a threshold moves (docs/metodo-fonetico.md §8).
+# The three below are the three plan §3.7 admitted; the other five candidates
+# wait for a clean take, not for the stack.
+#
+# The deciding WAVs that are still on disk (3ba35169, eaa0d509, 728ff6cb,
+# c3e16004, 365e3cfb, 690c26c7) pass the signal questions under the speech
+# contrast statistic as it stands since PR #101; b704dc72's WAV was overwritten
+# by a later take of the same phrase, and its report is what remains.
+
+items:
+  - id: pron.th-voiced
+    target: ð
+    phrases:
+      - text: They brought the other brother
+    right: the other brother
+    wrong: de udder brudder
+    signature:
+      - [sub, ð, d]
+    equivalences:
+      - word: brought
+        expected: [ɔː]
+        heard: [ɑː]
+        takes: ["3ba35169", "eaa0d509"]
+        why: >-
+          The cot/caught merger. Most North American speakers say brought
+          with the vowel of father, and that is correct English (plan §3.5).
+      - word: the
+        expected: [ð, ɪ]
+        heard: [ð, ə]
+        takes: ["3ba35169"]
+        why: >-
+          The article before a vowel is /ðɪ/ in espeak and /ðə/ in a lot of
+          careful speech. Both are correct (metodo §1).
+    discrimination:
+      status: graded
+      synthetic:
+        named: true
+        heard: "/ð/→/d/"
+      human:
+        - {take: "b704dc72", pass: unmonitored, clean: true, named: true, per: 0.188}
+        - {take: "3ba35169", pass: unmonitored, clean: true, named: false, per: 0.125}
+        - {take: "001e6f2a", pass: unmonitored, clean: false, named: false, per: 0.688}
+        - {take: "eaa0d509", pass: deliberate, clean: true, named: true, per: 0.438}
+    explanation: >-
+      English <th> in the, other and brother is /ð/: the tongue rests lightly
+      between the teeth and the voice keeps going. Portuguese has no /ð/, so it
+      tends to come out as /d/, with the tongue behind the teeth. It is the
+      same sound in all four words of the sentence.
+    cefr: A2
+    notes: >-
+      Metodo §2.4 cell: habit. The unmonitored take b704dc72 named /ð/→/d/ in
+      other, and the deliberate eaa0d509 named it three times. Four
+      opportunities in the phrase, so the success verdict can say "three of the
+      four were right".
+
+  - id: pron.h-dropping
+    target: h
+    phrases:
+      - text: He has a house here
+    right: he has a house
+    wrong: e as a ouse
+    signature:
+      - [del, h]
+    equivalences:
+      - word: has
+        expected: [ɐ]
+        heard: [æ]
+        takes: ["728ff6cb", "c3e16004"]
+        why: >-
+          has as a main verb is often said in its strong form, /hæz/, where
+          espeak writes the weak /hɐz/. Both are correct English.
+    discrimination:
+      status: graded
+      synthetic:
+        named: true
+        heard: "-/h/"
+      human:
+        - {take: "728ff6cb", pass: unmonitored, clean: true, named: false, per: 0.364}
+        - {take: "13008743", pass: unmonitored, clean: false, named: true, per: 0.545}
+        - {take: "4b1a0f92", pass: unmonitored, clean: false, named: false, per: 0.455}
+        - {take: "61e9316c", pass: unmonitored, clean: false, named: false, per: 0.455}
+        - {take: "c3e16004", pass: deliberate, clean: true, named: true, per: 0.818}
+    explanation: >-
+      English /h/ at the start of he, has, house and here is a real breath out,
+      heard before the vowel. Portuguese <h> is silent, so the /h/ tends to
+      disappear and the word starts on its vowel.
+    cefr: A2
+    notes: >-
+      Metodo §2.4 cell: control. The signature is a deletion, which is the one
+      shape a truncated take satisfies for free (metodo §7): 13008743 named it
+      only because the take stops after "He has a", and the signal questions
+      warned that the speech reached the end of the file. That is why it is not
+      clean and decides nothing.
+
+  - id: pron.ing-alveolar
+    target: ŋ
+    phrases:
+      - text: I am speaking and reading
+    right: speaking, reading
+    wrong: speakin, readin
+    signature:
+      - [sub, ŋ, n]
+    discrimination:
+      status: graded
+      synthetic:
+        named: false
+      reason: >-
+        The blind spot was the synthesis, not the recognizer (plan §3.5 and
+        metodo §7). Kokoro's rendering of the pair came out /ŋ/ on both sides,
+        while on human speech the recognizer named /ŋ/→/n/ twice in the clean
+        unmonitored take 365e3cfb and heard /ŋ/ in both endings of the clean
+        deliberate take 690c26c7. The human source settles what the synthetic
+        one could not, as plan §3.7 item 3 records.
+      human:
+        - {take: "365e3cfb", pass: unmonitored, clean: true, named: true, per: 0.529}
+        - {take: "6447fa6c", pass: unmonitored, clean: false, named: false, per: 0.294}
+        - {take: "a45616b5", pass: unmonitored, clean: false, named: false, per: 0.176}
+        - {take: "af954537", pass: unmonitored, clean: false, named: false, per: 0.176}
+        - {take: "690c26c7", pass: deliberate, clean: true, named: false, per: 0.235}
+    explanation: >-
+      The -ing at the end of speaking and reading is /ŋ/, the sound in sing:
+      the back of the tongue closes against the roof of the mouth, and the
+      tip stays down. Casual English also says speakin', but in careful speech
+      the ending is /ŋ/, and Portuguese, which has no /ŋ/ at the end of a word,
+      tends to turn it into /n/.
+    cefr: B1
+    notes: >-
+      Metodo §2.4 cell: awareness. The speaker said /n/ when not watching and
+      /ŋ/ when asked for /n/, so the lesson is noticing which one comes out,
+      not producing either. 365e3cfb is the noisiest clean take in the E9 set
+      (0.529), which plan §3.5 flags; it is the only clean naming. Metodo §4's
+      wording table predates plan §3.7's admission and gives this rule no
+      text; the explanation above follows its line (consonant identity is
+      resolved, so the phoneme is named).
