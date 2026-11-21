@@ -496,7 +496,8 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
     templates = Jinja2Templates(directory=WEB_DIR / "templates")
     # Every page's last line names the commit (build_stamp.py). Read here, once:
     # the footer names the code this process loaded, not whatever HEAD is now.
-    templates.env.globals["build"] = read_build_stamp(PACKAGE_ROOT)
+    build = read_build_stamp(PACKAGE_ROOT)
+    templates.env.globals["build"] = build
 
     # --- helpers ---------------------------------------------------------- #
 
@@ -1721,6 +1722,9 @@ def create_app(settings: Settings | None = None, provider: ChatProvider | None =
             if (db_info["ok"] and model.ok and contrastive_info["ok"] and voice_info["ok"])
             else "degraded",
             "version": __version__,
+            # The running code's version (semver.py): equal to the release on
+            # the release commit, a `-dev.N` pre-release of the next one past it.
+            "build_version": build.version or __version__,
             "database": db_info,
             "model": model.as_dict(),
             "contrastive": contrastive_info,
