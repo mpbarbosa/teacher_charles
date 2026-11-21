@@ -5,7 +5,7 @@
   "description": "Um item curado da base.\n\n``extra=\"forbid\"`` é deliberado: um campo com nome errado num YAML curado à\nmão é erro de curadoria, e falhar na carga é melhor que ignorar em silêncio\num padrão que o curador achava que estava valendo.",
   "properties": {
     "id": {
-      "pattern": "^(?:false-friend|calque|grammar|pronunciation)\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "pattern": "^(?:false-friend|calque|grammar)\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
       "title": "Id",
       "type": "string"
     },
@@ -13,8 +13,7 @@
       "enum": [
         "false-friend",
         "calque",
-        "grammar",
-        "pronunciation"
+        "grammar"
       ],
       "title": "Category",
       "type": "string"

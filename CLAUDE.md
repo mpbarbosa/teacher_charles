@@ -103,6 +103,7 @@ by adding a sentence to the prompt, check whether the right place isn't code in
 | `stress_shift.py` | The one G2P fix both espeak readers share: in *record by record* espeak reads the first word as a verb after "then", and the IPA line and Kokoro both swap in the noun reading. Top-level and stdlib-only because `voice/` does not import `teaching/`, and the screen and the voice must say the same stress. |
 | `teaching/syntax.py` | The parser behind the Structure button: text in, a sentence's parts out. Off the turn's path entirely — it runs from `POST /api/syntax`, when the student presses the button, and yields no `TurnEvent`. `analyse` reads tokens by attribute and imports nothing from spaCy, so its tests run with the extra absent. |
 | `teaching/schedule.py` | The review schedule (E13). It knows **when** a rule comes back and knows nothing about the contrastive base; the `DrillPlanner` knows **which** rules can become a drill. Neither of the two decides on its own. |
+| `teaching/pronunciation.py` | The pronunciation base (E10): the curated rules of `data/contrastive/pronunciation.yaml`, each with its phrase, the signature of alignment operations that count as the error, the equivalences correct English also allows, and the human takes that admitted it, by md5 prefix. Nothing here judges audio yet; the evaluator joins it in E11. **It never meets the text base** — see the invariant below. |
 | `teaching/dictionary.py` | The word card under the pointer on a lesson's full text: a word in, its senses out, each with an English definition, an example and the Portuguese for it. Read with stdlib `sqlite3` from a file `scripts/fetch_dictionary.py` builds out of Open English WordNet 2024 and OpenWN-PT, joined by interlingual sense. No `wn` at runtime, nothing loaded until a hover, and it records nothing. |
 | `teaching/lessons.py` | Curated lessons: an authentic text analysed at six levels, one YAML per lesson in `data/lessons/`. The source is **linked, never copied** — `Source` has no field for the text, and `Point.cites` is held to 5 words per citation and a tenth of the source in total, both checked at load. A machine that holds its own copy in `corpus/lessons/<slug>.txt` gets it shown whole on the page — read per request, never in `/api/lessons`. Charles never sees a lesson; the page shows it, and the IPA in it comes from espeak at serve time. The text may also be the student's own (`OwnText`: no URL, and `extra="forbid"` refuses one), and any copy can be **rehearsed** aloud: the YAML's `rehearsal` gives each paragraph a title and a target, the cue words stay beside the copy in `<slug>.cues.txt`, and times and recordings never reach the server — `docs/adr/0001-own-text-and-rehearsal-mode.md`. The one exception is **Follow me**, which lights the word the student is saying: it sends the microphone's last seconds to `POST /api/follow`, where the timing Whisper hears them and `voice/follow.py` places them in the text; the route records nothing and returns an index, never what was heard (the ADR's amendment). |
 | `prompts.py` | Loads `prompts/*.md` with an mtime-keyed cache: editing the persona takes effect on the next turn, without restarting. |
@@ -190,6 +191,17 @@ answer), and as a sort term instead of a filter.
 shared-connection rule, and the order is chosen because of it: `rule_review`
 (the event) before `rule_schedule` (the state), because the state can be
 rebuilt from the event and not the other way round.
+
+**A pronunciation rule is never in the text base.** `ContrastiveBase` matches
+what the student typed, and `_Verifier._rule_for` keeps a model-cited id
+whenever `claimed in self.base`. A `pron.*` item in there would let the model
+cite a sound against a written sentence and have it pass as curated — the
+improvised correction E4 exists to refuse. So `contrastive.load_items` skips
+`pronunciation.yaml` although it shares the directory, the text model no longer
+admits the category, and `teaching/pronunciation.py` loads the file alone.
+`tests/test_pronunciation.py` holds each of the three in place. The ids keep the
+`pron.` prefix because the E9 reports on disk and `--rescore` already name
+their rules that way.
 
 **A correction the verifier barred is kept, not just counted.** `_Verifier`
 discards every finding that cites no curated rule — that is E4's guard against

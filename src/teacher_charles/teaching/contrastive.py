@@ -50,15 +50,22 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ..config import get_settings
 from ..store.models import CEFR_LEVELS, CefrLevel
 
-Category = Literal["false-friend", "calque", "grammar", "pronunciation"]
+Category = Literal["false-friend", "calque", "grammar"]
 
-CATEGORIES: tuple[Category, ...] = ("false-friend", "calque", "grammar", "pronunciation")
+CATEGORIES: tuple[Category, ...] = ("false-friend", "calque", "grammar")
+
+# Pronunciation lives in the same directory and is not a text category. This
+# base matches what the student *typed*, and the grammar verifier accepts any
+# ``rule_id`` it holds, so a pronunciation item here would let the model cite
+# a sound against a written sentence and pass as curated. The file is loaded
+# by ``teaching/pronunciation.py`` alone, and ``load_items`` skips it.
+PRONUNCIATION_FILE = "pronunciation.yaml"
 
 # ``calque.age-have``: a categoria é parte do id de propósito. O ``rule_id`` vai
 # para o banco (``correction.rule_id``) e aparece no error log da E7; lá, saber
 # que o erro é decalque e não falso cognato sem precisar consultar a base é o
 # que faz a agregação por tipo sair de graça.
-RULE_ID_PATTERN = r"^(?:false-friend|calque|grammar|pronunciation)\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+RULE_ID_PATTERN = r"^(?:false-friend|calque|grammar)\.[a-z0-9]+(?:-[a-z0-9]+)*$"
 
 # Mapeamento 1 caractere -> 1 caractere. Preservar o comprimento não é detalhe:
 # é o que mantém os offsets do casamento válidos no texto original do aluno.
@@ -307,7 +314,7 @@ def load_items(directory: Path) -> list[ContrastiveItem]:
     if not directory.is_dir():
         raise ContrastiveError(f"a base contrastiva não existe em {directory}")
 
-    files = sorted(directory.glob("*.yaml"))
+    files = sorted(path for path in directory.glob("*.yaml") if path.name != PRONUNCIATION_FILE)
     if not files:
         raise ContrastiveError(f"nenhum arquivo .yaml em {directory}")
 
@@ -407,6 +414,7 @@ __all__ = [
     "ContrastiveError",
     "ContrastiveItem",
     "Match",
+    "PRONUNCIATION_FILE",
     "SCHEMA_RELATIVE_PATH",
     "compile_patterns",
     "get_base",
