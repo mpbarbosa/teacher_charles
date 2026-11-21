@@ -9,7 +9,7 @@
 # the analysis names, inside the loader's budget of a tenth of the text.
 #
 # The rehearsal plan below is the structure: one block per paragraph of the
-# copy, with a title and a target in seconds (5 timed blocks, 5:00 in all).
+# copy, with a title and a target in seconds (5 timed blocks, 5:20 in all).
 # The targets are a guide, not a limit: the video asks for about five minutes.
 # The cue words for each block are the copy's and stay beside it, in
 # corpus/lessons/interview-video-pitch.cues.txt (RehearsalBlock says why).
@@ -30,7 +30,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 510
+  words: 538
 
 rehearsal:
   - title: Who you are
@@ -42,7 +42,7 @@ rehearsal:
   - title: How you check the work
     target: 75
   - title: The close
-    target: 15
+    target: 35
   - title: Phrases that buy time
   - title: A case to practise on
 
@@ -335,6 +335,14 @@ sounds:
     trap: Stressed on the second syllable; the first vowel is weak.
   - word: customer
     trap: Stressed on the first syllable, and no vowel added after the final "r".
+  - word: warehouse
+    trap: >-
+      Stressed on the first syllable, which sounds like "where"; the "h" of
+      "house" is breathed, not silent.
+  - word: revenue
+    trap: >-
+      Stressed on the first syllable: REV-enue. Portuguese "receita" pulls the
+      stress to the middle, and "re-VE-nue" is the trap.
   - word: businesses
     trap: >-
       Three syllables, not four: the "u" sounds like the "i" of "bit", the "i"
@@ -412,7 +420,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (510 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (538 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
