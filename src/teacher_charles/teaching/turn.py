@@ -50,6 +50,7 @@ from ..store.repo import CorrectionRepo, SessionRepo, TurnRepo, UnverifiedFindin
 from .analyzer import Analysis, Analyzer
 from .capabilities import partial_name as app_partial_name
 from .contrastive import span_key
+from .language import portuguese_note
 from .level import LevelDecision, LevelTracker
 from .level import partial_name as level_partial_name
 from .modes import (
@@ -440,6 +441,11 @@ class TurnRunner:
         # to point at it. At the top of the prompt the same instruction made
         # things worse — measured, see ``syntax.REQUEST_NOTE``.
         notes.append(syntax_request_note(self._syntax_enabled, student_text))
+        # The student wrote in Portuguese. The persona already says to answer
+        # in English, and the default 3B answered in Portuguese anyway, three
+        # times out of three — so the rule is repeated here, last, where the
+        # model reads it just before it writes. See ``language.py``.
+        notes.append(portuguese_note(student_text))
 
         return self._with_notes(messages, [note for note in notes if note])
 

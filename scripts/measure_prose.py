@@ -210,6 +210,33 @@ PROBES: tuple[Probe, ...] = (
         "Answers only in simple English, reassures, invites the student to try again in "
         "English. No Portuguese at all.",
     ),
+    # Added after the first measurement, when the 3B became the default: one
+    # Portuguese turn was enough to see the failure (3 of 3), not to see a fix.
+    Probe(
+        "portuguese-b1-news",
+        "portuguese",
+        "B1",
+        "Hoje eu fui ao médico e estou muito cansado.",
+        "Answers only in simple English: sympathy for the tiring day, and an invitation to "
+        "say it in English. No Portuguese at all.",
+    ),
+    Probe(
+        "portuguese-b2-how-say",
+        "portuguese",
+        "B2",
+        "Como se diz 'saudade' em inglês?",
+        "Answers only in English: there is no single word; 'miss' / 'longing' / 'I miss you' "
+        "come close. May quote the word 'saudade' itself, nothing else in Portuguese.",
+    ),
+    Probe(
+        "mixed-b1-feira",
+        "mixed",
+        "B1",
+        "Yesterday I went to the feira with my mother and we bought many vegetables.",
+        "English with one Portuguese word: a natural reply in English, may offer 'street "
+        "market' / 'farmers' market' for 'feira'. Not treated as a Portuguese turn.",
+        expect=("market",),
+    ),
     Probe(
         "grammar-question-b1",
         "grammar-question",

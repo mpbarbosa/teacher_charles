@@ -1194,6 +1194,36 @@ teach. The raw runs and both verdicts are not versioned, because they are
 model output and can be regenerated. The script rewrites the sheet and the key
 on every run.
 
+**The 3B's Portuguese, fixed in code.** After the switch, three more probes
+were added to the battery: two in Portuguese, and one in English with a single
+Portuguese word in it. Each was run five times, together with the first
+Portuguese probe. Without a fix, the 3B answered in Portuguese 10 times out of
+15: all five times to *Desculpa, não entendi…* and all five to *Como se diz
+'saudade' em inglês?*. It answered *Hoje eu fui ao médico…* in English each
+time, quoting it back. The persona's own sentence about Portuguese did not hold
+it.
+
+The fix is the one E4, E6 and the Structure button had already measured: an
+instruction counts when it sits next to the point of generation.
+`teaching/language.py` counts Portuguese function words against English ones,
+outside quotes, and when Portuguese wins, a note rides inside the student's
+message. With it the count went to **0 of 15** on the 3B and stayed at 0 on the
+4B. The English turn with *feira* in it got no note, as designed: a tie, or an
+English majority, goes to English.
+
+| Portuguese replies, 5 runs each | 3B, no note | 3B, note | 4B, note |
+|---|---|---|---|
+| *Desculpa, não entendi. Pode explicar de novo?* | 5/5 | 0/5 | 0/5 |
+| *Hoje eu fui ao médico e estou muito cansado.* | 0/5 | 0/5 | 0/5 |
+| *Como se diz 'saudade' em inglês?* | 5/5 | 0/5 | 0/5 |
+| *…went to the feira with my mother…* (English) | 0/5 | 0/5 | 0/5 |
+
+The note fixes the language of the reply and no more. The 3B's English answers
+are often generic (*Can you tell me more about your work day?*). Once it
+claimed *"we say 'saudade' too"*, and once it gave no gloss at all. A reply counts as
+Portuguese when the same detector reads it as Portuguese. Every reply above was
+also read by eye.
+
 ### Rodar em dev
 
 ```bash
