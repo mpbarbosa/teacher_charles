@@ -71,6 +71,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from ..config import Settings
 
@@ -144,6 +145,11 @@ SOURCES = (
         "licence": "CC BY-SA 4.0",
     },
 )
+
+# Where the student can read further: the word's page in Cambridge's
+# English–Portuguese dictionary. A link and nothing more — the card never
+# fetches it, so the word only leaves the machine if the student clicks.
+CAMBRIDGE = "https://dictionary.cambridge.org/pt/dicionario/ingles-portugues/"
 
 # WordNet's detachment rules (morphy), per part of speech: the suffix a regular
 # inflection adds and what the base ends in instead. Irregular forms are not
@@ -243,7 +249,34 @@ class Entry:
             "more": self.more,
             "note": NOTE if self.found else MISS,
             "sources": list(SOURCES),
+            "cambridge": self.cambridge(),
         }
+
+    def cambridge(self) -> list[dict[str, str]]:
+        """One Cambridge link per lemma on the card, in the card's order.
+
+        By lemma, not by the word as written: *went* opens *go*, which is the
+        page Cambridge keeps the senses on. Case is folded, because the
+        site's addresses are lower case — *Nation* and *nation* are one page.
+        A miss still links the word: WordNet's scope is not Cambridge's, and
+        *the* or *we've* have a page there the card has no entry for.
+        """
+        lemmas = [h.lemma for h in self.headwords] or ([self.word] if self.word else [])
+        links: dict[str, dict[str, str]] = {}
+        for lemma in lemmas:
+            url = cambridge_url(lemma)
+            links.setdefault(url, {"lemma": lemma.lower(), "url": url})
+        return list(links.values())
+
+
+def cambridge_url(lemma: str) -> str:
+    """The word's page in Cambridge's English–Portuguese dictionary.
+
+    The site writes a phrase's spaces as hyphens (*look-up*), and the rest is
+    percent-encoded so a stray character can never leave the path.
+    """
+    slug = re.sub(r"\s+", "-", lemma.strip().lower())
+    return CAMBRIDGE + quote(slug, safe="-")
 
 
 # --- From the word on the page to the spellings worth looking up ------------ #

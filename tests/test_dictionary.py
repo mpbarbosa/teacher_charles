@@ -185,6 +185,43 @@ def test_every_found_entry_carries_the_note_and_its_sources(dictionary):
     assert body["headwords"][0]["pos"] == "noun"
 
 
+CAMBRIDGE = "https://dictionary.cambridge.org/pt/dicionario/ingles-portugues/"
+
+
+def test_the_card_links_the_lemmas_page_in_cambridge(dictionary):
+    body = dictionary.lookup("chamber,").as_dict()
+    assert body["cambridge"] == [{"lemma": "chamber", "url": CAMBRIDGE + "chamber"}]
+    # The lemma's page, not the inflected form's.
+    assert [p["url"] for p in dictionary.lookup("went").as_dict()["cambridge"]] == [
+        CAMBRIDGE + "go"
+    ]
+
+
+def test_one_cambridge_link_per_page_not_per_headword(dictionary):
+    # Noun and verb are one page; so are Nation and nation.
+    assert [p["lemma"] for p in dictionary.lookup("voices").as_dict()["cambridge"]] == ["voice"]
+    assert [p["lemma"] for p in dictionary.lookup("Nation").as_dict()["cambridge"]] == ["nation"]
+    assert [p["lemma"] for p in dictionary.lookup("silenced").as_dict()["cambridge"]] == [
+        "silenced",
+        "silence",
+    ]
+
+
+def test_a_miss_still_links_the_word_in_cambridge(dictionary):
+    assert dictionary.lookup("The").as_dict()["cambridge"] == [
+        {"lemma": "the", "url": CAMBRIDGE + "the"}
+    ]
+    assert dictionary.lookup("—").as_dict()["cambridge"] == []
+
+
+def test_a_cambridge_address_cannot_leave_the_path():
+    from teacher_charles.teaching.dictionary import cambridge_url
+
+    assert cambridge_url("look up") == CAMBRIDGE + "look-up"
+    assert cambridge_url("we've") == CAMBRIDGE + "we%27ve"
+    assert cambridge_url("a/../b?c#d") == CAMBRIDGE + "a%2F..%2Fb%3Fc%23d"
+
+
 def test_a_satellite_adjective_reads_as_an_adjective(dictionary):
     assert dictionary.lookup("silenced").as_dict()["headwords"][0]["pos"] == "adjective"
 

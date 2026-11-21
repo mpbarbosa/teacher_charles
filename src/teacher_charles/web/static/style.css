@@ -1006,6 +1006,9 @@ main.phonetics .pair.now-word .word-ipa { color: var(--fg); }
 .word-card .wc-miss { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.75rem; }
 .word-card .wc-miss { font-size: 0.8rem; }
 .word-card .wc-src a { color: var(--muted); }
+/* The way out to a fuller dictionary: a step brighter than the credits. */
+.word-card .wc-more-at { margin: 0.35rem 0 0; font-size: 0.8rem; }
+.word-card .wc-more-at a { color: var(--accent); }
 
 /* --- the rehearsal (rehearsal.js) ---------------------------------------- */
 /* The block heads are in the page from the start, one before each paragraph,
