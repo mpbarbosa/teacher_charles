@@ -599,12 +599,27 @@ BLOCK_SECONDS = 0.1
 # máquina confirmar, que é o teste que ela tinha de passar.
 ALSA_DB_PER_PERCENT = 0.47
 # Uma elocução tem pausa; a sala não. Daí a última pergunta do diagnóstico ser
-# sobre **contraste**, a razão entre o percentil 90 e o 10 dos blocos: medido,
-# 12 na gravação que transcreveu limpo e 2,8 na que o microfone só ouviu a
-# sala. É a pergunta mais fundamental das cinco, porque não depende de nível
-# nenhum — e foi a última a aparecer porque só se revela quando o ganho já
-# está certo e o PER sai errado de todo jeito.
-SPEECH_CONTRAST_MIN = 4.0
+# sobre **contraste**, a razão entre a fala e o piso (percentil 10) dos blocos —
+# medida primeiro pelo percentil 90: 12 na gravação que transcreveu limpo e
+# 2,8 na que o microfone só ouviu a sala. É a pergunta mais fundamental das
+# cinco, porque não depende de nível nenhum — e foi a última a aparecer
+# porque só se revela quando o ganho já está certo e o PER sai errado de todo jeito.
+#
+# The loud end of that ratio is **the fifth-loudest block** — half a second of
+# speech — and not the 90th percentile, which only lands on the speech when it
+# fills more than a tenth of the file. *I know the road* is a second of sound
+# in a ten-second window: twice Whisper understood every word, and twice p90
+# fell in the silence after it, 3.2 against 4, refused as a room. A sentence's
+# length is not evidence about the room, so the statistic must not depend on
+# it.
+#
+# The threshold rose with it, from 4 to 6, because the top block of a room is
+# louder than its p90. §3.5's room ran from 0.009 to 0.050 per block, so no
+# half-second of it can stand more than 0.050/0.009 = 5.6 above its floor;
+# every take that Whisper understood, the 37 on disk when this changed, read
+# 7.2 or more.
+SPEECH_CONTRAST_MIN = 6.0
+SPEECH_CONTRAST_BLOCKS = 5
 # O dispositivo rabeia ao abrir, e isso entra em **toda** gravação: um degrau
 # de DC positivo que decai por metade a cada ~0,1s — média de bloco +0,585 em
 # 0,0s, +0,073 em 0,4s, +0,002 em 1,0s, com o silêncio do arquivo em 0,004.
@@ -779,10 +794,11 @@ def diagnose_signal(samples: Any, np: Any, rate: int = SAMPLE_RATE) -> Problem |
     rms_blocks, _, loud = block_levels(samples, np, rate)
     if rms_blocks is not None:
         low = max(float(np.percentile(rms_blocks, 10)), 1e-12)
-        contrast = float(np.percentile(rms_blocks, 90)) / low
+        top = np.sort(rms_blocks)[::-1][:SPEECH_CONTRAST_BLOCKS]
+        contrast = float(top[-1]) / low
         if len(loud) == 0 or contrast < SPEECH_CONTRAST_MIN:
             return Problem(
-                f"sem contraste de fala: o bloco alto é só {contrast:.1f}× o baixo "
+                f"sem contraste de fala: o meio segundo mais alto é só {contrast:.1f}× o piso "
                 f"(mínimo {SPEECH_CONTRAST_MIN:.0f}×), nível uniforme do começo ao fim. "
                 "Fala tem pausa, sala não — isto é o microfone ouvindo o ambiente. "
                 "Ganho não resolve, porque o piso sobe junto: fale perto do microfone, "
