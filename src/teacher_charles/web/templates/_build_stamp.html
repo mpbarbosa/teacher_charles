@@ -1,0 +1,8 @@
+{#
+  The version and the commit this server loaded (build_stamp.py), the last
+  line of every page. A global, not a route's context: no page can forget it.
+  Without a git checkout the commit is unknown and the version stands alone.
+#}
+<span class="version build-stamp">v{{ version }}{% if build.known %}
+  · <code title="{{ build.sha }}">{{ build.short_sha }}</code>{% if build.dirty %}<span title="The running code has changes this commit does not hold">+dirty</span>{% endif %}
+  · <time datetime="{{ build.iso }}">{{ build.when }}</time>{% endif %}</span>

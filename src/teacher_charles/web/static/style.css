@@ -331,6 +331,10 @@ footer {
   min-height: 1.6rem;
 }
 
+/* The commit line (_build_stamp.html): small print, never wrapped mid-stamp. */
+footer .build-stamp { white-space: nowrap; }
+footer .build-stamp code { font-size: inherit; color: inherit; }
+
 #status.error { color: var(--danger); }
 
 /* --- Correcoes ---------------------------------------------------------- */

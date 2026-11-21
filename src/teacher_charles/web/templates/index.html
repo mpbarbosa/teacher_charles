@@ -138,7 +138,7 @@
   <footer>
     <span id="level-note"></span>
     <span id="status"></span>
-    <span class="version">v{{ version }}</span>
+    {% include "_build_stamp.html" %}
   </footer>
 
   {# voice.js antes de app.js: ele publica `window.CharlesVoice`, e o app.js
