@@ -248,6 +248,14 @@ class TurnRepo:
         ).fetchall()
         return [Turn.from_row(r) for r in reversed(rows)]
 
+    def last_student(self, session_id: int) -> Turn | None:
+        """What the student sent last in ``session_id``, as ``TurnRunner`` recorded it."""
+        row = self._conn.execute(
+            "SELECT * FROM turn WHERE session_id = ? AND role = 'student' ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return Turn.from_row(row) if row is not None else None
+
 
 class CorrectionRepo:
     """As correções, como dado contável.

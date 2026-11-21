@@ -38,6 +38,11 @@ const voice = window.CharlesVoice ?? {
 
 let busy = false;
 
+// The last microphone take and the transcript it put in the box, while the
+// box still holds exactly that transcript. Anything else in the box -- an
+// edit, a second take appended, typing -- and the take is not this turn's.
+let heardTake = null;
+
 function addTurn(role, text, ipa = "") {
   const article = document.createElement("article");
   article.className = `turn ${role}`;
@@ -270,6 +275,63 @@ function addCorrections(article, errors) {
   scrollToEnd();
 }
 
+// --- Pronunciation after the turn (E14) ------------------------------------ //
+//
+// Asked for once the teacher's text has finished, while his voice plays: the
+// phoneme ear runs beside the speech, never in front of it (plan 2 §3.1), and
+// the note appears when it appears. Only a correction citing a curated rule
+// comes back; a clean turn shows nothing, because a clean free turn is not a
+// pass. The server checks again that the turn it recorded is the transcript
+// unedited, so this page is not the guard -- it only saves the request.
+async function addPronunciation(article, takeId) {
+  try {
+    const response = await fetch("/api/pronunciation/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ take_id: takeId }),
+    });
+    if (!response.ok) return;
+    const { notes } = await response.json();
+    if (!notes || notes.length === 0) return;
+
+    const box = document.createElement("div");
+    box.className = "corrections pronunciation";
+    for (const note of notes) {
+      const item = document.createElement("div");
+      item.className = "correction curated";
+
+      const fix = document.createElement("div");
+      fix.className = "fix";
+      fix.append(...emphasised(note.heard));
+
+      const why = document.createElement("div");
+      why.className = "why";
+      why.textContent = note.explanation;
+
+      const rule = document.createElement("div");
+      rule.className = "rule";
+      rule.textContent = note.rule_id;
+
+      item.append(fix, why, rule);
+      box.append(item);
+    }
+    article.append(box);
+    scrollToEnd();
+  } catch {
+    // Feedback after the turn is extra: a failure costs the note, not the turn.
+  }
+}
+
+// `*word*` as <em>, everything else as text -- never innerHTML.
+function emphasised(text) {
+  return text.split(/\*([^*]+)\*/).map((part, i) => {
+    if (i % 2 === 0) return document.createTextNode(part);
+    const em = document.createElement("em");
+    em.textContent = part;
+    return em;
+  });
+}
+
 function scrollToEnd() {
   transcript.scrollTop = transcript.scrollHeight;
 }
@@ -433,6 +495,7 @@ async function sendMessage(text) {
     // Nao vem mais sentenca: a fila para de esperar pelo indice seguinte.
     voice.endTurn();
   }
+  return student;
 }
 
 /**
@@ -558,11 +621,13 @@ if (ipaToggle) {
 
 voice.wire({
   status: setStatus,
-  transcript: (text) => {
+  transcript: (text, takeId) => {
     // No campo, nunca direto no turno. O STT erra, e um erro de STT que vira
     // turno faz o Charles corrigir um erro que o aluno nao cometeu -- ver o
     // cabecalho de voice.js.
-    input.value = input.value.trim() ? `${input.value.trim()} ${text}` : text;
+    const appended = Boolean(input.value.trim());
+    heardTake = takeId && !appended ? { id: takeId, text: text.trim() } : null;
+    input.value = appended ? `${input.value.trim()} ${text}` : text;
     autoGrow();
     input.focus();
     // Cursor no fim, para o aluno conseguir corrigir a ultima palavra, que e
@@ -578,14 +643,23 @@ form.addEventListener("submit", async (event) => {
   const text = input.value.trim();
   if (!text) return;
 
+  // The take is this turn's only if the box still holds its transcript as
+  // Whisper wrote it. Read before the box is cleared, and dropped either way:
+  // a take is judged against one turn, once.
+  const take = heardTake && heardTake.text === text ? heardTake : null;
+  heardTake = null;
+
   input.value = "";
   autoGrow();
   setBusy(true);
+  let student = null;
   try {
-    await sendMessage(text);
+    student = await sendMessage(text);
   } finally {
     setBusy(false);
   }
+  // Not awaited: the box is free again, and the note appears when it appears.
+  if (take && student) addPronunciation(student.article, take.id);
 });
 
 resetButton.addEventListener("click", async () => {

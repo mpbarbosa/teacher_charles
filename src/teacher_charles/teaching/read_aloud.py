@@ -117,7 +117,7 @@ def tally(rule_id: str, takes: Sequence[PronunciationSignal], *, ever_named: boo
 # --- what the student reads -------------------------------------------------- #
 
 
-def _what_happened(word: str, expected: str, heard: str | None) -> str:
+def what_happened(word: str, expected: str, heard: str | None) -> str:
     """One finding in metodo §4's words: the phoneme by name, in its word.
 
     Consonant identity is resolved (metodo §4), and all three graded rules are
@@ -150,7 +150,7 @@ def card(item: PronunciationItem, result: Tally, *, due_in_days: float | None = 
         for (word, expected, heard), count in result.by_word:
             if count >= MISS_AT:
                 lines.append(
-                    _what_happened(word, expected, heard).capitalize()
+                    what_happened(word, expected, heard).capitalize()
                     + f" in {count} of {result.takes} takes."
                 )
         if not lines:
@@ -163,7 +163,7 @@ def card(item: PronunciationItem, result: Tally, *, due_in_days: float | None = 
     elif result.outcome == "once":
         (word, expected, heard), _ = result.by_word[0]
         lines.append(
-            f"Once in {_takes(result.takes)}: {_what_happened(word, expected, heard)}. "
+            f"Once in {_takes(result.takes)}: {what_happened(word, expected, heard)}. "
             "Once is not a habit, so this session does not move the rule either way."
         )
     elif result.outcome == "hit":
@@ -209,7 +209,7 @@ def deliberate_note(item: PronunciationItem, judgement: Judgement) -> str:
     if judgement.findings:
         first = judgement.findings[0]
         return (
-            f"Heard: {_what_happened(first.word, first.expected, first.heard)}. "
+            f"Heard: {what_happened(first.word, first.expected, first.heard)}. "
             "That is the wrong side, so now your clean reads can count. "
             "Next, read it the right way."
         )

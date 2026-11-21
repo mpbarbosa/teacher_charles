@@ -594,27 +594,73 @@ class Evaluator:
         ops = align(expected.phonemes, heard)
         if heard_where_expected(expected.phonemes, ops) < PHRASE_HIT_MIN:
             return Judgement(rule_id, "silence", gate=2, advice=GATE_2_ADVICE)
+        return _judge(item, expected, ops)
 
-        signature = widen(item.signature)
-        findings = tuple(
-            Finding(
-                word=expected.words[op.at] if op.at < len(expected.words) else "",
-                expected=op.expected or "",
-                heard=op.heard,
-            )
-            for op in ops
-            if op.tag in signature
+    def evaluate_text(
+        self,
+        text: str,
+        heard: Sequence[str],
+        vocabulary: frozenset[str],
+        *,
+        signal_usable: bool = True,
+    ) -> tuple[Judgement, ...]:
+        """Every graded rule ``text`` gives an opportunity for, over one take of it (E14).
+
+        The free turn's form of ``evaluate``: the expected text is not a
+        curated phrase but what the student sent, which E14 admits only when
+        it is Whisper's transcript unedited. The gates are the same and run
+        once for the whole take, because they ask about the take, not the
+        rule. A rule whose target the text never asks for is not judged at
+        all — no opportunity is no observation, not a pass.
+
+        Gate 2 does a second job here that it does not do over a curated
+        phrase: the heard phonemes are a reading of the audio independent of
+        Whisper, so a transcript that heard other words than the ones said
+        fails it, and the take is silence instead of a correction measured
+        against a sentence nobody said. A silence carries no advice: in a free
+        turn there is no sentence to read again.
+        """
+        try:
+            expected = expected_for(text, self._g2p, vocabulary)
+        except PronunciationUnavailable:
+            return ()
+        applicable = [item for item in self._base.graded() if item.target in expected.phonemes]
+        if not applicable:
+            return ()
+        if not signal_usable:
+            return tuple(Judgement(item.id, "silence", gate=1) for item in applicable)
+        # A symbol the recognizer cannot emit would read as an error on every
+        # take; over a curated phrase that is a broken base (503), over the
+        # student's words it is a sentence this ear cannot judge.
+        unknown = any(token.startswith("?") for token in expected.phonemes)
+        ops = align(expected.phonemes, heard)
+        if unknown or heard_where_expected(expected.phonemes, ops) < PHRASE_HIT_MIN:
+            return tuple(Judgement(item.id, "silence", gate=2) for item in applicable)
+        return tuple(_judge(item, expected, ops) for item in applicable)
+
+
+def _judge(item: PronunciationItem, expected: Expected, ops: Sequence[Operation]) -> Judgement:
+    """Gate 3: the operations of ``item``'s signature in an alignment that passed gate 2."""
+    signature = widen(item.signature)
+    findings = tuple(
+        Finding(
+            word=expected.words[op.at] if op.at < len(expected.words) else "",
+            expected=op.expected or "",
+            heard=op.heard,
         )
-        opportunities = sum(1 for token in expected.phonemes if token == item.target)
-        if findings:
-            return Judgement(
-                rule_id,
-                "correction",
-                opportunities=opportunities,
-                findings=findings,
-                explanation=item.explanation,
-            )
-        return Judgement(rule_id, "no-error", opportunities=opportunities)
+        for op in ops
+        if op.tag in signature
+    )
+    opportunities = sum(1 for token in expected.phonemes if token == item.target)
+    if findings:
+        return Judgement(
+            item.id,
+            "correction",
+            opportunities=opportunities,
+            findings=findings,
+            explanation=item.explanation,
+        )
+    return Judgement(item.id, "no-error", opportunities=opportunities)
 
 
 __all__ = [

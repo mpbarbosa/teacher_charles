@@ -284,7 +284,10 @@ const CharlesVoice = (() => {
         onStatus("Charles did not hear any words. Try again, a bit closer.");
         return;
       }
-      onTranscript(data.text);
+      // `take_id` only when the server can judge pronunciation (E14): it
+      // holds the audio until the turn is sent, and app.js decides whether
+      // the turn sent is this transcript unedited.
+      onTranscript(data.text, data.take_id ?? null);
       onStatus(`Heard you in ${(data.elapsed_ms / 1000).toFixed(1)} s — fix it if it is wrong.`);
     } catch (error) {
       onStatus(`Could not transcribe: ${error.message}`, true);

@@ -230,3 +230,92 @@ def test_only_a_graded_rule_gives_a_verdict(g2p):
         Evaluator(PronunciationBase([demoted]), g2p).evaluate(
             "pron.th-voiced", heard("ð"), ENGLISH_PHONEMES
         )
+
+
+# --- the free turn (E14) --------------------------------------------------- #
+#
+# `evaluate_text` is `evaluate` over the student's own words. The two takes
+# below are the ones `scripts/measure_stt_accent.py --evaluate` found where a
+# transcript and the phrase read gave different verdicts, so each test pins a
+# measured case, not an invented one.
+
+# ``eaa0d509``: *They brought the other brother* said wrong on purpose.
+OTHER_AND_BROTHER_AS_D = heard("ð eɪ b ɹ ɑː t d uː d ɚ b ɹ uː d ɚ")
+# ``1d64e713``: *Sport is good for stress* with the epenthesis, warned by gate 1.
+STRESS_WITH_EPENTHESIS = heard("ɪ s p ɑː t ɪ z ɡ uː d f ɔːɹ ɪ s t ɹ ɛ s")
+
+
+def test_a_free_text_judges_only_the_rules_it_gives_an_opportunity_for(evaluator):
+    udder = heard("ð eɪ b ɹ oʊ t ð ɚ ʌ d ɚ b ɹ ʌ ð ɚ")
+    judged = evaluator.evaluate_text("They brought the other brother", udder, ENGLISH_PHONEMES)
+    assert [j.rule_id for j in judged] == ["pron.th-voiced"]
+    (judgement,) = judged
+    assert judgement.verdict == "correction"
+    assert [(f.word, f.expected, f.heard) for f in judgement.findings] == [("other", "ð", "d")]
+
+
+def test_a_text_with_no_target_is_not_judged_at_all(evaluator):
+    """No opportunity is no observation, which is not a pass."""
+    cats = heard("aɪ l aɪ k k æ t s")
+    assert evaluator.evaluate_text("I like cats", cats, ENGLISH_PHONEMES) == ()
+
+
+def test_the_words_a_transcript_kept_are_the_words_it_can_correct(evaluator):
+    """base.en heard the deliberate take as *They brought the Buddha brother*.
+
+    The truth names *other* and *brother*; the transcript has no /ð/ left in
+    *Buddha*, so it can only name *brother*. A partial correction, about a
+    real error — the measured shape of what a transcript does to a
+    mispronounced word: it writes another word down, and the error goes with it.
+    """
+    truth = evaluator.evaluate_text(
+        "They brought the other brother", OTHER_AND_BROTHER_AS_D, ENGLISH_PHONEMES
+    )
+    via = evaluator.evaluate_text(
+        "They brought the Buddha brother", OTHER_AND_BROTHER_AS_D, ENGLISH_PHONEMES
+    )
+    assert {f.word for f in truth[0].findings} == {"other", "brother"}
+    assert [f.word for f in via[0].findings] == ["brother"]
+
+
+def test_the_one_false_correction_measured_is_the_one_gate_one_stands_between(evaluator):
+    """tiny.en heard *for stress* as *for his dress*, and *his* has an /h/.
+
+    With the signal taken as usable the alignment books the /h/ nobody said,
+    and h-dropping corrects a word the student never spoke. The take carried
+    a level warning, so in the product gate 1 makes it silence — which is why
+    the route runs gate 1 even though the transcript already exists.
+    """
+    text = "This spot is good for his dress."
+    unguarded = evaluator.evaluate_text(text, STRESS_WITH_EPENTHESIS, ENGLISH_PHONEMES)
+    guarded = evaluator.evaluate_text(
+        text, STRESS_WITH_EPENTHESIS, ENGLISH_PHONEMES, signal_usable=False
+    )
+    assert {j.rule_id: j.verdict for j in unguarded} == {
+        "pron.th-voiced": "no-error",
+        "pron.h-dropping": "correction",
+    }
+    assert [f.word for f in unguarded[1].findings] == ["his"]
+    assert {(j.verdict, j.gate) for j in guarded} == {("silence", 1)}
+
+
+def test_a_transcript_of_other_words_is_silence_not_a_correction(evaluator):
+    """Gate 2 over free speech checks Whisper: the phonemes are not the text.
+
+    The heard side is *They brought the udder brother*; the text is *He has a
+    house here*. Every /h/ of the text is missing from what was heard, which
+    is exactly h-dropping's signature — and gate 2 has to stop it first.
+    """
+    judged = evaluator.evaluate_text(
+        "He has a house here", heard("ð eɪ b ɹ oʊ t ð ɚ ʌ d ɚ b ɹ ʌ ð ɚ"), ENGLISH_PHONEMES
+    )
+    assert [(j.rule_id, j.verdict, j.gate) for j in judged] == [("pron.h-dropping", "silence", 2)]
+
+
+def test_a_symbol_the_ear_cannot_emit_is_silence_and_not_a_broken_base(evaluator):
+    """Over a curated phrase that is a 503; over the student's words, a sentence not judged."""
+    vocabulary = ENGLISH_PHONEMES - {"s"}
+    judged = evaluator.evaluate_text(
+        "He has a house here", heard("h iː h æ z ɐ h aʊ s h ɪɹ"), vocabulary
+    )
+    assert [(j.verdict, j.gate) for j in judged] == [("silence", 2)]

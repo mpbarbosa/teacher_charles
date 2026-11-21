@@ -132,6 +132,12 @@ uv run python scripts/measure_voice.py --record 6 --say "what you said" \
 Fica registrado como a dívida principal desta fase. Ela tem um anteparo —
 §3.2 — mas anteparo não é medição.
 
+**Paid, on read speech, for E14** (`docs/plano-fase-2.md` §5,
+`scripts/measure_stt_accent.py`): 34 takes of one Brazilian speaker reading
+known phrases into the laptop microphone. On the 26 read as well as the
+speaker could, `base.en` got 23 word for word (WER 3.2%), `tiny.en` 19 (6.5%)
+and `small.en` all 26. It is still one voice and still reading, not talking.
+
 ---
 
 ## 3. O que a medição mudou no desenho
