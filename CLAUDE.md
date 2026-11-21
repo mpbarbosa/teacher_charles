@@ -775,8 +775,10 @@ has already moved the design in five places (its §3). The numbers that matter:
 - Hence E9 being a **gate and not a stage**: measuring with a Brazilian human
   voice is what decides whether the evaluator exists. No product before it.
 
-What comes after is in `docs/plano-fase-2.md` §8: turn-taking without a button,
-prosody, the analysis debt, and mobile/multi-user.
+What comes after is in `docs/plano-fases-3-a-6.md`, which details
+`docs/plano-fase-2.md` §8 as four phases (E15–E28), in the order accepted on
+2026-11-21: Phase 3 the analysis debt, Phase 4 turn-taking without a button,
+Phase 5 prosody, Phase 6 mobile/multi-user/login/installer.
 
 Two known debts from Phase 1, both measured and recorded in §5.5: the analysis
 costs ~10s per turn with an error (the way out is a better model just for it,
