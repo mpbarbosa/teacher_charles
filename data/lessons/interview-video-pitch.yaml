@@ -30,7 +30,7 @@ cefr: B1
 source:
   kind: own
   title: Your interview video pitch
-  words: 491
+  words: 487
 
 rehearsal:
   - title: Who you are
@@ -92,11 +92,12 @@ sections:
       - heading: '"Would" for a plan that depends on them'
         body: >-
           The middle of the pitch describes what you would do if they hired
-          you, so it uses "would" all the way: I would ask, I would build, I
-          would keep. The condition, "if you hired me", is never said — it is
+          you, so it uses "would" all the way: I would ask, I would connect, I
+          would start. The condition, "if you hired me", is never said — it is
           understood. Switching to "will" would sound as if the job were
-          already yours.
-        cites: ["I would not build"]
+          already yours. The one sentence that says "must" is an opinion, not
+          a plan: what the first step has to be.
+        cites: ["I would connect to"]
       - heading: The present simple for principles
         body: >-
           Where the pitch says what you always do, the verb goes back to the
@@ -367,11 +368,11 @@ questions:
     options: [the first, the second]
     answer: 1
     why: Stressed on the first syllable it sounds like "carrier".
-  - prompt: Why does the plan say "I would not build" and not "I will not build"?
+  - prompt: Why does the plan say "I would connect" and not "I will connect"?
     options:
       - '"Would" is the past of "will"'
       - The plan depends on being hired, which has not happened
-      - '"Will" is wrong after "not"'
+      - '"Will" is too informal for an interview'
     answer: 1
     why: >-
       "Would" is the conditional: it describes what you would do if a
@@ -409,7 +410,7 @@ practice:
     starter: "To keep it simple, "
 
 notes: >-
-  Written 2026-11-20 from the copy in corpus/lessons/ (491 words, 7
+  Written 2026-11-20 from the copy in corpus/lessons/ (487 words, 7
   paragraphs). The text is not in the repository: only the phrases in
   `cites`, inside the 10% budget the loader checks, and none of them says
   anything about its author. Level measured with teaching/level.py on the
