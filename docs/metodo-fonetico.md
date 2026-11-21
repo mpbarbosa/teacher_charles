@@ -540,7 +540,9 @@ run on the corpus that exists.
   same student talking to Charles does not. Everything above measures the
   monitored production, and the table of §2.4 depends on the unmonitored
   side being a *reading* too, not speech. Nothing here evaluates pronunciation
-  in a free turn, and nothing here should be presented as doing so.
+  in a free turn, and nothing here should be presented as doing so. Plan §5
+  now orders the product to match: the read-aloud drill is E12, and the free
+  turn is E14, behind a measurement of its own.
 * **Rehearsing the error.** The deliberate pass asks a student to produce the
   thing they are trying to lose. The guards in §2.4 — after the contrast, once
   per rule, never last in the session — are reasoning, not measurement. If a
