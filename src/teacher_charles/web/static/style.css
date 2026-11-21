@@ -74,9 +74,20 @@ header h1 { font-size: 1.05rem; margin: 0; }
   color: var(--muted);
 }
 
-/* Only the chat page's header folds, and only on a phone (the 560px block). */
+/* Only the chat page's header folds, and only up to a tablet (the 1024px
+ * block below): wider, its controls fit in two rows beside the title. */
 .menu-toggle { display: none; }
 .menu-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* 1024px takes in a tablet both ways round (an iPad on its side is exactly
+ * that wide). Folded, the chat header is one row at every width up to here;
+ * unfolded, the controls take a row of their own under the title and Menu,
+ * left-aligned, instead of squeezing beside them. */
+@media (max-width: 1024px) {
+  header.folding .menu-toggle { display: inline-block; }
+  header.folding:not(.open) .meta { display: none; }
+  header.folding .meta { flex-basis: 100%; justify-content: flex-start; }
+}
 
 .model {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -339,10 +350,6 @@ button.talk.latched { box-shadow: 0 0 0 2px var(--danger); }
      16px gutter as the page: a right-aligned ragged row reads as leftovers. */
   header { padding: 0.6rem 1rem; }
   .meta { justify-content: flex-start; gap: 0.4rem 0.5rem; }
-  /* The chat header: title and Menu on one row, the controls folded behind
-     it until asked for. Folded, the conversation gets back ~185px. */
-  header.folding .menu-toggle { display: inline-block; }
-  header.folding:not(.open) .meta { display: none; }
 }
 
 footer {
