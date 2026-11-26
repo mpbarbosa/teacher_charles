@@ -1,0 +1,403 @@
+# A curated lesson (model in src/teacher_charles/teaching/lessons.py).
+#
+# The song is someone else's work, and this repository is public: nothing here
+# copies its lyrics. Song lyrics are a stricter case than the speech next door,
+# so this lesson stays well inside the loader's budget on purpose: `cites`
+# holds three words of the title and nothing else. Every point paraphrases
+# what the singers say and names single words or phrasal verbs, never a line.
+# Whoever runs the project may put their own copy of the lyrics in
+# corpus/lessons/somebody-that-i-used-to-know.txt, and the page then shows it.
+#
+# No IPA anywhere in this file: the transcriptions on the page come from espeak
+# (teaching/phonetics.py), the same G2P the voice speaks with.
+
+id: lesson.somebody-that-i-used-to-know
+title: Somebody That I Used to Know
+summary: >-
+  A break-up song told twice: first by him, then by her, with the same
+  sentences and the pronouns swapped. Read at six levels: the plain words that
+  carry the hurt, the informal phrasal verbs, "used to" and "didn't have to",
+  the subjects a song is allowed to drop, what the title really says about the
+  relationship, and how "used to" sounds when people actually say it.
+cefr: B2
+
+source:
+  title: Gotye - Somebody That I Used To Know (feat. Kimbra) [Official Music Video]
+  publication: YouTube (Gotye's official channel)
+  author: Gotye, featuring Kimbra
+  published: 2011-07-05
+  url: https://www.youtube.com/watch?v=8UVNT4wvIGY
+  work: >-
+    "Somebody That I Used to Know", written by Wally De Backer (Gotye), from
+    the album Making Mirrors (2011). The guitar figure that opens it is a
+    sample of "Seville", by the Brazilian guitarist Luiz Bonfá.
+  words: 470
+
+# The official video, checked against YouTube's oEmbed on 2026-11-26:
+# author_name "Gotye". The id only: the page builds the embed address.
+video:
+  youtube_id: 8UVNT4wvIGY
+  title: Gotye - Somebody That I Used To Know (feat. Kimbra) [Official Music Video]
+  channel: Gotye
+
+sections:
+  - aspect: lexicon
+    title: Where the words come from
+    points:
+      - heading: Short, old words carry the feeling
+        body: >-
+          Almost every word in the song is one or two syllables from Old
+          English: know, think, feel, love, low, friends, rough, end. That is
+          typical of pop songs, and of English when people speak about their
+          feelings. Short words fit the beat, and they sound direct and
+          personal.
+      - heading: The few long words come from Latin, and they stand out
+        body: >-
+          A handful of words came into English through Latin and French:
+          company, resignation, addicted. Because they are rare in the song,
+          they sound more thoughtful, almost like a diagnosis. Listen for them:
+          they are where the singer stops to describe his feelings instead of
+          just showing them.
+      - heading: Phrasal verbs instead of formal verbs
+        body: >-
+          Where Portuguese would use one verb (cortar contato, fingir, enganar,
+          superar), the song uses a verb plus a particle: cut off, make out,
+          screw over, let go. This is the normal way to talk about
+          relationships in informal English. Several of them have a second,
+          completely different meaning, so the word list below explains them.
+
+  - aspect: vocabulary
+    title: Words worth learning
+    points:
+      - heading: The vocabulary of a break-up
+        body: >-
+          Cut someone off, treat someone like a stranger, stoop so low, screw
+          someone over, read into something, let it go, be hung up on someone,
+          still be friends. These are the words people really use when they
+          talk about the end of a relationship. The list below explains each
+          one, with the traps for Portuguese speakers, including a false
+          friend and a "make out" that can embarrass you.
+
+  - aspect: grammar
+    title: Grammar in use
+    points:
+      - heading: '"Used to" for something that is over'
+        body: >-
+          "Used to" plus a verb describes a past habit or a past state that is
+          not true any more: I used to live in Recife, she used to play the
+          guitar. The title uses it with "know", so the person is in the past
+          and the friendship is finished. Do not confuse it with "be used to"
+          plus a noun or "-ing", which means "estar acostumado": I'm used to
+          the cold. One is about the past, the other about what is normal for
+          you now.
+        cites: ["used to know"]
+      - heading: '"Didn''t have to": it was not necessary, and it hurt'
+        body: >-
+          The chorus is built on "didn't have to" plus a verb: you did it, and
+          you did not need to. In Portuguese, "você não precisava". It is a
+          complaint, not a rule. Do not confuse it with "mustn't", which
+          forbids something: "you mustn't call her" means "não ligue para
+          ela".
+      - heading: The past perfect for the earlier past
+        body: >-
+          In the second half, the singers say they were made to believe the
+          problem was always something they had done. "Had done" (shortened to
+          'd done) is the past perfect: an action before another past moment.
+          In a song you hear only a small "d" sound, so listen carefully for
+          it.
+      - heading: '"Would" in reported promises'
+        body: >-
+          When the singer reports what she once promised, the "will" of her
+          original words becomes "would", because the reporting verb is in the
+          past: "We will still be friends" becomes "you said that we would
+          still be friends". Portuguese does the same with "seríamos", so this
+          one is easy, but it is easy to forget in English.
+
+  - aspect: syntax
+    title: How the sentences are built
+    points:
+      - heading: A song may drop the subject; your writing may not
+        body: >-
+          In the first verse, some lines start straight on the verb, with no
+          "I": the singer says he told himself something, but sings it without
+          the pronoun. Songs and very informal speech do this for rhythm.
+          Portuguese drops the subject all the time, so it may feel natural to
+          you, but in normal English sentences the subject must be there. Copy
+          the song's rhythm, not this habit.
+      - heading: The same sentences, with the pronouns swapped
+        body: >-
+          Kimbra's verse repeats the structure of Gotye's second verse almost
+          word for word, but every "you" becomes "I" and every "I" becomes
+          "you". The grammar stays still while the point of view turns around.
+          It is a good exercise in pronouns: listen to his verse, then predict
+          hers before she sings it.
+      - heading: '"That" for a person'
+        body: >-
+          In the title, "that" introduces a relative clause about a person.
+          "Who" is also correct, and in an object clause like this one the
+          word can be left out completely: somebody I used to know. All three
+          are normal English; "which" is the only one that is wrong for a
+          person.
+
+  - aspect: semantics
+    title: What it means
+    points:
+      - heading: The title is an understatement
+        body: >-
+          "Somebody I used to know" is how you describe an old classmate or a
+          neighbour from years ago, not a former partner. Calling a lover that
+          is cruel on purpose: it reduces the whole relationship to a casual
+          acquaintance. The bitterness of the song is in that distance.
+      - heading: Two versions of the same story
+        body: >-
+          He says she cut him off and made him feel he was to blame. She
+          answers that he was the one who hurt her, and that she was made to
+          feel it was her fault. Neither voice is the true one. The song works
+          because the same words fit both people, so the listener cannot take
+          a side.
+      - heading: '"Rough" and "low" are about feelings, not texture or height'
+        body: >-
+          "Rough" usually describes a surface (áspero), but here it means hard
+          to bear, as in "I had a rough day". "To stoop so low" means to do
+          something mean and beneath your dignity: rebaixar-se. Both are
+          common outside songs too.
+      - heading: '"Resignation" is not about leaving a job'
+        body: >-
+          In the second verse "resignation" means accepting something bad
+          because you think you cannot change it, the same as Portuguese
+          "resignação". In everyday English the word more often means quitting
+          your job (pedido de demissão), so an English listener hears both.
+          Here only the first sense fits.
+
+  - aspect: phonetics
+    title: How it sounds
+    points:
+      - heading: '"Used to" has an "s", not a "z", and almost no "d"'
+        body: >-
+          The verb "use" (I use a computer) ends in a "z" sound. But in "used
+          to", the "s" is a real "s", and the "d" disappears into the "t" of
+          "to": it sounds like "yoos-tuh". The "to" is weak, with a short,
+          unstressed vowel. Saying "yoozed too" with every sound is the most
+          common mistake, and it is easy to fix once you hear it.
+      - heading: The "k" in "know" is silent
+        body: >-
+          "Know" sounds exactly like "no", and "knew" like "new". The "k"
+          stopped being pronounced centuries ago, but the spelling kept it.
+      - heading: Weak words between the strong ones
+        body: >-
+          In a sung line only the important words get full vowels; "to", "a",
+          "of", "that" and "you" are reduced to a quick, neutral sound. That is
+          why the chorus can sound faster than it is. Listen for the stressed
+          words (cut, off, never, nothing) and let the small ones fall between
+          them.
+      - heading: 'Final "-ed": one syllable in "screwed", two in "addicted"'
+        body: >-
+          After a "t" or "d" sound, "-ed" is a syllable: addicted, wanted.
+          After any other sound it is only a "d" or a "t": screwed, believed
+          and changed are one syllable each. Adding a vowel ("screw-ed") is a
+          clear sign of a Portuguese accent.
+      - heading: '"Wanna": informal, and only for "want to"'
+        body: >-
+          In fast speech and in songs "want to" becomes "wanna". It is normal
+          to hear and fine to say in casual conversation, but do not write it
+          in an email or an exam. And it never replaces "wants to": "she
+          wanna" is wrong.
+
+level:
+  summary: >-
+    B2 to understand by ear, B1 to read with the analysis beside it. The
+    grammar is B1, but the meaning is carried by informal phrasal verbs and
+    idioms that are B2 and above.
+  points:
+    - heading: Not measured by the app's rubric
+      body: >-
+        The other lessons were rated with teaching/level.py on a local copy of
+        the text. This one has no copy on the machine where it was written, so
+        its label is the curator's judgement, not a measurement. The surface
+        is simple: short lines and short words.
+    - heading: The idioms set the level
+      body: >-
+        Cut off, make out, screw over, hung up on, stoop so low, read into: a
+        B1 learner knows the words and misses the meaning of each phrase. In a
+        song, with the music over the words and the weak forms reduced, that
+        is a B2 listening task.
+
+words:
+  - word: used to
+    gloss: For something that was true or happened regularly in the past, and is not true now.
+    note: >-
+      Not "be used to" (estar acostumado). "I used to know her" is about the
+      past; "I'm used to her" is about now. In questions and negatives it
+      becomes "use to": "Did you use to live here?"
+  - word: know
+    gloss: To have information about someone or something; to be familiar with a person.
+    note: >-
+      "Conhecer" is "know" for a person you are familiar with, but "meet" for
+      the first time you see them: "I met her at a party", never "I knew her
+      at a party".
+    rule_ids: [calque.know-meet]
+  - word: cut someone off
+    gloss: To stop all contact with someone, suddenly and completely.
+    note: 'Also used for a phone call that ends, or a car that pulls in front of you.'
+  - word: make out
+    gloss: >-
+      Here, informal, with "like": to pretend or to claim something that is not
+      true ("she made out like nothing happened").
+    note: >-
+      "Fingir" is "pretend" or "make out like", never "pretender", which is
+      "intend". Careful: "make out with someone" means to kiss passionately.
+    rule_ids: [false-friend.pretend-pretender]
+  - word: stoop so low
+    gloss: To do something mean or dishonest that is beneath you.
+    note: 'Often a question in an argument: "How could you stoop so low?"'
+  - word: screw someone over
+    gloss: To treat someone unfairly or cheat them, usually for your own advantage.
+    note: >-
+      Informal and a little rude. Fine with friends, not in a meeting; "treat
+      someone unfairly" is the polite version.
+  - word: read into
+    gloss: To find a hidden meaning in something that may not be there.
+    note: '"Don''t read too much into it" means "não pense demais nisso".'
+  - word: let it go
+    gloss: To stop worrying or being angry about something and accept it.
+  - word: hung up on
+    gloss: >-
+      Informal: still thinking about someone or something all the time, unable
+      to forget them.
+    note: >-
+      Not the same as "hang up on someone", which means to end a phone call
+      suddenly while they are still talking.
+  - word: now and then
+    gloss: Sometimes, but not often or regularly. De vez em quando.
+    note: 'Also "every now and then", which means the same.'
+  - word: company
+    gloss: 'Here, the fact of being with someone: companhia.'
+    note: '"In your company" means "with you", not "at your firm".'
+  - word: rough
+    gloss: Here, difficult and unpleasant to live through.
+  - word: addicted
+    gloss: Unable to stop doing or using something.
+    note: >-
+      "Addicted to" plus a noun or "-ing": addicted to sadness, addicted to
+      playing games. The "to" is a preposition here, not part of a verb.
+  - word: resignation
+    gloss: Here, accepting something bad because you feel you cannot change it.
+    note: >-
+      Also, and more often, the act of leaving your job: "she handed in her
+      resignation".
+
+sounds:
+  - word: used
+    trap: >-
+      In "used to" (a past habit) it ends in "s": "yoos-tuh". As the past of
+      "use" (I used a pen) it ends in "zd". Same spelling, two pronunciations.
+  - word: know
+    trap: The "k" is silent; it sounds exactly like "no".
+  - word: friends
+    trap: >-
+      One syllable. The "i" is silent, the vowel is the "e" of "bed", and it
+      ends in "nz" with no vowel after.
+  - word: rough
+    trap: Rhymes with "stuff". The "gh" is an "f" here.
+  - word: company
+    trap: Stressed on the first syllable, and the "o" sounds like the "u" of "cup".
+  - word: stranger
+    trap: >-
+      No vowel before the "s" ("istranger"), and the "a" is the vowel of
+      "day".
+  - word: addicted
+    trap: Stressed on the second syllable; the "-ed" is a syllable because it comes after "t".
+  - word: resignation
+    trap: >-
+      The "s" sounds like "z", and the "g" is pronounced here, unlike in
+      "resign". The stress is on "-na-".
+  - word: remember
+    trap: Stressed on the second syllable; the final "r" is the English one, soft.
+  - word: lonely
+    trap: >-
+      Two syllables, the first like "lone"; the "e" in the middle is silent.
+      Not "lo-ne-ly".
+  - word: together
+    trap: >-
+      Stressed on the second syllable, with the voiced "th" of "the": tongue
+      between the teeth, not "d".
+  - word: number
+    trap: The "b" is pronounced (unlike in "plumber"), and the last vowel is weak.
+
+questions:
+  - prompt: What does "somebody that I used to know" tell you about the relationship now?
+    options:
+      - They still see each other often
+      - It is over
+      - They have just met
+    answer: 1
+    why: '"Used to" describes something in the past that is no longer true.'
+  - prompt: How do you say "estou acostumado com o frio" in English?
+    options: [I used to the cold, I'm used to the cold, I use to the cold]
+    answer: 1
+    why: >-
+      "Be used to" plus a noun means "estar acostumado". "Used to" plus a verb
+      is for past habits.
+  - prompt: How is the "s" in "used to" pronounced?
+    options: [like "s", like "z"]
+    answer: 0
+    why: >-
+      In "used to" it is a real "s": "yoos-tuh". The "z" belongs to the verb
+      "use".
+  - prompt: In the chorus, what does "you didn't have to" mean?
+    options:
+      - You were not allowed to
+      - It was not necessary, but you did it
+      - You forgot to do it
+    answer: 1
+    why: '"Didn''t have to" means "não precisava": no obligation, and it happened anyway.'
+  - prompt: Which phrase means "fingir que"?
+    options: [make out like, make out with, pretend to]
+    answer: 0
+    why: >-
+      "Make out like" is informal for "pretend that". "Make out with" means to
+      kiss, and "pretend to" is followed by a verb, not a sentence.
+  - prompt: How many syllables does "screwed" have?
+    options: [one, two]
+    answer: 0
+    why: After a vowel sound, "-ed" is only a "d" sound, not a syllable.
+  - prompt: Someone who is "hung up on" an ex...
+    options:
+      - ended a phone call with them
+      - still thinks about them all the time
+      - is angry with them
+    answer: 1
+    why: >-
+      "Hung up on" means unable to stop thinking about someone. "Hang up on"
+      is about phone calls.
+
+practice:
+  - task: >-
+      Write about something you used to do as a child and do not do any more.
+      Use "used to" plus a verb.
+    starter: "When I was a child, I used to "
+  - task: >-
+      Complain about something that was not necessary, the way the chorus
+      does, with "didn't have to".
+    starter: "You didn't have to "
+  - task: >-
+      Describe a person from your past in a few sentences, using one phrasal
+      verb from the word list.
+    starter: "Every now and then I remember "
+  - task: >-
+      Tell the same small story twice, once from your point of view and once
+      from the other person's, swapping the pronouns like Kimbra's verse.
+    starter: "I thought you "
+
+notes: >-
+  Written 2026-11-26 with no local copy of the lyrics, so the level is the
+  curator's judgement and not teaching/level.py, and `source.words` (470) is
+  an estimate of the lyric's length: if a copy dropped into corpus/lessons/
+  is more than a tenth off, the page will say so, and the number should be
+  corrected to the copy's count. Lyrics are quoted nowhere: `cites` holds
+  three words of the title only. The official video (8UVNT4wvIGY, Gotye's
+  channel) was confirmed through YouTube's oEmbed, with an invented id as a
+  control (400). The request also linked 11wHJjj-by8, a Brazilian
+  singing-lesson video about this song by Carolina Camara (oEmbed author
+  "Carolina Camara"): real, but not the work's own recording, and a lesson
+  holds one video, so it is recorded here and not embedded.
