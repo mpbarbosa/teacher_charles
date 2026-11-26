@@ -22,7 +22,7 @@ summary: >-
 cefr: B2
 
 source:
-  title: Gotye - Somebody That I Used To Know (feat. Kimbra) [Official Music Video]
+  title: Gotye - Somebody That I Used To Know (feat. Kimbra), official music video
   publication: YouTube (Gotye's official channel)
   author: Gotye, featuring Kimbra
   published: 2011-07-05
@@ -35,9 +35,13 @@ source:
 
 # The official video, checked against YouTube's oEmbed on 2026-11-26:
 # author_name "Gotye". The id only: the page builds the embed address.
+# YouTube's title ends in "[Official Music Video]"; it is written here with
+# a comma, because espeak reads every lesson string and passes square
+# brackets through as symbols the IPA table does not have
+# (tests/test_ipa_symbols.py).
 video:
   youtube_id: 8UVNT4wvIGY
-  title: Gotye - Somebody That I Used To Know (feat. Kimbra) [Official Music Video]
+  title: Gotye - Somebody That I Used To Know (feat. Kimbra), official music video
   channel: Gotye
 
 sections:
