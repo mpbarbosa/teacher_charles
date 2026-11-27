@@ -396,10 +396,12 @@ practice:
 
 notes: >-
   Written 2026-11-26 with no local copy of the lyrics and a guessed length of
-  470 words. The same day a copy was put in corpus/lessons/ (10 stanzas,
-  each opened by a bracketed label naming the part and the singer), and the
-  numbers come from it: 390 words of lyric, which is `source.words`, plus 24
-  in the 9 labels, so the page counts 414 and stays inside its tolerance.
+  470 words. The same day a copy was put in corpus/lessons/: 10 paragraphs,
+  9 of them opened by a bracketed label naming the part and the singer (the
+  second half of the first chorus has none, and 2 are only an
+  instrumental-break label). The numbers come from it: 390 words of lyric,
+  which is `source.words`, plus 24 in the 9 labels, so the page counts 414
+  and stays inside its tolerance.
   Level measured with teaching/level.py on the lyric without the labels,
   each line read as a sentence: B1 for the song, A2 to B1 by stanza. The B2
   label stands on the idioms, as the level reading says; the rubric does not

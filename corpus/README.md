@@ -81,7 +81,7 @@ script that reads one of them can be understood without the file present.
 | `lessons/mon-mothma-senate-speech.txt` | Mon Mothma's Senate speech, *Andor* season 2 episode 9, 3 paragraphs, 266 words | — | — |
 | `lessons/interview-video-pitch.txt` | The person running the project's own pitch for a recorded job interview, 7 paragraphs (5 timed blocks, 2 reserve), 538 words | — | — |
 | `lessons/interview-video-pitch.cues.txt` | Their cue words for the 5 timed blocks of that pitch | — | — |
-| `lessons/somebody-that-i-used-to-know.txt` | The lyrics of Gotye's "Somebody That I Used to Know" (feat. Kimbra), 10 stanzas each opened by a bracketed label naming the part and the singer, 390 words of lyric plus 24 in the labels | — | — |
+| `lessons/somebody-that-i-used-to-know.txt` | The lyrics of Gotye's "Somebody That I Used to Know" (feat. Kimbra), 10 paragraphs, 9 of them opened by a bracketed label naming the part and the singer (the 5th, the second half of the first chorus, has none, and 2 are only an instrumental-break label), 390 words of lyric plus 24 in the 9 labels | — | — |
 
 The subtitles were imported 2026-11-10 from a local archive supplied by the
 person running the project. Rights are theirs to hold; this repo asserts none.
