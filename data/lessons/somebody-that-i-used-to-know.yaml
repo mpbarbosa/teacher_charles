@@ -31,7 +31,7 @@ source:
     "Somebody That I Used to Know", written by Wally De Backer (Gotye), from
     the album Making Mirrors (2011). The guitar figure that opens it is a
     sample of "Seville", by the Brazilian guitarist Luiz Bonfá.
-  words: 470
+  words: 390
 
 # The official video, checked against YouTube's oEmbed on 2026-11-26:
 # author_name "Gotye". The id only: the page builds the embed address.
@@ -213,12 +213,13 @@ level:
     grammar is B1, but the meaning is carried by informal phrasal verbs and
     idioms that are B2 and above.
   points:
-    - heading: Not measured by the app's rubric
+    - heading: The surface says B1
       body: >-
-        The other lessons were rated with teaching/level.py on a local copy of
-        the text. This one has no copy on the machine where it was written, so
-        its label is the curator's judgement, not a measurement. The surface
-        is simple: short lines and short words.
+        Measured on the lyrics with the app's own level rubric, the one that
+        rates your messages, the song comes out at B1, and its stanzas at A2
+        or B1. Lyrics have no full stops, so each sung line was read as one
+        sentence. The lines are short, the words are short, and there is
+        little subordination.
     - heading: The idioms set the level
       body: >-
         Cut off, make out, screw over, hung up on, stoop so low, read into: a
@@ -394,11 +395,15 @@ practice:
     starter: "I thought you "
 
 notes: >-
-  Written 2026-11-26 with no local copy of the lyrics, so the level is the
-  curator's judgement and not teaching/level.py, and `source.words` (470) is
-  an estimate of the lyric's length: if a copy dropped into corpus/lessons/
-  is more than a tenth off, the page will say so, and the number should be
-  corrected to the copy's count. Lyrics are quoted nowhere: `cites` holds
+  Written 2026-11-26 with no local copy of the lyrics and a guessed length of
+  470 words. The same day a copy was put in corpus/lessons/ (10 stanzas,
+  each opened by a bracketed label naming the part and the singer), and the
+  numbers come from it: 390 words of lyric, which is `source.words`, plus 24
+  in the 9 labels, so the page counts 414 and stays inside its tolerance.
+  Level measured with teaching/level.py on the lyric without the labels,
+  each line read as a sentence: B1 for the song, A2 to B1 by stanza. The B2
+  label stands on the idioms, as the level reading says; the rubric does not
+  see them. Lyrics are quoted nowhere: `cites` holds
   three words of the title only. The official video (8UVNT4wvIGY, Gotye's
   channel) was confirmed through YouTube's oEmbed, with an invented id as a
   control (400). The request also linked 11wHJjj-by8, a Brazilian
