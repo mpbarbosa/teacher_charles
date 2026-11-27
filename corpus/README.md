@@ -81,6 +81,7 @@ script that reads one of them can be understood without the file present.
 | `lessons/mon-mothma-senate-speech.txt` | Mon Mothma's Senate speech, *Andor* season 2 episode 9, 3 paragraphs, 266 words | — | — |
 | `lessons/interview-video-pitch.txt` | The person running the project's own pitch for a recorded job interview, 7 paragraphs (5 timed blocks, 2 reserve), 538 words | — | — |
 | `lessons/interview-video-pitch.cues.txt` | Their cue words for the 5 timed blocks of that pitch | — | — |
+| `lessons/somebody-that-i-used-to-know.txt` | The lyrics of Gotye's "Somebody That I Used to Know" (feat. Kimbra), 10 stanzas each opened by a bracketed label naming the part and the singer, 390 words of lyric plus 24 in the labels | — | — |
 
 The subtitles were imported 2026-11-10 from a local archive supplied by the
 person running the project. Rights are theirs to hold; this repo asserts none.
@@ -93,6 +94,13 @@ paragraph above describes; the copy is theirs to hold, as above. Its 266 words
 are three fewer than the 269 the lesson was analysed against
 (`source.words`), within the tolerance the page allows; the difference was
 not traced to a line.
+
+The lyrics were pasted in by hand on 2026-11-26 by the person running the
+project; where they were copied from was not recorded. They are a song's
+lyrics, so the rule above holds at its strictest: the lesson quotes three
+words of the title and nothing else. The labels are kept because they say
+who sings which part, which the lesson's analysis leans on; they are why
+the page counts 414 words against the lesson's 390.
 
 ## What was looked at and not imported
 
